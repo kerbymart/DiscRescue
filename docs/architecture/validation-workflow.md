@@ -8,6 +8,7 @@ This note separates Windows-local verification from future Linux hardware verifi
 - `scripts/test.ps1`
 - `scripts/check.ps1`
 - `go run ./cmd/discrescue`
+- `scripts/release-gates.ps1`
 
 For the TUI on Windows Terminal, include these evidence checks:
 
@@ -24,6 +25,21 @@ For the TUI on Windows Terminal, include these evidence checks:
 - `SG_IO` command and sense handling against fixed vectors and hardware traces permitted by public specs
 - Worker supervision under slow or hung device operations
 - Command-audit checks against the allowed non-destructive command set
+
+## Release Gates
+
+Release readiness uses `scripts/release-gates.ps1` as the single local entrypoint. That gate runs:
+
+- formatting;
+- baseline unit and package tests;
+- vet and build;
+- command-audit checks in `internal/testdevice`;
+- simulator integration checks in `internal/testdevice`;
+- soak and goroutine-leak checks in `internal/testdevice`;
+- throughput and CPU benchmark commands for merge and verification paths;
+- `go test -race ./...` only when `CGO_ENABLED=1`.
+
+On the current Windows environment, a skipped race gate is not a passing race gate. The release handoff must report whether race coverage actually ran.
 
 ## Rule
 
