@@ -9,6 +9,15 @@ This note separates Windows-local verification from future Linux hardware verifi
 - `scripts/check.ps1`
 - `go run ./cmd/discrescue`
 
+For the TUI on Windows Terminal, include these evidence checks:
+
+- `go test ./internal/app`
+- verify `80x24`, `60x18`, and `40x12` layouts through the view tests;
+- verify the below-minimum resize request at sizes smaller than `40x12`;
+- verify monochrome-safe recovery rendering;
+- verify long-path wrapping without horizontal scrolling;
+- verify that recovery and details views preserve terminal state while resizing and restore correctly when leaving the alternate screen.
+
 ## Linux Hardware Checks
 
 - Optical-device probe behavior against read-only opens
