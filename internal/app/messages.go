@@ -64,6 +64,10 @@ const (
 	EffectIdentifyMedia   EffectKind = "identify_media"
 	EffectLookupHistory   EffectKind = "lookup_history"
 	EffectStartJob        EffectKind = "start_job"
+	EffectPauseJob        EffectKind = "pause_job"
+	EffectResumeJob       EffectKind = "resume_job"
+	EffectStopJob         EffectKind = "stop_job"
+	EffectStopNow         EffectKind = "stop_now"
 )
 
 type EffectRequestedMsg struct {

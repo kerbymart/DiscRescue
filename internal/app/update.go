@@ -61,6 +61,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case JobStartedMsg:
 		m.Page = PageRecovering
 		m.Recovery.Status = fmt.Sprintf("Job %s started.", typed.JobID)
+		m.Recovery.OutputPath = m.Setup.OutputPath
 		return m, nil
 	case ProgressMsg:
 		m.Recovery.Phase = typed.Snapshot.Phase
@@ -68,6 +69,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.TotalSectors = typed.Snapshot.TotalSectors
 		m.Recovery.UnreadableSectors = typed.Snapshot.UnreadableSectors
 		m.Recovery.Status = typed.Snapshot.Status
+		m.Recovery.Remaining = typed.Snapshot.Remaining
+		m.Recovery.ETA = typed.Snapshot.ETA
+		m.Recovery.LastIssue = append([]string(nil), typed.Snapshot.LastIssue...)
+		m.Recovery.PausePending = typed.Snapshot.PausePending
+		if typed.Snapshot.OutputPath != "" {
+			m.Recovery.OutputPath = typed.Snapshot.OutputPath
+		}
 		return m, nil
 	case StatusMsg:
 		m.Notice = &NoticeModel{Text: typed.Text, Severity: typed.Severity}
@@ -84,12 +92,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityError}
 		}
 		m.Page = PageSummary
+		m.Summary = typed.Summary
 		m.Recovery.Status = typed.Summary.Outcome
+		m.Recovery.RecoveredSectors = typed.Summary.RecoveredSectors
+		m.Recovery.TotalSectors = typed.Summary.TotalSectors
+		m.Recovery.UnreadableSectors = typed.Summary.UnresolvedSectors
 		m.Details.Lines = []string{
 			"Image: " + typed.Summary.ImagePath,
 			"Map: " + typed.Summary.MapPath,
 			"Next: " + typed.Summary.NextAction,
 		}
+		m.Cursor = 0
 		return m, nil
 	case WorkerUnresponsiveMsg:
 		m.Notice = &NoticeModel{
@@ -115,9 +128,30 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := strings.ToLower(msg.String())
 
 	switch {
+	case matchesKey(key, DefaultKeys().Force):
+		switch m.Page {
+		case PageRecovering, PagePaused:
+			m.PreviousPage = m.Page
+			m.Page = PageStopConfirm
+			m.Cursor = 0
+			return m, nil
+		case PageStopConfirm:
+			return m, stopImmediatelyEffect()
+		default:
+			m.Quitting = true
+			return m, tea.Quit
+		}
 	case matchesKey(key, DefaultKeys().Quit):
-		m.Quitting = true
-		return m, tea.Quit
+		switch m.Page {
+		case PageRecovering, PagePaused:
+			m.PreviousPage = m.Page
+			m.Page = PageStopConfirm
+			m.Cursor = 0
+			return m, nil
+		default:
+			m.Quitting = true
+			return m, tea.Quit
+		}
 	case matchesKey(key, DefaultKeys().Back):
 		return m.handleBack()
 	case matchesKey(key, DefaultKeys().Up):
@@ -126,8 +160,21 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case matchesKey(key, DefaultKeys().Down):
 		m.moveCursor(1)
 		return m, nil
+	case matchesKey(key, DefaultKeys().Pause):
+		switch m.Page {
+		case PageRecovering:
+			m.Page = PagePaused
+			m.Cursor = 0
+			return m, pauseJobEffect()
+		case PagePaused:
+			m.Page = PageRecovering
+			m.Cursor = 0
+			return m, resumeJobEffect()
+		default:
+			return m, nil
+		}
 	case matchesKey(key, DefaultKeys().Details):
-		if m.Page == PageRecovering || m.Page == PageSummary {
+		if m.Page == PageRecovering || m.Page == PagePaused || m.Page == PageSummary {
 			m.PreviousPage = m.Page
 			m.Page = PageDetails
 		}
@@ -151,6 +198,13 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 		if m.PreviousPage != 0 || m.Page == PageDetails {
 			m.Page, m.PreviousPage = m.PreviousPage, 0
 		}
+	case PageStopConfirm:
+		if m.PreviousPage == PagePaused {
+			m.Page = PagePaused
+		} else {
+			m.Page = PageRecovering
+		}
+		m.Cursor = 0
 	case PageChooseAction:
 		m.Page = PagePriorProcessing
 	case PageChooseOutput:
@@ -162,6 +216,7 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 		m.Page = PageChooseDrive
 	case PageSummary:
 		m.Page = PageChooseAction
+		m.Cursor = 0
 	}
 	return m, nil
 }
@@ -250,9 +305,55 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		default:
 			return m, nil
 		}
+	case PagePaused:
+		switch m.Cursor {
+		case 0:
+			m.Page = PageRecovering
+			m.Cursor = 0
+			return m, resumeJobEffect()
+		case 1:
+			m.PreviousPage = PagePaused
+			m.Page = PageStopConfirm
+			m.Cursor = 0
+			return m, nil
+		default:
+			return m, nil
+		}
+	case PageStopConfirm:
+		switch m.Cursor {
+		case 0:
+			return m, stopAfterCheckpointEffect()
+		case 1:
+			if m.PreviousPage == PagePaused {
+				m.Page = PagePaused
+			} else {
+				m.Page = PageRecovering
+			}
+			m.Cursor = 0
+			return m, nil
+		case 2:
+			return m, stopImmediatelyEffect()
+		default:
+			return m, nil
+		}
 	case PageSummary:
-		m.Page = PageChooseAction
-		return m, nil
+		switch m.Cursor {
+		case 0:
+			m.Page = PageChooseAction
+			m.Cursor = 0
+			return m, nil
+		case 1:
+			m.Setup.ActionLabel = summarySecondaryActionLabel(m)
+			m.Page = PageChooseOutput
+			m.Cursor = 0
+			return m, nil
+		case 2:
+			m.PreviousPage = m.Page
+			m.Page = PageDetails
+			return m, nil
+		default:
+			return m, nil
+		}
 	default:
 		return m, nil
 	}
@@ -283,6 +384,12 @@ func (m Model) cursorLimit() int {
 		return len(m.PriorView.Options)
 	case PageReview:
 		return 5
+	case PagePaused:
+		return 2
+	case PageStopConfirm:
+		return 3
+	case PageSummary:
+		return 3
 	default:
 		return 0
 	}
@@ -321,6 +428,30 @@ func startJobEffect() tea.Cmd {
 	}
 }
 
+func pauseJobEffect() tea.Cmd {
+	return func() tea.Msg {
+		return EffectRequestedMsg{Kind: EffectPauseJob}
+	}
+}
+
+func resumeJobEffect() tea.Cmd {
+	return func() tea.Msg {
+		return EffectRequestedMsg{Kind: EffectResumeJob}
+	}
+}
+
+func stopAfterCheckpointEffect() tea.Cmd {
+	return func() tea.Msg {
+		return EffectRequestedMsg{Kind: EffectStopJob}
+	}
+}
+
+func stopImmediatelyEffect() tea.Cmd {
+	return func() tea.Msg {
+		return EffectRequestedMsg{Kind: EffectStopNow}
+	}
+}
+
 func defaultPriorProcessingView() PriorProcessingViewModel {
 	return PriorProcessingViewModel{
 		Kind:        PriorProcessingNone,
@@ -344,4 +475,11 @@ func nextCopyLabel(current string) string {
 		return "Shelf B · Disc 14"
 	}
 	return "Not set (optional)"
+}
+
+func summarySecondaryActionLabel(m Model) string {
+	if m.Recovery.UnreadableSectors > 0 {
+		return "Retry unreadable sectors"
+	}
+	return "Verify an existing image"
 }

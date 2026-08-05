@@ -113,18 +113,120 @@ func TestViewRecoveringUsesAltScreenAndNoTelemetryTable(t *testing.T) {
 	model.Height = 24
 	model.Page = PageRecovering
 	model.Recovery = RecoveryViewModel{
-		Phase:            "Adaptive recovery",
-		RecoveredSectors: 120,
-		TotalSectors:     240,
-		Status:           "Reading difficult areas.",
+		Phase:             "Reading healthy areas",
+		RecoveredSectors:  1554208,
+		TotalSectors:      2295104,
+		UnreadableSectors: 37,
+		Remaining:         "1.42 GiB of 4.38 GiB remaining",
+		ETA:               "about 7 minutes",
+		LastIssue:         []string{"Last issue: sector 1,891,840 could not be read.", "It will be tried again during the recovery pass."},
+		Status:            "Reading difficult areas.",
 	}
 
 	view := model.View()
 	if !view.AltScreen {
 		t.Fatal("expected recovering page to use the alternate screen")
 	}
+	if !strings.Contains(view.Content, "Reading healthy areas") || !strings.Contains(view.Content, "about 7 minutes") {
+		t.Fatalf("expected recovery summary fields, got %q", view.Content)
+	}
 	if strings.Contains(strings.ToLower(view.Content), "throughput") || strings.Contains(strings.ToLower(view.Content), "chart") {
 		t.Fatalf("unexpected telemetry content: %q", view.Content)
+	}
+}
+
+func TestViewPausedShowsSafeResumeLanguage(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PagePaused
+	model.Recovery = RecoveryViewModel{PausePending: true}
+
+	view := model.View().Content
+	if !strings.Contains(view, "Recovery paused") {
+		t.Fatalf("expected paused title, got %q", view)
+	}
+	if !strings.Contains(view, "Waiting for the current drive request to finish") {
+		t.Fatalf("expected outstanding-request note, got %q", view)
+	}
+	if !strings.Contains(view, "> Continue recovery") {
+		t.Fatalf("expected safe paused default, got %q", view)
+	}
+}
+
+func TestViewStopConfirmationPlacesImmediateTerminationLast(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageStopConfirm
+
+	view := model.View().Content
+	if !strings.Contains(view, "> Save progress and stop") {
+		t.Fatalf("expected safe stop default, got %q", view)
+	}
+	if !strings.Contains(view, "Stop worker immediately") {
+		t.Fatalf("expected dangerous last option, got %q", view)
+	}
+}
+
+func TestViewIncompleteSummaryAvoidsCleanSuccessTreatment(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageSummary
+	model.Summary = JobSummary{
+		ImagePath:     "D:/Archives/archive-disc.iso",
+		MapPath:       "D:/Archives/archive-disc.drmap",
+		CatalogStatus: "Recorded in local processed-media catalog",
+	}
+	model.Recovery = RecoveryViewModel{
+		Status:            "Recovery finished with unreadable sectors",
+		OutputPath:        "D:/Archives/archive-disc.iso",
+		RecoveredSectors:  2295067,
+		TotalSectors:      2295104,
+		UnreadableSectors: 37,
+	}
+
+	view := model.View().Content
+	if !strings.Contains(view, "37 sectors could not be recovered.") {
+		t.Fatalf("expected incomplete-result explanation, got %q", view)
+	}
+	if !strings.Contains(view, "> Retry unreadable sectors") {
+		t.Fatalf("expected retry-first choice, got %q", view)
+	}
+	if !strings.Contains(view, "Map        D:/Archives/archive-disc.drmap") {
+		t.Fatalf("expected explicit map path, got %q", view)
+	}
+	if strings.Contains(strings.ToLower(view), "> exit\n") {
+		t.Fatalf("unexpected clean-success primary action in incomplete summary: %q", view)
+	}
+}
+
+func TestViewCompleteSummaryShowsDuration(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageSummary
+	model.Summary = JobSummary{
+		Outcome:          "Recovery complete",
+		ImagePath:        "D:/Archives/archive-disc.iso",
+		RecoveredSectors: 2295104,
+		TotalSectors:     2295104,
+		Duration:         "31 minutes",
+	}
+	model.Recovery = RecoveryViewModel{
+		Status:           "Recovery complete",
+		OutputPath:       "D:/Archives/archive-disc.iso",
+		RecoveredSectors: 2295104,
+		TotalSectors:     2295104,
+	}
+
+	view := model.View().Content
+	if !strings.Contains(view, "Duration   31 minutes") {
+		t.Fatalf("expected duration in completion summary, got %q", view)
+	}
+	if !strings.Contains(view, "> Exit") {
+		t.Fatalf("expected exit-first completion action, got %q", view)
 	}
 }
 

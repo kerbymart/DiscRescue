@@ -54,6 +54,10 @@ func pageTitle(page Page) string {
 		return "Review and start"
 	case PageRecovering:
 		return "Recovery in progress"
+	case PagePaused:
+		return "Recovery paused"
+	case PageStopConfirm:
+		return "Stop recovery?"
 	case PageSummary:
 		return "Recovery summary"
 	case PageResumeJobs:
@@ -87,6 +91,10 @@ func renderPageBody(m Model, width int) []string {
 		return renderReviewPage(m, width)
 	case PageRecovering:
 		return renderRecoveryPage(m, width)
+	case PagePaused:
+		return renderPausedPage(m, width)
+	case PageStopConfirm:
+		return renderStopConfirmPage(m, width)
 	case PageSummary:
 		return renderSummaryPage(m, width)
 	case PageResumeJobs:
@@ -217,27 +225,123 @@ func renderReviewPage(m Model, width int) []string {
 }
 
 func renderRecoveryPage(m Model, width int) []string {
+	progressBar := "[░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]"
 	progress := "0%"
+	filled := 0
 	if m.Recovery.TotalSectors > 0 {
-		progress = fmt.Sprintf("%d%%", (m.Recovery.RecoveredSectors*100)/m.Recovery.TotalSectors)
+		percent := (m.Recovery.RecoveredSectors * 100) / m.Recovery.TotalSectors
+		progress = fmt.Sprintf("%d%%", percent)
+		filled = int((m.Recovery.RecoveredSectors * 40) / m.Recovery.TotalSectors)
+		if filled > 40 {
+			filled = 40
+		}
+		progressBar = "[" + strings.Repeat("█", filled) + strings.Repeat("░", 40-filled) + "]"
 	}
-	return []string{
-		fitToWidth("Phase      "+m.Recovery.Phase, width),
-		fitToWidth("Recovered  "+progress, width),
-		fitToWidth("Status     "+m.Recovery.Status, width),
+	lines := []string{
+		fitToWidth(progressBar+" "+progress, width),
+		"",
 	}
+	if m.Recovery.Phase != "" {
+		lines = append(lines, fitToWidth(m.Recovery.Phase, width))
+	}
+	if m.Recovery.Remaining != "" {
+		remaining := m.Recovery.Remaining
+		if m.Recovery.ETA != "" {
+			remaining += "  •  " + m.Recovery.ETA
+		}
+		lines = append(lines, fitToWidth(remaining, width))
+	}
+	lines = append(lines, "")
+	lines = append(lines, fitToWidth(fmt.Sprintf("Recovered     %s sectors", formatCount(m.Recovery.RecoveredSectors)), width))
+	lines = append(lines, fitToWidth(fmt.Sprintf("Unreadable    %s sectors", formatCount(m.Recovery.UnreadableSectors)), width))
+	if len(m.Recovery.LastIssue) > 0 {
+		lines = append(lines, "")
+		for _, line := range m.Recovery.LastIssue {
+			lines = append(lines, fitToWidth(line, width))
+		}
+	}
+	return lines
 }
 
 func renderSummaryPage(m Model, width int) []string {
-	return []string{
-		fitToWidth("Outcome  "+m.Recovery.Status, width),
+	lines := []string{fitToWidth(m.Recovery.Status, width), ""}
+	if m.Recovery.UnreadableSectors == 0 {
+		lines = append(lines,
+			fitToWidth("Image      "+firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width),
+			fitToWidth(fmt.Sprintf("Recovered  %s of %s sectors", formatCount(m.Recovery.RecoveredSectors), formatCount(m.Recovery.TotalSectors)), width),
+		)
+		if m.Summary.Duration != "" {
+			lines = append(lines, fitToWidth("Duration   "+m.Summary.Duration, width))
+		}
+	} else {
+		lines = append(lines,
+			fitToWidth(fmt.Sprintf("%s sectors could not be recovered.", formatCount(m.Recovery.UnreadableSectors)), width),
+			fitToWidth("The image and map are complete enough to inspect or retry later.", width),
+			"",
+			fitToWidth("Image      "+firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width),
+			fitToWidth("Map        "+firstNonEmpty(m.Summary.MapPath, replaceExtension(m.Recovery.OutputPath, ".drmap")), width),
+			fitToWidth("History    "+firstNonEmpty(m.Summary.CatalogStatus, "Recorded in local processed-media catalog"), width),
+		)
 	}
+	lines = append(lines, "")
+	for i, option := range summaryOptions(m) {
+		prefix := "  "
+		if i == m.Cursor {
+			prefix = "> "
+		}
+		lines = append(lines, fitToWidth(prefix+option, width))
+	}
+	return lines
 }
 
 func renderDetailsPage(m Model, width int) []string {
 	lines := make([]string, 0, len(m.Details.Lines))
 	for _, line := range m.Details.Lines {
 		lines = append(lines, wrapText(line, width)...)
+	}
+	return lines
+}
+
+func renderPausedPage(m Model, width int) []string {
+	lines := []string{
+		fitToWidth("The current image and recovery map are safe to resume.", width),
+	}
+	if m.Recovery.PausePending {
+		lines = append(lines, fitToWidth("Waiting for the current drive request to finish…", width))
+	} else {
+		lines = append(lines, fitToWidth("No new drive commands will be started while paused.", width))
+	}
+	lines = append(lines, "")
+	options := []string{
+		"Continue recovery",
+		"Stop after checkpoint",
+	}
+	for i, option := range options {
+		prefix := "  "
+		if i == m.Cursor {
+			prefix = "> "
+		}
+		lines = append(lines, fitToWidth(prefix+option, width))
+	}
+	return lines
+}
+
+func renderStopConfirmPage(m Model, width int) []string {
+	lines := []string{
+		fitToWidth("The image can be resumed later.", width),
+		"",
+	}
+	options := []string{
+		"Save progress and stop",
+		"Continue recovery",
+		"Stop worker immediately",
+	}
+	for i, option := range options {
+		prefix := "  "
+		if i == m.Cursor {
+			prefix = "> "
+		}
+		lines = append(lines, fitToWidth(prefix+option, width))
 	}
 	return lines
 }
@@ -277,9 +381,13 @@ func renderFooter(page Page, width int) string {
 	var footer string
 	switch page {
 	case PageRecovering:
-		footer = "d details  q quit"
+		footer = "space pause  •  d details  •  q stop"
+	case PagePaused:
+		footer = "j/k select  •  enter choose  •  d details"
+	case PageStopConfirm:
+		footer = "j/k select  •  enter choose  •  esc continue"
 	case PageDetails:
-		footer = "esc back  q quit"
+		footer = "esc back  •  up/down scroll"
 	default:
 		footer = "j/k move  enter select  esc back  q quit"
 	}
@@ -337,4 +445,49 @@ func fitToWidth(text string, width int) string {
 		return text
 	}
 	return text[:width]
+}
+
+func summaryOptions(m Model) []string {
+	if m.Recovery.UnreadableSectors > 0 {
+		return []string{
+			"Retry unreadable sectors",
+			"Exit and resume later",
+			"View details",
+		}
+	}
+	return []string{
+		"Exit",
+		"Verify image",
+		"View details",
+	}
+}
+
+func replaceExtension(path, extension string) string {
+	if strings.HasSuffix(path, ".iso") {
+		return strings.TrimSuffix(path, ".iso") + extension
+	}
+	return path + extension
+}
+
+func formatCount(value uint64) string {
+	plain := fmt.Sprintf("%d", value)
+	if len(plain) <= 3 {
+		return plain
+	}
+	var groups []string
+	for len(plain) > 3 {
+		groups = append([]string{plain[len(plain)-3:]}, groups...)
+		plain = plain[:len(plain)-3]
+	}
+	groups = append([]string{plain}, groups...)
+	return strings.Join(groups, ",")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

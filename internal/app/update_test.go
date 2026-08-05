@@ -219,18 +219,74 @@ func TestDetailsKeyOpensAndEscReturns(t *testing.T) {
 	}
 }
 
+func TestSpacePausesAndResumesRecovery(t *testing.T) {
+	model := NewModel()
+	model.Page = PageRecovering
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	updated := next.(Model)
+	requested := cmd().(EffectRequestedMsg)
+	if updated.Page != PagePaused {
+		t.Fatalf("unexpected paused page: got %v want %v", updated.Page, PagePaused)
+	}
+	if requested.Kind != EffectPauseJob {
+		t.Fatalf("unexpected pause request: %+v", requested)
+	}
+
+	next, cmd = updated.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	updated = next.(Model)
+	requested = cmd().(EffectRequestedMsg)
+	if updated.Page != PageRecovering {
+		t.Fatalf("unexpected resumed page: got %v want %v", updated.Page, PageRecovering)
+	}
+	if requested.Kind != EffectResumeJob {
+		t.Fatalf("unexpected resume request: %+v", requested)
+	}
+}
+
+func TestQuitFromRecoveryOpensStopConfirmation(t *testing.T) {
+	model := NewModel()
+	model.Page = PageRecovering
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	updated := next.(Model)
+	if updated.Page != PageStopConfirm || updated.PreviousPage != PageRecovering {
+		t.Fatalf("unexpected stop-confirm transition: %+v", updated)
+	}
+}
+
+func TestStopConfirmationDefaultRequestsCheckpointedStop(t *testing.T) {
+	model := NewModel()
+	model.Page = PageStopConfirm
+	model.PreviousPage = PageRecovering
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	requested := cmd().(EffectRequestedMsg)
+	if updated.Page != PageStopConfirm {
+		t.Fatalf("expected stop-confirm page to remain active until result, got %v", updated.Page)
+	}
+	if requested.Kind != EffectStopJob {
+		t.Fatalf("unexpected stop request: %+v", requested)
+	}
+}
+
 func TestProgressAndWorkerStatusRemainResponsive(t *testing.T) {
 	model := NewModel()
 	model.Page = PageRecovering
 
 	next, _ := model.Update(ProgressMsg{Snapshot: ProgressSnapshot{
-		Phase:            "Adaptive recovery",
+		Phase:            "Finding readable areas",
 		RecoveredSectors: 120,
 		TotalSectors:     240,
 		Status:           "Reading difficult areas.",
+		Remaining:        "1.42 GiB of 4.38 GiB remaining",
+		ETA:              "about 7 minutes",
+		LastIssue:        []string{"Last issue: sector 1,891,840 could not be read.", "It will be tried again during the recovery pass."},
+		OutputPath:       "D:/Archives/archive-disc.iso",
 	}})
 	updated := next.(Model)
-	if updated.Recovery.Phase != "Adaptive recovery" {
+	if updated.Recovery.Phase != "Finding readable areas" {
 		t.Fatalf("unexpected recovery phase: %q", updated.Recovery.Phase)
 	}
 
@@ -240,9 +296,34 @@ func TestProgressAndWorkerStatusRemainResponsive(t *testing.T) {
 		t.Fatalf("expected warning notice, got %+v", updated.Notice)
 	}
 
-	next, cmd := updated.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	next, _ = updated.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
 	afterQuit := next.(Model)
-	if !afterQuit.Quitting || cmd == nil {
-		t.Fatal("expected ui to remain responsive after worker warning")
+	if afterQuit.Page != PageStopConfirm {
+		t.Fatalf("expected stop confirmation after worker warning, got %v", afterQuit.Page)
+	}
+}
+
+func TestJobStoppedMovesToSummaryWithPrimaryChoiceFocused(t *testing.T) {
+	model := NewModel()
+	model.Page = PageRecovering
+
+	next, _ := model.Update(JobStoppedMsg{Summary: JobSummary{
+		Outcome:          "Recovery complete",
+		ImagePath:        "D:/Archives/archive-disc.iso",
+		MapPath:          "D:/Archives/archive-disc.drmap",
+		NextAction:       "Verify the image",
+		RecoveredSectors: 2295104,
+		TotalSectors:     2295104,
+		Duration:         "31 minutes",
+	}})
+	updated := next.(Model)
+	if updated.Page != PageSummary || updated.Cursor != 0 {
+		t.Fatalf("unexpected summary state: %+v", updated)
+	}
+	if updated.Recovery.Status != "Recovery complete" {
+		t.Fatalf("unexpected summary outcome: %q", updated.Recovery.Status)
+	}
+	if updated.Summary.Duration != "31 minutes" {
+		t.Fatalf("unexpected summary payload: %+v", updated.Summary)
 	}
 }

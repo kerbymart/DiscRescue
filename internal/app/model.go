@@ -10,6 +10,8 @@ const (
 	PageChooseOutput
 	PageReview
 	PageRecovering
+	PagePaused
+	PageStopConfirm
 	PageSummary
 	PageResumeJobs
 	PageHistory
@@ -80,6 +82,11 @@ type RecoveryViewModel struct {
 	TotalSectors      uint64
 	UnreadableSectors uint64
 	Status            string
+	OutputPath        string
+	Remaining         string
+	ETA               string
+	LastIssue         []string
+	PausePending      bool
 }
 
 type DetailsViewModel struct {
@@ -104,6 +111,11 @@ type ProgressSnapshot struct {
 	TotalSectors      uint64
 	UnreadableSectors uint64
 	Status            string
+	Remaining         string
+	ETA               string
+	LastIssue         []string
+	OutputPath        string
+	PausePending      bool
 }
 
 type JobSummary struct {
@@ -112,6 +124,10 @@ type JobSummary struct {
 	MapPath           string
 	NextAction        string
 	UnresolvedSectors uint64
+	RecoveredSectors  uint64
+	TotalSectors      uint64
+	Duration          string
+	CatalogStatus     string
 }
 
 type Model struct {
@@ -126,6 +142,7 @@ type Model struct {
 	PriorView    PriorProcessingViewModel
 	PriorRecords []PriorProcessingRecord
 	Recovery     RecoveryViewModel
+	Summary      JobSummary
 	Details      DetailsViewModel
 	Dialog       *DialogModel
 	Notice       *NoticeModel
@@ -154,8 +171,9 @@ func NewModel() Model {
 			HistoryLine: "History: no matching contents found on this computer",
 		},
 		Recovery: RecoveryViewModel{
-			Phase:  "Waiting to start",
-			Status: "No active job.",
+			Phase:      "Waiting to start",
+			Status:     "No active job.",
+			OutputPath: "D:/Archives/discrescue-image.iso",
 		},
 		Details: DetailsViewModel{
 			Lines: []string{

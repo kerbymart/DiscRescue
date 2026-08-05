@@ -8,6 +8,8 @@ type KeyMap struct {
 	Quit     []string
 	Details  []string
 	Advanced []string
+	Pause    []string
+	Force    []string
 }
 
 func DefaultKeys() KeyMap {
@@ -19,5 +21,7 @@ func DefaultKeys() KeyMap {
 		Quit:     []string{"q"},
 		Details:  []string{"d"},
 		Advanced: []string{"a"},
+		Pause:    []string{"space"},
+		Force:    []string{"ctrl+c"},
 	}
 }
