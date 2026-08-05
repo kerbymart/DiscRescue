@@ -1,5 +1,7 @@
 package testdevice
 
 type FaultScript struct {
-	Name string
+	Name     string
+	Scenario Scenario
+	Notes    string
 }
