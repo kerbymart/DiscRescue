@@ -1,0 +1,5 @@
+# Ignore dot-format files and directories by default.
+.*
+
+# Keep repository ignore rules trackable.
+!.gitignore
