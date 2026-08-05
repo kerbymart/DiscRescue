@@ -1,6 +1,30 @@
 package device
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
+
+func TestAllowedCommandKindsMatchReadOnlyVocabulary(t *testing.T) {
+	expected := []CommandKind{
+		CommandInquiry,
+		CommandTestReady,
+		CommandGetConfiguration,
+		CommandReadCapacity,
+		CommandReadTOC,
+		CommandReadDiscInformation,
+		CommandReadDVDStructure,
+		CommandReadBlocks,
+		CommandReadCD,
+		CommandSetSpeed,
+		CommandEject,
+	}
+
+	allowed := AllowedCommandKinds()
+	if !slices.Equal(allowed, expected) {
+		t.Fatalf("unexpected allowed commands: got %v want %v", allowed, expected)
+	}
+}
 
 func TestAllowedCommandKindsAreReadOnly(t *testing.T) {
 	for _, command := range AllowedCommandKinds() {
@@ -24,6 +48,12 @@ func TestValidateCommandKindRejectsUnknownOrDestructiveCommands(t *testing.T) {
 		"close_track",
 		"reserve_track",
 		"write_blocks",
+		"scsi_reset",
+		"bus_reset",
+		"controller_reset",
+		"unmount_media",
+		"mount_media",
+		"shell_exec",
 	} {
 		if err := ValidateCommandKind(command); err == nil {
 			t.Fatalf("expected command %q to be rejected", command)
