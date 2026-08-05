@@ -10,9 +10,28 @@ func TestViewTooSmall(t *testing.T) {
 	model.Width = 39
 	model.Height = 11
 
-	view := model.View().Content
+	rendered := model.View()
+	view := rendered.Content
 	if !strings.Contains(view, "Resize to at least 40x12") {
 		t.Fatalf("unexpected small-window view: %q", view)
+	}
+	if rendered.AltScreen {
+		t.Fatal("expected non-recovery small-window view to stay out of the alternate screen")
+	}
+}
+
+func TestViewTooSmallKeepsRecoveryAltScreenAndActivityNotice(t *testing.T) {
+	model := NewModel()
+	model.Width = 39
+	model.Height = 11
+	model.Page = PageRecovering
+
+	rendered := model.View()
+	if !rendered.AltScreen {
+		t.Fatal("expected recovery view to preserve alternate-screen state while too small")
+	}
+	if !strings.Contains(rendered.Content, "Recovery continues while you resize the window.") {
+		t.Fatalf("expected recovery resize notice, got %q", rendered.Content)
 	}
 }
 
@@ -107,6 +126,22 @@ func TestViewReviewUsesCompactUserFacingSummary(t *testing.T) {
 	}
 }
 
+func TestViewOutputWrapsLongPathInsteadOfTruncating(t *testing.T) {
+	model := NewModel()
+	model.Width = 60
+	model.Height = 18
+	model.Page = PageChooseOutput
+	model.Setup.OutputPath = "D:/Archives/OpticalDiscCaptures/Very-Long-Collection-Name/Archive-Disc-Volume-07.iso"
+
+	view := model.View().Content
+	if !strings.Contains(view, "Path") {
+		t.Fatalf("expected path label, got %q", view)
+	}
+	if !strings.Contains(view, "Archive-Disc-Volume-07.iso") {
+		t.Fatalf("expected wrapped path tail, got %q", view)
+	}
+}
+
 func TestViewRecoveringUsesAltScreenAndNoTelemetryTable(t *testing.T) {
 	model := NewModel()
 	model.Width = 80
@@ -132,6 +167,53 @@ func TestViewRecoveringUsesAltScreenAndNoTelemetryTable(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(view.Content), "throughput") || strings.Contains(strings.ToLower(view.Content), "chart") {
 		t.Fatalf("unexpected telemetry content: %q", view.Content)
+	}
+}
+
+func TestViewRecoveringUsesCompactLayoutAtFortyByTwelve(t *testing.T) {
+	model := NewModel()
+	model.Width = 40
+	model.Height = 12
+	model.Page = PageRecovering
+	model.Recovery = RecoveryViewModel{
+		Phase:             "Reading healthy areas",
+		RecoveredSectors:  1554208,
+		TotalSectors:      2295104,
+		UnreadableSectors: 37,
+		Remaining:         "1.42 GiB of 4.38 GiB remaining",
+		ETA:               "about 7 minutes",
+		LastIssue:         []string{"Last issue: sector 1,891,840 could not be read.", "It will be tried again during the recovery pass."},
+	}
+
+	view := model.View().Content
+	if !strings.Contains(view, "[") || !strings.Contains(view, "]") {
+		t.Fatalf("expected compact progress bar, got %q", view)
+	}
+	if strings.Contains(view, "Last issue: sector 1,891,840 could not be read.") {
+		t.Fatalf("expected compact layout to omit issue detail, got %q", view)
+	}
+	if strings.Contains(view, "about 7 minutes") {
+		t.Fatalf("expected compact layout to omit ETA detail, got %q", view)
+	}
+}
+
+func TestViewRecoveringUsesMonochromeSafeProgressBar(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageRecovering
+	model.Monochrome = true
+	model.Recovery = RecoveryViewModel{
+		RecoveredSectors: 120,
+		TotalSectors:     240,
+	}
+
+	view := model.View().Content
+	if !strings.Contains(view, "[########") && !strings.Contains(view, "[####") {
+		t.Fatalf("expected monochrome-safe progress bar, got %q", view)
+	}
+	if strings.Contains(view, "█") || strings.Contains(view, "░") {
+		t.Fatalf("unexpected non-monochrome glyphs in progress bar: %q", view)
 	}
 }
 
@@ -194,7 +276,7 @@ func TestViewIncompleteSummaryAvoidsCleanSuccessTreatment(t *testing.T) {
 	if !strings.Contains(view, "> Retry unreadable sectors") {
 		t.Fatalf("expected retry-first choice, got %q", view)
 	}
-	if !strings.Contains(view, "Map        D:/Archives/archive-disc.drmap") {
+	if !strings.Contains(view, "D:/Archives/archive-disc.drmap") {
 		t.Fatalf("expected explicit map path, got %q", view)
 	}
 	if strings.Contains(strings.ToLower(view), "> exit\n") {
@@ -227,6 +309,34 @@ func TestViewCompleteSummaryShowsDuration(t *testing.T) {
 	}
 	if !strings.Contains(view, "> Exit") {
 		t.Fatalf("expected exit-first completion action, got %q", view)
+	}
+}
+
+func TestViewCompactSummaryKeepsEssentialFieldsOnly(t *testing.T) {
+	model := NewModel()
+	model.Width = 40
+	model.Height = 12
+	model.Page = PageSummary
+	model.Summary = JobSummary{
+		Outcome:          "Recovery complete",
+		ImagePath:        "D:/Archives/archive-disc.iso",
+		RecoveredSectors: 2295104,
+		TotalSectors:     2295104,
+		Duration:         "31 minutes",
+	}
+	model.Recovery = RecoveryViewModel{
+		Status:           "Recovery complete",
+		OutputPath:       "D:/Archives/archive-disc.iso",
+		RecoveredSectors: 2295104,
+		TotalSectors:     2295104,
+	}
+
+	view := model.View().Content
+	if !strings.Contains(view, "Image") {
+		t.Fatalf("expected essential summary fields, got %q", view)
+	}
+	if strings.Contains(view, "Duration   31 minutes") {
+		t.Fatalf("expected compact summary to omit duration detail, got %q", view)
 	}
 }
 

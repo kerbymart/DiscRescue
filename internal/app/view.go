@@ -7,35 +7,59 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+type layoutTier uint8
+
+const (
+	layoutFull layoutTier = iota
+	layoutMedium
+	layoutCompact
+	layoutTooSmall
+)
+
 func (m Model) View() tea.View {
-	if m.Width > 0 && m.Height > 0 && (m.Width < 40 || m.Height < 12) {
-		view := tea.NewView("Window too small. Resize to at least 40x12.")
+	tier := layoutTierFor(m.Width, m.Height)
+	if tier == layoutTooSmall {
+		lines := []string{
+			"DiscRescue",
+			"",
+			"Window too small.",
+			"Resize to at least 40x12.",
+		}
+		if m.Page == PageRecovering || m.Page == PagePaused || m.Page == PageStopConfirm || m.Page == PageDetails {
+			lines = append(lines, "Recovery continues while you resize the window.")
+		}
+		view := tea.NewView(strings.Join(lines, "\n") + "\n")
 		view.WindowTitle = "DiscRescue"
+		view.AltScreen = usesAltScreen(m.Page)
 		return view
 	}
 
-	content := renderPage(m)
+	content := renderPage(m, tier)
 	view := tea.NewView(content)
 	view.WindowTitle = "DiscRescue"
-	view.AltScreen = m.Page == PageRecovering || m.Page == PageDetails
+	view.AltScreen = usesAltScreen(m.Page)
 	return view
 }
 
-func renderPage(m Model) string {
+func renderPage(m Model, tier layoutTier) string {
 	width := contentWidth(m.Width)
 	lines := []string{"DiscRescue", ""}
 	lines = append(lines, wrapText(pageTitle(m.Page), width)...)
 	lines = append(lines, "")
-	lines = append(lines, renderPageBody(m, width)...)
+	lines = append(lines, renderPageBody(m, width, tier)...)
 
-	if m.Notice != nil && m.Notice.Text != "" {
+	if m.Notice != nil && m.Notice.Text != "" && tier != layoutCompact {
 		lines = append(lines, "")
 		lines = append(lines, wrapText("Status: "+m.Notice.Text, width)...)
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, renderFooter(m.Page, width))
+	lines = append(lines, renderFooter(m.Page, width, tier))
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func usesAltScreen(page Page) bool {
+	return page == PageRecovering || page == PageDetails
 }
 
 func pageTitle(page Page) string {
@@ -75,28 +99,28 @@ func pageTitle(page Page) string {
 	}
 }
 
-func renderPageBody(m Model, width int) []string {
+func renderPageBody(m Model, width int, tier layoutTier) []string {
 	switch m.Page {
 	case PageDiscover:
 		return wrapText("One status sentence is shown here while discovery runs.", width)
 	case PageChooseDrive:
 		return renderDeviceList(m, width)
 	case PagePriorProcessing:
-		return renderPriorProcessing(m, width)
+		return renderPriorProcessing(m, width, tier)
 	case PageChooseAction:
-		return renderActionList(m, width)
+		return renderActionList(m, width, tier)
 	case PageChooseOutput:
-		return renderOutputPage(m, width)
+		return renderOutputPage(m, width, tier)
 	case PageReview:
-		return renderReviewPage(m, width)
+		return renderReviewPage(m, width, tier)
 	case PageRecovering:
-		return renderRecoveryPage(m, width)
+		return renderRecoveryPage(m, width, tier)
 	case PagePaused:
 		return renderPausedPage(m, width)
 	case PageStopConfirm:
 		return renderStopConfirmPage(m, width)
 	case PageSummary:
-		return renderSummaryPage(m, width)
+		return renderSummaryPage(m, width, tier)
 	case PageResumeJobs:
 		return wrapText("Select a resumable job to continue safely.", width)
 	case PageHistory:
@@ -122,12 +146,12 @@ func renderDeviceList(m Model, width int) []string {
 		if i == m.Cursor {
 			prefix = "> "
 		}
-		lines = append(lines, fitToWidth(prefix+device.DisplayName+" — "+device.Status, width))
+		lines = append(lines, wrapText(prefix+device.DisplayName+" - "+device.Status, width)...)
 	}
 	return lines
 }
 
-func renderPriorProcessing(m Model, width int) []string {
+func renderPriorProcessing(m Model, width int, tier layoutTier) []string {
 	if m.PriorView.Kind == PriorProcessingNone || m.PriorView.Kind == PriorProcessingIndeterminate {
 		return wrapText(m.PriorView.HistoryLine, width)
 	}
@@ -139,19 +163,19 @@ func renderPriorProcessing(m Model, width int) []string {
 	}
 	if m.PriorView.ImagePath != "" {
 		lines = append(lines, "")
-		lines = append(lines, fitToWidth("Image   "+m.PriorView.ImagePath, width))
+		lines = append(lines, labeledLines("Image", m.PriorView.ImagePath, width)...)
 	}
-	if m.PriorView.CopyLabel != "" {
-		lines = append(lines, fitToWidth("Copy    "+m.PriorView.CopyLabel, width))
+	if tier != layoutCompact && m.PriorView.CopyLabel != "" {
+		lines = append(lines, labeledLines("Copy", m.PriorView.CopyLabel, width)...)
 	}
-	if m.PriorView.LastSaved != "" {
-		lines = append(lines, fitToWidth("Last saved       "+m.PriorView.LastSaved, width))
+	if tier == layoutFull && m.PriorView.LastSaved != "" {
+		lines = append(lines, labeledLines("Last saved", m.PriorView.LastSaved, width)...)
 	}
-	if m.PriorView.Recovered != "" {
-		lines = append(lines, fitToWidth("Recovered        "+m.PriorView.Recovered, width))
+	if tier == layoutFull && m.PriorView.Recovered != "" {
+		lines = append(lines, labeledLines("Recovered", m.PriorView.Recovered, width)...)
 	}
-	if m.PriorView.UnreadableSectors != "" {
-		lines = append(lines, fitToWidth("Unreadable       "+m.PriorView.UnreadableSectors, width))
+	if tier == layoutFull && m.PriorView.UnreadableSectors != "" {
+		lines = append(lines, labeledLines("Unreadable", m.PriorView.UnreadableSectors, width)...)
 	}
 	if len(m.PriorView.Options) > 0 {
 		lines = append(lines, "")
@@ -160,13 +184,13 @@ func renderPriorProcessing(m Model, width int) []string {
 			if i == m.Cursor {
 				prefix = "> "
 			}
-			lines = append(lines, fitToWidth(prefix+option, width))
+			lines = append(lines, wrapText(prefix+option, width)...)
 		}
 	}
 	return lines
 }
 
-func renderActionList(m Model, width int) []string {
+func renderActionList(m Model, width int, tier layoutTier) []string {
 	actions := []string{
 		"Start a new recovery",
 		"Resume an unfinished recovery",
@@ -180,31 +204,35 @@ func renderActionList(m Model, width int) []string {
 		if i == m.Cursor {
 			prefix = "> "
 		}
-		lines = append(lines, fitToWidth(prefix+action, width))
+		lines = append(lines, wrapText(prefix+action, width)...)
 	}
-	lines = append(lines, "")
-	lines = append(lines, wrapText(m.PriorView.HistoryLine, width)...)
-	if m.Identity.Detail != "" {
-		lines = append(lines, fitToWidth("Disc: "+m.Identity.Detail, width))
+	if tier != layoutCompact {
+		lines = append(lines, "")
+		lines = append(lines, wrapText(m.PriorView.HistoryLine, width)...)
+		if m.Identity.Detail != "" {
+			lines = append(lines, wrapText("Disc: "+m.Identity.Detail, width)...)
+		}
 	}
 	return lines
 }
 
-func renderOutputPage(m Model, width int) []string {
-	return []string{
-		fitToWidth("Path    "+m.Setup.OutputPath, width),
-		fitToWidth("Format  "+m.Setup.OutputFormat, width),
-		fitToWidth("Space   "+m.Setup.FreeSpace, width),
+func renderOutputPage(m Model, width int, tier layoutTier) []string {
+	lines := labeledLines("Path", m.Setup.OutputPath, width)
+	lines = append(lines, labeledLines("Format", m.Setup.OutputFormat, width)...)
+	if tier != layoutCompact {
+		lines = append(lines, labeledLines("Space", m.Setup.FreeSpace, width)...)
 	}
+	return lines
 }
 
-func renderReviewPage(m Model, width int) []string {
-	lines := []string{
-		fitToWidth("Drive       "+selectedDriveLabel(m), width),
-		fitToWidth("Disc        "+discSummary(m), width),
-		fitToWidth("Output      "+m.Setup.OutputPath, width),
-		fitToWidth("Method      "+m.Setup.MethodLabel, width),
-		fitToWidth("Copy label  "+m.Setup.CopyLabel, width),
+func renderReviewPage(m Model, width int, tier layoutTier) []string {
+	lines := []string{}
+	lines = append(lines, labeledLines("Drive", selectedDriveLabel(m), width)...)
+	lines = append(lines, labeledLines("Disc", discSummary(m), width)...)
+	lines = append(lines, labeledLines("Output", m.Setup.OutputPath, width)...)
+	lines = append(lines, labeledLines("Method", m.Setup.MethodLabel, width)...)
+	if tier != layoutCompact {
+		lines = append(lines, labeledLines("Copy label", m.Setup.CopyLabel, width)...)
 	}
 	lines = append(lines, "")
 	options := []string{
@@ -219,23 +247,17 @@ func renderReviewPage(m Model, width int) []string {
 		if i == m.Cursor {
 			prefix = "> "
 		}
-		lines = append(lines, fitToWidth(prefix+option, width))
+		lines = append(lines, wrapText(prefix+option, width)...)
 	}
 	return lines
 }
 
-func renderRecoveryPage(m Model, width int) []string {
-	progressBar := "[░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]"
+func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
+	progressBar := progressBarFor(m, tier)
 	progress := "0%"
-	filled := 0
 	if m.Recovery.TotalSectors > 0 {
 		percent := (m.Recovery.RecoveredSectors * 100) / m.Recovery.TotalSectors
 		progress = fmt.Sprintf("%d%%", percent)
-		filled = int((m.Recovery.RecoveredSectors * 40) / m.Recovery.TotalSectors)
-		if filled > 40 {
-			filled = 40
-		}
-		progressBar = "[" + strings.Repeat("█", filled) + strings.Repeat("░", 40-filled) + "]"
 	}
 	lines := []string{
 		fitToWidth(progressBar+" "+progress, width),
@@ -246,31 +268,35 @@ func renderRecoveryPage(m Model, width int) []string {
 	}
 	if m.Recovery.Remaining != "" {
 		remaining := m.Recovery.Remaining
-		if m.Recovery.ETA != "" {
-			remaining += "  •  " + m.Recovery.ETA
+		if m.Recovery.ETA != "" && tier != layoutCompact {
+			remaining += "  -  " + m.Recovery.ETA
 		}
-		lines = append(lines, fitToWidth(remaining, width))
+		lines = append(lines, wrapText(remaining, width)...)
+	} else if m.Recovery.ETA == "" && tier == layoutFull {
+		lines = append(lines, fitToWidth("Estimating time remaining...", width))
 	}
 	lines = append(lines, "")
 	lines = append(lines, fitToWidth(fmt.Sprintf("Recovered     %s sectors", formatCount(m.Recovery.RecoveredSectors)), width))
 	lines = append(lines, fitToWidth(fmt.Sprintf("Unreadable    %s sectors", formatCount(m.Recovery.UnreadableSectors)), width))
-	if len(m.Recovery.LastIssue) > 0 {
+	if tier != layoutCompact && len(m.Recovery.LastIssue) > 0 {
 		lines = append(lines, "")
 		for _, line := range m.Recovery.LastIssue {
-			lines = append(lines, fitToWidth(line, width))
+			lines = append(lines, wrapText(line, width)...)
 		}
 	}
 	return lines
 }
 
-func renderSummaryPage(m Model, width int) []string {
+func renderSummaryPage(m Model, width int, tier layoutTier) []string {
 	lines := []string{fitToWidth(m.Recovery.Status, width), ""}
 	if m.Recovery.UnreadableSectors == 0 {
 		lines = append(lines,
-			fitToWidth("Image      "+firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width),
+			labeledLines("Image", firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width)...,
+		)
+		lines = append(lines,
 			fitToWidth(fmt.Sprintf("Recovered  %s of %s sectors", formatCount(m.Recovery.RecoveredSectors), formatCount(m.Recovery.TotalSectors)), width),
 		)
-		if m.Summary.Duration != "" {
+		if tier != layoutCompact && m.Summary.Duration != "" {
 			lines = append(lines, fitToWidth("Duration   "+m.Summary.Duration, width))
 		}
 	} else {
@@ -278,10 +304,12 @@ func renderSummaryPage(m Model, width int) []string {
 			fitToWidth(fmt.Sprintf("%s sectors could not be recovered.", formatCount(m.Recovery.UnreadableSectors)), width),
 			fitToWidth("The image and map are complete enough to inspect or retry later.", width),
 			"",
-			fitToWidth("Image      "+firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width),
-			fitToWidth("Map        "+firstNonEmpty(m.Summary.MapPath, replaceExtension(m.Recovery.OutputPath, ".drmap")), width),
-			fitToWidth("History    "+firstNonEmpty(m.Summary.CatalogStatus, "Recorded in local processed-media catalog"), width),
 		)
+		lines = append(lines, labeledLines("Image", firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width)...)
+		if tier != layoutCompact {
+			lines = append(lines, labeledLines("Map", firstNonEmpty(m.Summary.MapPath, replaceExtension(m.Recovery.OutputPath, ".drmap")), width)...)
+			lines = append(lines, labeledLines("History", firstNonEmpty(m.Summary.CatalogStatus, "Recorded in local processed-media catalog"), width)...)
+		}
 	}
 	lines = append(lines, "")
 	for i, option := range summaryOptions(m) {
@@ -289,7 +317,7 @@ func renderSummaryPage(m Model, width int) []string {
 		if i == m.Cursor {
 			prefix = "> "
 		}
-		lines = append(lines, fitToWidth(prefix+option, width))
+		lines = append(lines, wrapText(prefix+option, width)...)
 	}
 	return lines
 }
@@ -307,7 +335,7 @@ func renderPausedPage(m Model, width int) []string {
 		fitToWidth("The current image and recovery map are safe to resume.", width),
 	}
 	if m.Recovery.PausePending {
-		lines = append(lines, fitToWidth("Waiting for the current drive request to finish…", width))
+		lines = append(lines, fitToWidth("Waiting for the current drive request to finish...", width))
 	} else {
 		lines = append(lines, fitToWidth("No new drive commands will be started while paused.", width))
 	}
@@ -321,7 +349,7 @@ func renderPausedPage(m Model, width int) []string {
 		if i == m.Cursor {
 			prefix = "> "
 		}
-		lines = append(lines, fitToWidth(prefix+option, width))
+		lines = append(lines, wrapText(prefix+option, width)...)
 	}
 	return lines
 }
@@ -341,7 +369,7 @@ func renderStopConfirmPage(m Model, width int) []string {
 		if i == m.Cursor {
 			prefix = "> "
 		}
-		lines = append(lines, fitToWidth(prefix+option, width))
+		lines = append(lines, wrapText(prefix+option, width)...)
 	}
 	return lines
 }
@@ -363,13 +391,28 @@ func discSummary(m Model) string {
 	return "not identified"
 }
 
+func layoutTierFor(width, height int) layoutTier {
+	if width > 0 && height > 0 {
+		if width < 40 || height < 12 {
+			return layoutTooSmall
+		}
+		if width < 60 || height < 18 {
+			return layoutCompact
+		}
+		if width < 80 || height < 24 {
+			return layoutMedium
+		}
+	}
+	return layoutFull
+}
+
 func contentWidth(width int) int {
 	if width <= 0 {
 		return 76
 	}
 	value := width - 4
-	if value < 40 {
-		value = 40
+	if value < 24 {
+		value = 24
 	}
 	if value > 76 {
 		value = 76
@@ -377,19 +420,27 @@ func contentWidth(width int) int {
 	return value
 }
 
-func renderFooter(page Page, width int) string {
+func renderFooter(page Page, width int, tier layoutTier) string {
 	var footer string
 	switch page {
 	case PageRecovering:
-		footer = "space pause  •  d details  •  q stop"
+		if tier == layoutCompact {
+			footer = "space pause  d details"
+		} else {
+			footer = "space pause  -  d details  -  q stop"
+		}
 	case PagePaused:
-		footer = "j/k select  •  enter choose  •  d details"
+		footer = "j/k select  -  enter choose  -  d details"
 	case PageStopConfirm:
-		footer = "j/k select  •  enter choose  •  esc continue"
+		footer = "j/k select  -  enter choose  -  esc continue"
 	case PageDetails:
-		footer = "esc back  •  up/down scroll"
+		footer = "esc back  -  up/down scroll"
 	default:
-		footer = "j/k move  enter select  esc back  q quit"
+		if tier == layoutCompact {
+			footer = "enter select  esc back"
+		} else {
+			footer = "j/k move  enter select  esc back  q quit"
+		}
 	}
 	return fitToWidth(footer, width)
 }
@@ -440,6 +491,34 @@ func appendWrappedToken(lines *[]string, current *strings.Builder, token string,
 	current.WriteString(token)
 }
 
+func labeledLines(label, value string, width int) []string {
+	prefix := label
+	if len(prefix) < 11 {
+		prefix += strings.Repeat(" ", 11-len(prefix))
+	}
+	return wrapTextWithPrefix(prefix, value, width)
+}
+
+func wrapTextWithPrefix(prefix, value string, width int) []string {
+	if width <= len(prefix)+1 {
+		return append([]string{prefix}, wrapText(value, width)...)
+	}
+	available := width - len(prefix) - 1
+	if available < 8 {
+		available = 8
+	}
+	wrapped := wrapText(value, available)
+	lines := make([]string, 0, len(wrapped))
+	for i, line := range wrapped {
+		if i == 0 {
+			lines = append(lines, prefix+" "+line)
+			continue
+		}
+		lines = append(lines, strings.Repeat(" ", len(prefix)+1)+line)
+	}
+	return lines
+}
+
 func fitToWidth(text string, width int) string {
 	if width <= 0 || len(text) <= width {
 		return text
@@ -481,6 +560,35 @@ func formatCount(value uint64) string {
 	}
 	groups = append([]string{plain}, groups...)
 	return strings.Join(groups, ",")
+}
+
+func progressBarFor(m Model, tier layoutTier) string {
+	width := 40
+	if tier == layoutMedium {
+		width = 28
+	}
+	if tier == layoutCompact {
+		width = 16
+	}
+	if width < 8 {
+		width = 8
+	}
+
+	filled := 0
+	if m.Recovery.TotalSectors > 0 {
+		filled = int((m.Recovery.RecoveredSectors * uint64(width)) / m.Recovery.TotalSectors)
+		if filled > width {
+			filled = width
+		}
+	}
+
+	filledGlyph := "#"
+	emptyGlyph := "."
+	if !m.Monochrome {
+		filledGlyph = "#"
+		emptyGlyph = "-"
+	}
+	return "[" + strings.Repeat(filledGlyph, filled) + strings.Repeat(emptyGlyph, width-filled) + "]"
 }
 
 func firstNonEmpty(values ...string) string {
