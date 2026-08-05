@@ -1,23 +1,10 @@
-# DiscRescue ADR Template
+# DiscRescue ADR Guide
 
-Use this template for every architecture decision record added to `docs/adr/`.
+Use [template.md](template.md) for every architecture decision record added to `docs/adr/`.
 
 ## Filename
 
 Use `NNNN-short-title.md`, where `NNNN` is a zero-padded sequence number.
-
-## Sections
-
-1. Title
-2. Status
-3. Date
-4. Context
-5. TDD Requirements
-6. Decision
-7. Alternatives Considered
-8. Consequences
-9. Migration or Rollback
-10. Verification
 
 ## Rules
 
