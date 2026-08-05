@@ -192,12 +192,26 @@ func renderOutputPage(m Model, width int) []string {
 
 func renderReviewPage(m Model, width int) []string {
 	lines := []string{
-		fitToWidth("Drive   "+selectedDriveLabel(m), width),
-		fitToWidth("Action  "+m.Setup.ActionLabel, width),
-		fitToWidth("Output  "+m.Setup.OutputPath, width),
+		fitToWidth("Drive       "+selectedDriveLabel(m), width),
+		fitToWidth("Disc        "+discSummary(m), width),
+		fitToWidth("Output      "+m.Setup.OutputPath, width),
+		fitToWidth("Method      "+m.Setup.MethodLabel, width),
+		fitToWidth("Copy label  "+m.Setup.CopyLabel, width),
 	}
-	if m.Identity.Summary != "" {
-		lines = append(lines, fitToWidth("Match   "+m.Identity.Summary, width))
+	lines = append(lines, "")
+	options := []string{
+		"Start recovery",
+		"Change output",
+		"Change method",
+		"Add physical-copy label",
+		"Advanced settings",
+	}
+	for i, option := range options {
+		prefix := "  "
+		if i == m.Cursor {
+			prefix = "> "
+		}
+		lines = append(lines, fitToWidth(prefix+option, width))
 	}
 	return lines
 }
@@ -236,6 +250,13 @@ func selectedDriveLabel(m Model) string {
 		return m.Devices[0].DisplayName
 	}
 	return "not selected"
+}
+
+func discSummary(m Model) string {
+	if m.Identity.Detail != "" {
+		return m.Identity.Detail
+	}
+	return "not identified"
 }
 
 func contentWidth(width int) int {

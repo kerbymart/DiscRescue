@@ -37,6 +37,8 @@ type JobSetupModel struct {
 	OutputPath   string
 	OutputFormat string
 	FreeSpace    string
+	MethodLabel  string
+	CopyLabel    string
 }
 
 type ContentIdentityViewModel struct {
@@ -140,6 +142,8 @@ func NewModel() Model {
 			OutputPath:   "D:/Archives/discrescue-image.iso",
 			OutputFormat: "ISO",
 			FreeSpace:    "Checking free space...",
+			MethodLabel:  "Balanced recovery",
+			CopyLabel:    "Not set (optional)",
 		},
 		Identity: ContentIdentityViewModel{
 			Summary: "Finding usable drives and resumable jobs.",

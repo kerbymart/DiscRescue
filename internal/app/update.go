@@ -156,7 +156,8 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 	case PageChooseOutput:
 		m.Page = PageChooseAction
 	case PageReview:
-		m.Page = PageChooseOutput
+		m.Page = PageChooseAction
+		m.Cursor = 0
 	case PagePriorProcessing:
 		m.Page = PageChooseDrive
 	case PageSummary:
@@ -202,19 +203,24 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 	case PageChooseAction:
 		switch m.Cursor {
 		case 0:
-			m.Page = PageChooseOutput
+			m.Setup.ActionLabel = "Start a new recovery"
+			m.Page = PageReview
 			return m, nil
 		case 1:
 			m.PreviousPage = m.Page
 			m.Page = PageResumeJobs
 			return m, nil
 		case 2:
-			m.PreviousPage = m.Page
-			m.Page = PageHistory
+			m.Setup.ActionLabel = "Verify an existing image"
+			m.Page = PageChooseOutput
 			return m, nil
 		case 3:
+			m.Setup.ActionLabel = "Merge recovery captures"
+			m.Page = PageChooseOutput
+			return m, nil
+		case 4:
 			m.PreviousPage = m.Page
-			m.Page = PageAbout
+			m.Page = PageHistory
 			return m, nil
 		default:
 			return m, nil
@@ -223,8 +229,27 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		m.Page = PageReview
 		return m, nil
 	case PageReview:
-		m.Page = PageRecovering
-		return m, startJobEffect()
+		switch m.Cursor {
+		case 0:
+			m.Page = PageRecovering
+			return m, startJobEffect()
+		case 1:
+			m.Page = PageChooseOutput
+			m.Cursor = 0
+			return m, nil
+		case 2:
+			m.Setup.MethodLabel = nextMethodLabel(m.Setup.MethodLabel)
+			return m, nil
+		case 3:
+			m.Setup.CopyLabel = nextCopyLabel(m.Setup.CopyLabel)
+			return m, nil
+		case 4:
+			m.PreviousPage = m.Page
+			m.Page = PageAdvanced
+			return m, nil
+		default:
+			return m, nil
+		}
 	case PageSummary:
 		m.Page = PageChooseAction
 		return m, nil
@@ -256,6 +281,8 @@ func (m Model) cursorLimit() int {
 		return 5
 	case PagePriorProcessing:
 		return len(m.PriorView.Options)
+	case PageReview:
+		return 5
 	default:
 		return 0
 	}
@@ -299,4 +326,22 @@ func defaultPriorProcessingView() PriorProcessingViewModel {
 		Kind:        PriorProcessingNone,
 		HistoryLine: "History: no matching contents found on this computer",
 	}
+}
+
+func nextMethodLabel(current string) string {
+	switch current {
+	case "Balanced recovery":
+		return "Fast recovery"
+	case "Fast recovery":
+		return "Gentle recovery"
+	default:
+		return "Balanced recovery"
+	}
+}
+
+func nextCopyLabel(current string) string {
+	if current == "Not set (optional)" {
+		return "Shelf B · Disc 14"
+	}
+	return "Not set (optional)"
 }

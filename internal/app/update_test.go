@@ -103,14 +103,14 @@ func TestEnterAdvancesSetupFlow(t *testing.T) {
 
 	next, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated = next.(Model)
-	if updated.Page != PageChooseOutput {
-		t.Fatalf("unexpected page after action: got %v want %v", updated.Page, PageChooseOutput)
+	if updated.Page != PageReview {
+		t.Fatalf("unexpected page after action: got %v want %v", updated.Page, PageReview)
 	}
 
 	next, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated = next.(Model)
-	if updated.Page != PageReview {
-		t.Fatalf("unexpected page after output: got %v want %v", updated.Page, PageReview)
+	if updated.Page != PageRecovering {
+		t.Fatalf("unexpected page after review: got %v want %v", updated.Page, PageRecovering)
 	}
 }
 
@@ -144,6 +144,61 @@ func TestReviewEnterRequestsStartJob(t *testing.T) {
 	}
 	if requested.Kind != EffectStartJob {
 		t.Fatalf("unexpected effect kind: %q", requested.Kind)
+	}
+}
+
+func TestChooseActionSupportsVerifyAndMergeSetup(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseAction
+
+	model.Cursor = 2
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageChooseOutput || updated.Setup.ActionLabel != "Verify an existing image" {
+		t.Fatalf("unexpected verify flow: page=%v setup=%+v", updated.Page, updated.Setup)
+	}
+
+	model = NewModel()
+	model.Page = PageChooseAction
+	model.Cursor = 3
+	next, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated = next.(Model)
+	if updated.Page != PageChooseOutput || updated.Setup.ActionLabel != "Merge recovery captures" {
+		t.Fatalf("unexpected merge flow: page=%v setup=%+v", updated.Page, updated.Setup)
+	}
+}
+
+func TestReviewChangeMethodAndLabelRemainInline(t *testing.T) {
+	model := NewModel()
+	model.Page = PageReview
+
+	model.Cursor = 2
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Setup.MethodLabel != "Fast recovery" {
+		t.Fatalf("unexpected method label: %q", updated.Setup.MethodLabel)
+	}
+	if updated.Page != PageReview {
+		t.Fatalf("expected review page to remain active, got %v", updated.Page)
+	}
+
+	updated.Cursor = 3
+	next, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated = next.(Model)
+	if updated.Setup.CopyLabel != "Shelf B · Disc 14" {
+		t.Fatalf("unexpected copy label: %q", updated.Setup.CopyLabel)
+	}
+}
+
+func TestReviewAdvancedSettingsStaysSeparateFromMainFlow(t *testing.T) {
+	model := NewModel()
+	model.Page = PageReview
+	model.Cursor = 4
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageAdvanced || updated.PreviousPage != PageReview {
+		t.Fatalf("unexpected advanced transition: %+v", updated)
 	}
 }
 

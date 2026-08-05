@@ -84,6 +84,29 @@ func TestViewActionPageShowsHistoryLineAndDiscSummary(t *testing.T) {
 	}
 }
 
+func TestViewReviewUsesCompactUserFacingSummary(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageReview
+	model.Devices = []DeviceSummary{{DisplayName: "/dev/sr0"}}
+	model.Identity = ContentIdentityViewModel{Detail: "DVD-ROM, 4.38 GiB"}
+	model.Setup.OutputPath = "~/Images/archive-disc.iso"
+	model.Setup.MethodLabel = "Balanced recovery"
+	model.Setup.CopyLabel = "Not set (optional)"
+
+	view := model.View().Content
+	if !strings.Contains(view, "Method      Balanced recovery") {
+		t.Fatalf("expected user-facing method label, got %q", view)
+	}
+	if !strings.Contains(view, "> Start recovery") {
+		t.Fatalf("expected safe default review action, got %q", view)
+	}
+	if strings.Contains(strings.ToLower(view), "cluster") || strings.Contains(strings.ToLower(view), "retry budget") {
+		t.Fatalf("unexpected advanced raw values in review page: %q", view)
+	}
+}
+
 func TestViewRecoveringUsesAltScreenAndNoTelemetryTable(t *testing.T) {
 	model := NewModel()
 	model.Width = 80
