@@ -26,11 +26,11 @@ func Handle(snapshot Snapshot, event Event) (Snapshot, []Effect, error) {
 		}
 		next := snapshot
 		next.Job.State = JobStatePaused
-		return next, []Effect{{Kind: "checkpoint", JobID: typed.JobID}}, nil
+		return next, []Effect{{Kind: "shutdown_pause", JobID: typed.JobID}}, nil
 	case CancelJob:
 		next := snapshot
 		next.Job.State = JobStateIdle
-		return next, []Effect{{Kind: "shutdown", JobID: typed.JobID}}, nil
+		return next, []Effect{{Kind: "shutdown_cancel", JobID: typed.JobID}}, nil
 	default:
 		return snapshot, nil, fmt.Errorf("handle event: unsupported %T", event)
 	}
