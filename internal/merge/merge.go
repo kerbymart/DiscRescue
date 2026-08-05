@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"discrescue/internal/catalog"
+	"discrescue/internal/integrity"
 	"discrescue/internal/mapfile"
 )
 
@@ -34,6 +35,7 @@ type MergedExtent struct {
 	SelectedCaptureID  string
 	SelectionRule      SelectionRule
 	CandidateHashes    [][16]byte
+	Provenance         []integrity.Evidence
 	UnresolvedConflict bool
 }
 
@@ -163,6 +165,7 @@ func resolveSegment(start, end uint64, captures []Capture) (MergedExtent, error)
 			Confidence: mapfile.ConfidenceNone,
 		},
 		SelectionRule: RuleMissing,
+		Provenance:    nil,
 	}, nil
 }
 
@@ -271,6 +274,7 @@ func mergedExtentFromCandidate(candidate candidateExtent, rule SelectionRule, st
 		SelectedCaptureID: candidate.CaptureID,
 		SelectionRule:     rule,
 		CandidateHashes:   append([][16]byte(nil), hashes...),
+		Provenance:        provenanceForRule(rule, extent),
 	}
 }
 
@@ -284,6 +288,7 @@ func conflictExtent(start, end uint64, hashes [][16]byte) MergedExtent {
 		},
 		SelectionRule:      RuleConflict,
 		CandidateHashes:    append([][16]byte(nil), hashes...),
+		Provenance:         integrity.NormalizeEvidence(integrity.EvidenceConflict),
 		UnresolvedConflict: true,
 	}
 }
@@ -307,6 +312,7 @@ func canMergeMergedExtent(left, right MergedExtent) bool {
 		left.Extent.Confidence == right.Extent.Confidence &&
 		left.SelectedCaptureID == right.SelectedCaptureID &&
 		left.SelectionRule == right.SelectionRule &&
+		reflect.DeepEqual(left.Provenance, right.Provenance) &&
 		left.UnresolvedConflict == right.UnresolvedConflict &&
 		reflect.DeepEqual(left.CandidateHashes, right.CandidateHashes)
 }
@@ -322,4 +328,25 @@ func uniqueBoundaries(boundaries []uint64) []uint64 {
 		}
 	}
 	return out
+}
+
+func provenanceForRule(rule SelectionRule, extent mapfile.Extent) []integrity.Evidence {
+	switch rule {
+	case RuleTrustedChecksumMatch:
+		return integrity.NormalizeEvidence(integrity.EvidenceTrustedChecksum)
+	case RuleReconstructedTrustedChecksum:
+		return integrity.NormalizeEvidence(integrity.EvidenceReconstruction, integrity.EvidenceTrustedChecksum)
+	case RuleIdenticalVerifiedCandidates:
+		return integrity.NormalizeEvidence(integrity.EvidenceRepeatedAgreement, integrity.EvidenceCrossCaptureAgree)
+	case RuleSingleVerifiedCandidate:
+		return integrity.EvidenceFromStateConfidence(extent)
+	case RuleIdenticalUnverifiedCandidates:
+		return integrity.NormalizeEvidence(integrity.EvidenceCrossCaptureAgree, integrity.EvidenceTentativeData)
+	case RuleSingleUnverifiedCandidate:
+		return integrity.NormalizeEvidence(integrity.EvidenceSuccessfulRead, integrity.EvidenceTentativeData)
+	case RuleConflict:
+		return integrity.NormalizeEvidence(integrity.EvidenceConflict)
+	default:
+		return nil
+	}
 }

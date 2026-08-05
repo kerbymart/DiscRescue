@@ -3,6 +3,7 @@ package integrity
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"reflect"
 	"testing"
 	"time"
 
@@ -61,6 +62,9 @@ func TestVerifyImageDowngradesMismatchedExtent(t *testing.T) {
 	if len(result.ChangedRanges) != 1 || result.ChangedRanges[0].Offset != 4*2048 {
 		t.Fatalf("unexpected changed ranges: %+v", result.ChangedRanges)
 	}
+	if len(result.Provenance) != 1 || len(result.Provenance[0].Items) != 0 {
+		t.Fatalf("expected downgraded checksum mismatch to clear provenance, got %+v", result.Provenance)
+	}
 }
 
 func TestVerifyExternalPromotesTrustedAndReconstructedMatches(t *testing.T) {
@@ -110,6 +114,12 @@ func TestVerifyExternalPromotesTrustedAndReconstructedMatches(t *testing.T) {
 	}
 	if result.Extents[1].State != mapfile.SectorStateReconstructed || result.Extents[1].Confidence != mapfile.ConfidenceReconstructedChecksum {
 		t.Fatalf("unexpected reconstructed verification result: %+v", result.Extents[1])
+	}
+	if !reflect.DeepEqual(result.Provenance[0].Items, []Evidence{EvidenceTrustedChecksum}) {
+		t.Fatalf("unexpected trusted checksum provenance: %+v", result.Provenance[0])
+	}
+	if !reflect.DeepEqual(result.Provenance[1].Items, []Evidence{EvidenceReconstruction, EvidenceTrustedChecksum}) {
+		t.Fatalf("unexpected reconstructed provenance: %+v", result.Provenance[1])
 	}
 }
 

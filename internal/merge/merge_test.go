@@ -3,9 +3,11 @@ package merge
 import (
 	"bytes"
 	"crypto/sha256"
+	"reflect"
 	"testing"
 
 	"discrescue/internal/catalog"
+	"discrescue/internal/integrity"
 	"discrescue/internal/mapfile"
 )
 
@@ -70,6 +72,9 @@ func TestBuildPlanPrefersTrustedChecksumMatches(t *testing.T) {
 	if got.Extent.State != mapfile.SectorStateVerified || got.Extent.Confidence != mapfile.ConfidenceTrustedChecksum {
 		t.Fatalf("unexpected trusted extent: %+v", got.Extent)
 	}
+	if len(got.Provenance) != 1 || got.Provenance[0] != integrity.EvidenceTrustedChecksum {
+		t.Fatalf("unexpected trusted provenance: %+v", got.Provenance)
+	}
 	if plan.Extents[1].SelectionRule != RuleMissing {
 		t.Fatalf("expected uncovered tail to remain missing, got %+v", plan.Extents[1])
 	}
@@ -103,6 +108,12 @@ func TestBuildPlanPromotesIdenticalUnverifiedIndependentCaptures(t *testing.T) {
 	if got.Extent.State != mapfile.SectorStateVerified || got.Extent.Confidence != mapfile.ConfidenceRepeatedIndependentCapture {
 		t.Fatalf("unexpected promoted extent: %+v", got.Extent)
 	}
+	if !reflect.DeepEqual(got.Provenance, []integrity.Evidence{
+		integrity.EvidenceCrossCaptureAgree,
+		integrity.EvidenceTentativeData,
+	}) {
+		t.Fatalf("unexpected provenance for cross-capture tentative agreement: %+v", got.Provenance)
+	}
 }
 
 func TestBuildPlanMarksConflictingVerifiedCandidates(t *testing.T) {
@@ -135,6 +146,9 @@ func TestBuildPlanMarksConflictingVerifiedCandidates(t *testing.T) {
 	}
 	if len(got.CandidateHashes) != 2 {
 		t.Fatalf("expected both candidate hashes to be recorded, got %+v", got.CandidateHashes)
+	}
+	if !reflect.DeepEqual(got.Provenance, []integrity.Evidence{integrity.EvidenceConflict}) {
+		t.Fatalf("unexpected conflict provenance: %+v", got.Provenance)
 	}
 }
 

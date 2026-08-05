@@ -41,6 +41,7 @@ type ImageVerificationInput struct {
 type ImageVerificationResult struct {
 	Extents       []mapfile.Extent
 	ChangedRanges []ByteRange
+	Provenance    []ExtentEvidence
 }
 
 type ExternalExtentInput struct {
@@ -55,7 +56,8 @@ type ExternalVerificationInput struct {
 }
 
 type ExternalVerificationResult struct {
-	Extents []mapfile.Extent
+	Extents    []mapfile.Extent
+	Provenance []ExtentEvidence
 }
 
 type CatalogRefreshInput struct {
@@ -113,7 +115,8 @@ func VerifyImage(input ImageVerificationInput) (ImageVerificationResult, error) 
 	}
 
 	result := ImageVerificationResult{
-		Extents: make([]mapfile.Extent, 0, len(input.Extents)),
+		Extents:    make([]mapfile.Extent, 0, len(input.Extents)),
+		Provenance: make([]ExtentEvidence, 0, len(input.Extents)),
 	}
 
 	for i, item := range input.Extents {
@@ -122,6 +125,11 @@ func VerifyImage(input ImageVerificationInput) (ImageVerificationResult, error) 
 		}
 		if !claimsImageData(item.Extent.State) {
 			result.Extents = append(result.Extents, item.Extent)
+			result.Provenance = append(result.Provenance, ExtentEvidence{
+				StartLBA: item.Extent.StartLBA,
+				Sectors:  item.Extent.Sectors,
+				Items:    EvidenceFromStateConfidence(item.Extent),
+			})
 			continue
 		}
 
@@ -137,11 +145,21 @@ func VerifyImage(input ImageVerificationInput) (ImageVerificationResult, error) 
 
 		if item.Extent.DataHash == ([16]byte{}) {
 			result.Extents = append(result.Extents, item.Extent)
+			result.Provenance = append(result.Provenance, ExtentEvidence{
+				StartLBA: item.Extent.StartLBA,
+				Sectors:  item.Extent.Sectors,
+				Items:    EvidenceFromStateConfidence(item.Extent),
+			})
 			continue
 		}
 
 		if hash16(item.Data) == item.Extent.DataHash {
 			result.Extents = append(result.Extents, item.Extent)
+			result.Provenance = append(result.Provenance, ExtentEvidence{
+				StartLBA: item.Extent.StartLBA,
+				Sectors:  item.Extent.Sectors,
+				Items:    EvidenceFromStateConfidence(item.Extent),
+			})
 			continue
 		}
 
@@ -149,6 +167,11 @@ func VerifyImage(input ImageVerificationInput) (ImageVerificationResult, error) 
 		downgraded.State = mapfile.SectorStateChecksumError
 		downgraded.Confidence = mapfile.ConfidenceNone
 		result.Extents = append(result.Extents, downgraded)
+		result.Provenance = append(result.Provenance, ExtentEvidence{
+			StartLBA: downgraded.StartLBA,
+			Sectors:  downgraded.Sectors,
+			Items:    nil,
+		})
 		result.ChangedRanges = append(result.ChangedRanges, ByteRange{
 			Offset: item.Extent.StartLBA * uint64(input.LogicalSectorSize),
 			Length: expectedLength,
@@ -164,7 +187,8 @@ func VerifyExternal(input ExternalVerificationInput) (ExternalVerificationResult
 	}
 
 	result := ExternalVerificationResult{
-		Extents: make([]mapfile.Extent, 0, len(input.Extents)),
+		Extents:    make([]mapfile.Extent, 0, len(input.Extents)),
+		Provenance: make([]ExtentEvidence, 0, len(input.Extents)),
 	}
 
 	for i, item := range input.Extents {
@@ -173,6 +197,11 @@ func VerifyExternal(input ExternalVerificationInput) (ExternalVerificationResult
 		}
 		if !claimsImageData(item.Extent.State) {
 			result.Extents = append(result.Extents, item.Extent)
+			result.Provenance = append(result.Provenance, ExtentEvidence{
+				StartLBA: item.Extent.StartLBA,
+				Sectors:  item.Extent.Sectors,
+				Items:    EvidenceFromStateConfidence(item.Extent),
+			})
 			continue
 		}
 
@@ -204,6 +233,11 @@ func VerifyExternal(input ExternalVerificationInput) (ExternalVerificationResult
 				next.Confidence = mapfile.ConfidenceTrustedChecksum
 			}
 			result.Extents = append(result.Extents, next)
+			result.Provenance = append(result.Provenance, ExtentEvidence{
+				StartLBA: next.StartLBA,
+				Sectors:  next.Sectors,
+				Items:    EvidenceFromStateConfidence(next),
+			})
 			verified = true
 			break
 		}
@@ -216,6 +250,11 @@ func VerifyExternal(input ExternalVerificationInput) (ExternalVerificationResult
 		downgraded.State = mapfile.SectorStateChecksumError
 		downgraded.Confidence = mapfile.ConfidenceNone
 		result.Extents = append(result.Extents, downgraded)
+		result.Provenance = append(result.Provenance, ExtentEvidence{
+			StartLBA: downgraded.StartLBA,
+			Sectors:  downgraded.Sectors,
+			Items:    nil,
+		})
 	}
 
 	return result, nil
