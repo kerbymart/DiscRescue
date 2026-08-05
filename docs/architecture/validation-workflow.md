@@ -2,6 +2,18 @@
 
 This note separates Windows-local verification from future Linux hardware verification so task completion claims stay evidence-based.
 
+## Verification matrix
+
+| Verification area | Windows-local evidence | Linux-only evidence |
+| --- | --- | --- |
+| Formatting and package checks | `scripts/format.ps1`, `scripts/test.ps1`, `scripts/check.ps1` | rerun the same package checks on Linux before hardware release handoff |
+| Bubble Tea workflow and layouts | `go test ./internal/app`, Windows Terminal manual checks | terminal restoration and layout behavior on the release shell and distro targets |
+| Simulator recovery behavior | `internal/testdevice` scenarios and `scripts/release-gates.ps1` | rerun simulator and integration suites on Linux build agents |
+| Device open and probe behavior | not authoritative on Windows | read-only optical-device probes against Linux block devices |
+| `SG_IO` command behavior | fixed-vector tests only | fixed vectors plus Linux hardware traces allowed by public specs |
+| Worker supervision under blocked I/O | simulator hung-worker coverage | Linux drive and bridge behavior under slow or stalled requests |
+| Release race gate | only if `CGO_ENABLED=1` is set locally | required on Linux release validation when supported by the environment |
+
 ## Windows Local Checks
 
 - `scripts/format.ps1`
