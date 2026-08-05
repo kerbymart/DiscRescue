@@ -41,26 +41,36 @@ func Lookup(entries []Entry, identity ContentIdentity, budget LookupBudget) (Loo
 		if err := entry.Identity.Validate(); err != nil {
 			return LookupResult{}, fmt.Errorf("lookup entry: %w", err)
 		}
-		if !compatibleGeometry(entry.Identity, identity) || entry.Identity.LayoutSHA256 != identity.LayoutSHA256 {
+		if !CompatibleGeometry(entry.Identity, identity) || entry.Identity.LayoutSHA256 != identity.LayoutSHA256 {
 			continue
 		}
 		compatibleFound = true
+		if compared >= budget.MaxComparedSamples {
+			best.BudgetExhausted = true
+			if best.Match == MatchNo {
+				best.Match = MatchIndeterminate
+			}
+			return best, nil
+		}
 
-		match, matching, conflicting, exhausted := compareCandidate(entry.Identity, identity, budget.MaxComparedSamples-compared)
-		if matching > 0 || conflicting > 0 {
-			compared += matching + conflicting
+		comparison, err := CompareContentIdentity(entry.Identity, identity, budget.MaxComparedSamples-compared)
+		if err != nil {
+			return LookupResult{}, err
+		}
+		if comparison.MatchingSamples > 0 || comparison.ConflictingSamples > 0 {
+			compared += comparison.MatchingSamples + comparison.ConflictingSamples
 		}
 
 		candidateResult := LookupResult{
-			Match:              match,
+			Match:              comparison.Match,
 			Candidates:         []Entry{entry},
-			MatchingSamples:    matching,
-			ConflictingSamples: conflicting,
+			MatchingSamples:    comparison.MatchingSamples,
+			ConflictingSamples: comparison.ConflictingSamples,
 			IdentityVersion:    identity.Version,
-			BudgetExhausted:    exhausted,
+			BudgetExhausted:    comparison.BudgetExhausted,
 		}
 		best = selectStrongerResult(best, candidateResult)
-		if exhausted {
+		if comparison.BudgetExhausted {
 			best.BudgetExhausted = true
 		}
 		if best.Match == MatchConflict {
@@ -82,56 +92,6 @@ func Lookup(entries []Entry, identity ContentIdentity, budget LookupBudget) (Loo
 		best.Match = MatchIndeterminate
 	}
 	return best, nil
-}
-
-func compatibleGeometry(left, right ContentIdentity) bool {
-	return left.Version == right.Version &&
-		left.Profile == right.Profile &&
-		left.LogicalBlockSize == right.LogicalBlockSize &&
-		left.SectorCount == right.SectorCount &&
-		left.Sessions == right.Sessions
-}
-
-func compareCandidate(candidate, observed ContentIdentity, remainingBudget uint16) (MatchStrength, uint16, uint16, bool) {
-	if candidate.QuickID != "" && candidate.QuickID == observed.QuickID {
-		return MatchStrong, 0, 0, false
-	}
-
-	indexed := make(map[uint16]SectorFingerprint, len(candidate.Samples))
-	for _, sample := range candidate.Samples {
-		indexed[sample.Slot] = sample
-	}
-
-	var matching uint16
-	var conflicting uint16
-	var compared uint16
-
-	for _, sample := range observed.Samples {
-		candidateSample, ok := indexed[sample.Slot]
-		if !ok || !sample.Available || !candidateSample.Available {
-			continue
-		}
-		if compared >= remainingBudget {
-			return MatchIndeterminate, matching, conflicting, true
-		}
-		compared++
-		if candidateSample.LBA != sample.LBA || candidateSample.SHA256 != sample.SHA256 {
-			conflicting++
-			return MatchConflict, matching, conflicting, false
-		}
-		matching++
-	}
-
-	switch {
-	case conflicting > 0:
-		return MatchConflict, matching, conflicting, false
-	case matching >= 4:
-		return MatchStrong, matching, conflicting, false
-	case matching >= 1:
-		return MatchProbable, matching, conflicting, false
-	default:
-		return MatchIndeterminate, matching, conflicting, false
-	}
 }
 
 func selectStrongerResult(current, candidate LookupResult) LookupResult {

@@ -1,7 +1,6 @@
 package recovery
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"sort"
@@ -193,77 +192,25 @@ func BuildContentIdentity(geometry Geometry, observed []catalog.SectorFingerprin
 }
 
 func buildLayoutHash(geometry Geometry) (string, error) {
-	hasher := sha256.New()
-	var scratch [8]byte
-
-	binary.LittleEndian.PutUint16(scratch[:2], 1)
-	if _, err := hasher.Write(scratch[:2]); err != nil {
-		return "", err
-	}
-	binary.LittleEndian.PutUint16(scratch[:2], geometry.Profile)
-	if _, err := hasher.Write(scratch[:2]); err != nil {
-		return "", err
-	}
-	binary.LittleEndian.PutUint32(scratch[:4], geometry.LogicalBlockSize)
-	if _, err := hasher.Write(scratch[:4]); err != nil {
-		return "", err
-	}
-	binary.LittleEndian.PutUint64(scratch[:8], geometry.SectorCount)
-	if _, err := hasher.Write(scratch[:8]); err != nil {
-		return "", err
-	}
-	binary.LittleEndian.PutUint16(scratch[:2], geometry.Sessions)
-	if _, err := hasher.Write(scratch[:2]); err != nil {
-		return "", err
-	}
-	for _, track := range geometry.Tracks {
-		binary.LittleEndian.PutUint16(scratch[:2], track.TrackNumber)
-		hasher.Write(scratch[:2])
-		binary.LittleEndian.PutUint64(scratch[:8], uint64(track.StartLBA))
-		hasher.Write(scratch[:8])
-		binary.LittleEndian.PutUint64(scratch[:8], uint64(track.EndLBA))
-		hasher.Write(scratch[:8])
-		binary.LittleEndian.PutUint16(scratch[:2], track.Mode)
-		hasher.Write(scratch[:2])
-		binary.LittleEndian.PutUint16(scratch[:2], track.ControlFlags)
-		hasher.Write(scratch[:2])
-		binary.LittleEndian.PutUint64(scratch[:8], uint64(track.LeadOutLBA))
-		hasher.Write(scratch[:8])
-	}
-	return hex.EncodeToString(hasher.Sum(nil)), nil
+	return catalog.BuildLayoutHash(catalog.ContentIdentity{
+		Version:          1,
+		Profile:          geometry.Profile,
+		LogicalBlockSize: geometry.LogicalBlockSize,
+		SectorCount:      geometry.SectorCount,
+		Sessions:         geometry.Sessions,
+		Tracks:           append([]catalog.TrackLayout(nil), geometry.Tracks...),
+	})
 }
 
 func buildQuickID(identity catalog.ContentIdentity, plan []SamplePlanEntry) (string, bool, error) {
-	indexed := make(map[uint16]catalog.SectorFingerprint, len(identity.Samples))
-	for _, sample := range identity.Samples {
-		indexed[sample.Slot] = sample
-	}
-
-	hasher := sha256.New()
-	var scratch [8]byte
-	binary.LittleEndian.PutUint16(scratch[:2], identity.Version)
-	if _, err := hasher.Write(scratch[:2]); err != nil {
-		return "", false, err
-	}
-	if _, err := hasher.Write([]byte(identity.LayoutSHA256)); err != nil {
-		return "", false, err
-	}
-
+	slots := make([]uint16, 0, len(plan))
 	for _, expected := range plan {
 		if !expected.Mandatory {
 			continue
 		}
-		sample, ok := indexed[expected.Slot]
-		if !ok || !sample.Available {
-			return "", false, nil
-		}
-		binary.LittleEndian.PutUint16(scratch[:2], sample.Slot)
-		hasher.Write(scratch[:2])
-		binary.LittleEndian.PutUint64(scratch[:8], uint64(sample.LBA))
-		hasher.Write(scratch[:8])
-		hasher.Write(sample.SHA256[:])
+		slots = append(slots, expected.Slot)
 	}
-	return hex.EncodeToString(hasher.Sum(nil)), true, nil
+	return catalog.BuildQuickContentID(identity, slots)
 }
 
 func selectInitialClusterSize(geometry Geometry, preferred uint32) uint32 {
