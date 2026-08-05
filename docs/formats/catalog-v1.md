@@ -99,8 +99,24 @@ Each top-level catalog record contains:
 | capture_count | uint16 | bounded capture list |
 | job_count | uint16 | bounded job reference list |
 | preferred_job_id | 16 bytes | zero UUID when absent |
+| hidden | uint8 | `0` visible, `1` hidden |
 
 Job references are advisory path records, not proof that referenced files still exist.
+
+Capture records are serialized inline and contain:
+
+- `capture_id` as a length-prefixed UTF-8 string
+- device identity strings for vendor, product, revision, serial, and transport
+- `started_at_unix_nano` as `int64`
+- `user_label` as a length-prefixed UTF-8 string
+- `physical_copy_present` as `uint8`
+- optional physical-copy strings for `asset_id` and `hub_code_note`
+
+Job reference records are serialized inline and contain:
+
+- `job_id` as 16 bytes
+- `path` as a length-prefixed UTF-8 string
+- `files_present` as `uint8`
 
 ## Processing State Encoding
 
