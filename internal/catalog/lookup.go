@@ -38,6 +38,9 @@ func Lookup(entries []Entry, identity ContentIdentity, budget LookupBudget) (Loo
 	compared := uint16(0)
 
 	for _, entry := range entries {
+		if entry.Hidden {
+			continue
+		}
 		if err := entry.Identity.Validate(); err != nil {
 			return LookupResult{}, fmt.Errorf("lookup entry: %w", err)
 		}
