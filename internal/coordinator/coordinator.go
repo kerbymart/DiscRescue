@@ -31,6 +31,14 @@ func Handle(snapshot Snapshot, event Event) (Snapshot, []Effect, error) {
 		next := snapshot
 		next.Job.State = JobStateIdle
 		return next, []Effect{{Kind: "shutdown_cancel", JobID: typed.JobID}}, nil
+	case WorkerUnresponsiveDetected:
+		if snapshot.Job.State != JobStateRunning && snapshot.Job.State != JobStatePaused {
+			return snapshot, nil, fmt.Errorf("worker unresponsive: invalid state %s", snapshot.Job.State)
+		}
+		return snapshot, []Effect{
+			{Kind: "checkpoint", JobID: typed.JobID},
+			{Kind: "worker_unresponsive", JobID: typed.JobID},
+		}, nil
 	default:
 		return snapshot, nil, fmt.Errorf("handle event: unsupported %T", event)
 	}

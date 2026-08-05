@@ -30,3 +30,22 @@ func TestUpdateQuitKey(t *testing.T) {
 		t.Fatal("expected quit command")
 	}
 }
+
+func TestUpdateRemainsResponsiveAfterWorkerStatus(t *testing.T) {
+	model := NewModel()
+
+	next, _ := model.Update(WorkerStatusReceived{Status: "Worker unresponsive. Checkpoint available."})
+	updated := next.(Model)
+	if updated.StatusLine != "Worker unresponsive. Checkpoint available." {
+		t.Fatalf("unexpected status line: %q", updated.StatusLine)
+	}
+
+	next, cmd := updated.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	afterQuit := next.(Model)
+	if !afterQuit.ShouldQuit {
+		t.Fatal("expected ui to accept quit after worker status update")
+	}
+	if cmd == nil {
+		t.Fatal("expected quit command after worker status update")
+	}
+}

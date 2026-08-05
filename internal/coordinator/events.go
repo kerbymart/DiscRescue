@@ -21,3 +21,10 @@ type CancelJob struct {
 }
 
 func (CancelJob) eventName() string { return "cancel-job" }
+
+type WorkerUnresponsiveDetected struct {
+	JobID  string
+	Reason string
+}
+
+func (WorkerUnresponsiveDetected) eventName() string { return "worker-unresponsive-detected" }

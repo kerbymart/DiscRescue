@@ -83,3 +83,28 @@ func TestDataSpecValidateRejectsWrongSectorPatternLength(t *testing.T) {
 		t.Fatal("expected invalid byte pattern length to fail validation")
 	}
 }
+
+func TestScenarioValidateAcceptsHungWorkerFailure(t *testing.T) {
+	scenario := Scenario{
+		Name: "hung-worker",
+		Media: Media{
+			MediaID:           "disc-hang",
+			LogicalSectorSize: 2048,
+			SectorCount:       32,
+			Data: []DataSpec{
+				{Range: Range{StartLBA: 0, Sectors: 32}, Pattern: PatternLBA},
+			},
+		},
+		Failures: []FailureSpec{
+			{
+				Range:    Range{StartLBA: 8, Sectors: 1},
+				Mode:     FailureHangWorker,
+				Selector: AttemptSelector{Pass: PassScrape, AttemptMin: 1, AttemptMax: 1},
+			},
+		},
+	}
+
+	if err := scenario.Validate(); err != nil {
+		t.Fatalf("expected hung-worker scenario to be valid, got error: %v", err)
+	}
+}
