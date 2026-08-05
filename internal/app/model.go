@@ -14,6 +14,7 @@ type Model struct {
 	StatusLine   string
 	ShouldQuit   bool
 	CurrentFocus string
+	Monochrome   bool
 }
 
 func NewModel() Model {
