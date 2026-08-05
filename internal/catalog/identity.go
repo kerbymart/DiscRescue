@@ -65,6 +65,18 @@ func (s SectorFingerprint) Validate() error {
 	return nil
 }
 
+type VolumeHint struct {
+	HintType uint16
+	Value    string
+}
+
+func (h VolumeHint) Validate() error {
+	if h.Value == "" {
+		return fmt.Errorf("validate volume hint: value is required")
+	}
+	return nil
+}
+
 type ContentIdentity struct {
 	Version           uint16
 	Profile           uint16
@@ -73,6 +85,7 @@ type ContentIdentity struct {
 	Sessions          uint16
 	Tracks            []TrackLayout
 	LayoutSHA256      string
+	VolumeHints       []VolumeHint
 	Samples           []SectorFingerprint
 	QuickID           string
 	FullContentSHA256 string
@@ -115,6 +128,11 @@ func (id ContentIdentity) Validate() error {
 			return fmt.Errorf("validate content identity sample[%d]: duplicate slot %d", i, sample.Slot)
 		}
 		seenSlots[sample.Slot] = struct{}{}
+	}
+	for i, hint := range id.VolumeHints {
+		if err := hint.Validate(); err != nil {
+			return fmt.Errorf("validate content identity volume hint[%d]: %w", i, err)
+		}
 	}
 	return nil
 }
