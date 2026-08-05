@@ -1,9 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"slices"
+
+	"discrescue/internal/device"
 )
 
 const workerModeEnv = "DISKRESCUE_MODE"
@@ -14,6 +15,23 @@ func isWorkerMode(args []string, mode string) bool {
 }
 
 func runWorker(out io.Writer) error {
-	_, err := fmt.Fprintln(out, "discrescue worker mode is not implemented yet")
+	helloPayload, err := device.MarshalWorkerHello(device.WorkerHello{
+		ProtocolVersion: device.ProtocolVersion,
+		WorkerID:        "worker-bootstrap",
+	})
+	if err != nil {
+		return err
+	}
+
+	frame, err := device.MarshalFrame(device.Frame{
+		Type:      device.MessageHello,
+		RequestID: 1,
+		Payload:   helloPayload,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = out.Write(frame)
 	return err
 }
