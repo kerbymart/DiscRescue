@@ -12,6 +12,7 @@ func (StartJob) eventName() string { return "start-job" }
 
 type ProbeCompleted struct {
 	JobID string
+	Token uint64
 	Err   error
 }
 
@@ -37,6 +38,7 @@ func (CancelJob) eventName() string { return "cancel-job" }
 
 type WorkerResultReceived struct {
 	JobID     string
+	Token     uint64
 	NextState JobState
 	Err       error
 }
@@ -45,6 +47,7 @@ func (WorkerResultReceived) eventName() string { return "worker-result-received"
 
 type WriteResultReceived struct {
 	JobID string
+	Token uint64
 	Err   error
 }
 
@@ -52,12 +55,14 @@ func (WriteResultReceived) eventName() string { return "write-result-received" }
 
 type JobCheckpointed struct {
 	JobID string
+	Token uint64
 }
 
 func (JobCheckpointed) eventName() string { return "job-checkpointed" }
 
 type JobFailed struct {
 	JobID string
+	Token uint64
 	Err   error
 }
 
@@ -65,6 +70,7 @@ func (JobFailed) eventName() string { return "job-failed" }
 
 type WorkerUnresponsiveDetected struct {
 	JobID  string
+	Token  uint64
 	Reason string
 }
 

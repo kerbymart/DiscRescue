@@ -22,9 +22,12 @@ const (
 )
 
 type Job struct {
-	ID          string
-	State       JobState
-	ResumeState JobState
+	ID           string
+	State        JobState
+	ResumeState  JobState
+	PendingKind  EffectKind
+	PendingToken uint64
+	NextToken    uint64
 }
 
 func (j Job) Validate() error {
@@ -32,8 +35,8 @@ func (j Job) Validate() error {
 		return fmt.Errorf("validate job: state is required")
 	}
 	if j.State == JobStateIdle {
-		if j.ID != "" || j.ResumeState != "" {
-			return fmt.Errorf("validate job: idle job must not retain id or resume state")
+		if j.ID != "" || j.ResumeState != "" || j.PendingKind != "" || j.PendingToken != 0 || j.NextToken != 0 {
+			return fmt.Errorf("validate job: idle job must not retain id, resume state, or pending effect state")
 		}
 		return nil
 	}
@@ -52,6 +55,19 @@ func (j Job) Validate() error {
 		if j.ResumeState != "" {
 			return fmt.Errorf("validate job: non-paused state %q must not retain resume state", j.State)
 		}
+	}
+	if j.PendingKind == "" {
+		if j.PendingToken != 0 {
+			return fmt.Errorf("validate job: missing pending kind with pending token %d", j.PendingToken)
+		}
+	} else if j.PendingToken == 0 {
+		return fmt.Errorf("validate job: pending kind %q requires a non-zero token", j.PendingKind)
+	}
+	if j.NextToken == 0 {
+		return fmt.Errorf("validate job: next token must be greater than zero outside idle state")
+	}
+	if j.PendingToken >= j.NextToken {
+		return fmt.Errorf("validate job: pending token %d must be smaller than next token %d", j.PendingToken, j.NextToken)
 	}
 	return nil
 }
