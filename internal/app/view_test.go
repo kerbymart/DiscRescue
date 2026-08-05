@@ -1,114 +1,99 @@
 package app
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestViewGolden(t *testing.T) {
-	testCases := []struct {
-		name   string
-		model  Model
-		golden string
-	}{
-		{
-			name: "80x24",
-			model: Model{
-				Screen:       ScreenWelcome,
-				Width:        80,
-				Height:       24,
-				Notice:       "Simulator-first bootstrap is ready.",
-				StatusLine:   "Press q to quit.",
-				CurrentFocus: "start",
-			},
-			golden: "welcome_80x24.golden",
-		},
-		{
-			name: "60x18",
-			model: Model{
-				Screen:       ScreenWelcome,
-				Width:        60,
-				Height:       18,
-				Notice:       "Simulator-first bootstrap is ready.",
-				StatusLine:   "Press q to quit.",
-				CurrentFocus: "start",
-			},
-			golden: "welcome_60x18.golden",
-		},
-		{
-			name: "40x12",
-			model: Model{
-				Screen:       ScreenWelcome,
-				Width:        40,
-				Height:       12,
-				Notice:       "Simulator-first bootstrap is ready.",
-				StatusLine:   "Press q to quit.",
-				CurrentFocus: "start",
-			},
-			golden: "welcome_40x12.golden",
-		},
-		{
-			name: "below-minimum",
-			model: Model{
-				Screen:       ScreenWelcome,
-				Width:        39,
-				Height:       11,
-				Notice:       "Simulator-first bootstrap is ready.",
-				StatusLine:   "Press q to quit.",
-				CurrentFocus: "start",
-			},
-			golden: "too_small_39x11.golden",
-		},
-		{
-			name: "monochrome",
-			model: Model{
-				Screen:       ScreenWelcome,
-				Width:        80,
-				Height:       24,
-				Notice:       "Simulator-first bootstrap is ready.",
-				StatusLine:   "Press q to quit.",
-				CurrentFocus: "start",
-				Monochrome:   true,
-			},
-			golden: "welcome_monochrome_80x24.golden",
-		},
-		{
-			name: "long-path-wrap",
-			model: Model{
-				Screen:       ScreenWelcome,
-				Width:        40,
-				Height:       18,
-				Notice:       "Output path D:/Projects/kerbymart/DiscRescue/archive/very/long/path/that/must/wrap/discrescue-image.iso is ready.",
-				StatusLine:   "Press q to quit.",
-				CurrentFocus: "start",
-			},
-			golden: "welcome_long_path_40x18.golden",
-		},
-	}
+func TestViewTooSmall(t *testing.T) {
+	model := NewModel()
+	model.Width = 39
+	model.Height = 11
 
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			got := normalizeGolden(testCase.model.View().Content)
-			want := normalizeGolden(readGolden(t, testCase.golden))
-			if got != want {
-				t.Fatalf("golden mismatch\n--- got ---\n%s--- want ---\n%s", got, want)
-			}
-		})
+	view := model.View().Content
+	if !strings.Contains(view, "Resize to at least 40x12") {
+		t.Fatalf("unexpected small-window view: %q", view)
 	}
 }
 
-func readGolden(t *testing.T, name string) string {
-	t.Helper()
-	path := filepath.Join("testdata", name)
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read golden %s: %v", name, err)
+func TestViewChooseDriveShowsOneColumnList(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageChooseDrive
+	model.Devices = []DeviceSummary{
+		{Path: "D:/dev/cdrom0", DisplayName: "DVD Drive", Status: "ready"},
+		{Path: "D:/dev/cdrom1", DisplayName: "Blu-ray Drive", Status: "busy"},
 	}
-	return string(content)
+
+	view := model.View().Content
+	if !strings.Contains(view, "Choose a drive") {
+		t.Fatalf("expected choose-drive title, got %q", view)
+	}
+	if !strings.Contains(view, "> DVD Drive") {
+		t.Fatalf("expected focused device row, got %q", view)
+	}
+	if strings.Contains(view, "│") || strings.Contains(view, "┌") {
+		t.Fatalf("expected plain one-column layout without panels, got %q", view)
+	}
 }
 
-func normalizeGolden(content string) string {
-	return strings.TrimSuffix(content, "\n")
+func TestViewPriorProcessingShowsMatchingContentsLanguage(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PagePriorProcessing
+	model.Identity = ContentIdentityViewModel{
+		Summary: "Matching contents were processed before",
+		Detail:  "Archived successfully",
+	}
+	model.PriorRecords = []PriorProcessingRecord{{
+		Title:  "History",
+		Detail: "Previous files not found",
+	}}
+
+	view := model.View().Content
+	if !strings.Contains(view, "Matching contents were processed before") {
+		t.Fatalf("expected matching-contents wording, got %q", view)
+	}
+	if strings.Contains(strings.ToLower(view), "same physical disc") {
+		t.Fatalf("unexpected physical-identity wording: %q", view)
+	}
+}
+
+func TestViewRecoveringUsesAltScreenAndNoTelemetryTable(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageRecovering
+	model.Recovery = RecoveryViewModel{
+		Phase:            "Adaptive recovery",
+		RecoveredSectors: 120,
+		TotalSectors:     240,
+		Status:           "Reading difficult areas.",
+	}
+
+	view := model.View()
+	if !view.AltScreen {
+		t.Fatal("expected recovering page to use the alternate screen")
+	}
+	if strings.Contains(strings.ToLower(view.Content), "throughput") || strings.Contains(strings.ToLower(view.Content), "chart") {
+		t.Fatalf("unexpected telemetry content: %q", view.Content)
+	}
+}
+
+func TestViewDetailsUsesAltScreen(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageDetails
+	model.Details = DetailsViewModel{Lines: []string{"Drive: D:/dev/cdrom0", "Worker: responsive"}}
+
+	view := model.View()
+	if !view.AltScreen {
+		t.Fatal("expected details page to use the alternate screen")
+	}
+	if !strings.Contains(view.Content, "Drive: D:/dev/cdrom0") {
+		t.Fatalf("unexpected details content: %q", view.Content)
+	}
 }

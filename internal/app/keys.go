@@ -1,13 +1,23 @@
 package app
 
 type KeyMap struct {
-	Quit  string
-	Start string
+	Up       []string
+	Down     []string
+	Select   []string
+	Back     []string
+	Quit     []string
+	Details  []string
+	Advanced []string
 }
 
 func DefaultKeys() KeyMap {
 	return KeyMap{
-		Quit:  "q",
-		Start: "enter",
+		Up:       []string{"up", "k"},
+		Down:     []string{"down", "j"},
+		Select:   []string{"enter"},
+		Back:     []string{"esc"},
+		Quit:     []string{"q"},
+		Details:  []string{"d"},
+		Advanced: []string{"a"},
 	}
 }
