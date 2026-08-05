@@ -34,3 +34,4 @@ This repository is bootstrapped from the project-owned TDD in `.project/discresc
 ## Release Notes
 
 - `docs/architecture/linux-release-packaging.md`
+- `docs/architecture/package-layout.md`
