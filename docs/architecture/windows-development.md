@@ -9,6 +9,7 @@ DiscRescue is being developed on Windows first, but the product target remains L
 - `go build -trimpath ./cmd/discrescue`
 - Bubble Tea shell iteration in PowerShell or Windows Terminal
 - PowerShell repository scripts under `scripts/`
+- cross-platform runtime adapters under `internal/platform`
 
 ## What Stays Out of Scope on Windows
 

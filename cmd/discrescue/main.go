@@ -2,23 +2,28 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	tea "charm.land/bubbletea/v2"
 
 	"discrescue/internal/app"
+	"discrescue/internal/platform"
 )
 
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	runtime := platform.NewRuntime()
+	if err := run(runtime); err != nil {
+		fmt.Fprintln(runtime.Process.Stderr(), err)
+		runtime.Process.Exit(1)
 	}
 }
 
-func run() error {
-	if isWorkerMode(os.Args, os.Getenv(workerModeEnv)) {
-		return runWorker(os.Stdout)
+func run(runtime platform.Runtime) error {
+	if isWorkerMode(runtime.Process.Args(), runtime.Process.Getenv(workerModeEnv)) {
+		return runWorker(runtime.Process.Stdout())
+	}
+
+	if err := runtime.Terminal.SetTitle("DiscRescue"); err != nil {
+		return err
 	}
 
 	program := tea.NewProgram(app.NewModel())
