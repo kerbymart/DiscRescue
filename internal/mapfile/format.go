@@ -3,22 +3,77 @@ package mapfile
 const HeaderMagic = "DSR1"
 const FormatVersion uint16 = 1
 
-type SectorState string
+type SectorState uint8
 
 const (
-	SectorStateUnknown   SectorState = "unknown"
-	SectorStateQueued    SectorState = "queued"
-	SectorStateRecovered SectorState = "recovered"
-	SectorStateMissing   SectorState = "missing"
+	SectorStateUnknown SectorState = iota
+	SectorStateQueued
+	SectorStateReadUnverified
+	SectorStateVerified
+	SectorStateMissing
+	SectorStateIOError
+	SectorStateChecksumError
+	SectorStateConflicting
+	SectorStateReconstructed
+	SectorStateSkipped
 )
 
-type Confidence string
+func (s SectorState) String() string {
+	switch s {
+	case SectorStateUnknown:
+		return "unknown"
+	case SectorStateQueued:
+		return "queued"
+	case SectorStateReadUnverified:
+		return "read_unverified"
+	case SectorStateVerified:
+		return "verified"
+	case SectorStateMissing:
+		return "missing"
+	case SectorStateIOError:
+		return "io_error"
+	case SectorStateChecksumError:
+		return "checksum_error"
+	case SectorStateConflicting:
+		return "conflicting"
+	case SectorStateReconstructed:
+		return "reconstructed"
+	case SectorStateSkipped:
+		return "skipped"
+	default:
+		return "invalid"
+	}
+}
+
+type Confidence uint8
 
 const (
-	ConfidenceTransport Confidence = "transport"
-	ConfidenceVerified  Confidence = "verified"
-	ConfidenceConflict  Confidence = "conflict"
+	ConfidenceNone Confidence = iota
+	ConfidenceSingleRead
+	ConfidenceRepeatedSingleCapture
+	ConfidenceRepeatedIndependentCapture
+	ConfidenceTrustedChecksum
+	ConfidenceReconstructedChecksum
 )
+
+func (c Confidence) String() string {
+	switch c {
+	case ConfidenceNone:
+		return "none"
+	case ConfidenceSingleRead:
+		return "single_read"
+	case ConfidenceRepeatedSingleCapture:
+		return "repeated_single_capture"
+	case ConfidenceRepeatedIndependentCapture:
+		return "repeated_independent_capture"
+	case ConfidenceTrustedChecksum:
+		return "trusted_checksum"
+	case ConfidenceReconstructedChecksum:
+		return "reconstructed_checksum"
+	default:
+		return "invalid"
+	}
+}
 
 type RecordType string
 
