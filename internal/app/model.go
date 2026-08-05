@@ -49,6 +49,29 @@ type PriorProcessingRecord struct {
 	Detail string
 }
 
+type PriorProcessingKind string
+
+const (
+	PriorProcessingNone            PriorProcessingKind = "none"
+	PriorProcessingStrongCompleted PriorProcessingKind = "strong_completed"
+	PriorProcessingStrongResumable PriorProcessingKind = "strong_resumable"
+	PriorProcessingProbable        PriorProcessingKind = "probable"
+	PriorProcessingIndeterminate   PriorProcessingKind = "indeterminate"
+)
+
+type PriorProcessingViewModel struct {
+	Kind              PriorProcessingKind
+	Title             string
+	Body              []string
+	Options           []string
+	HistoryLine       string
+	ImagePath         string
+	CopyLabel         string
+	LastSaved         string
+	Recovered         string
+	UnreadableSectors string
+}
+
 type RecoveryViewModel struct {
 	Phase             string
 	RecoveredSectors  uint64
@@ -98,6 +121,7 @@ type Model struct {
 	Cursor       int
 	Setup        JobSetupModel
 	Identity     ContentIdentityViewModel
+	PriorView    PriorProcessingViewModel
 	PriorRecords []PriorProcessingRecord
 	Recovery     RecoveryViewModel
 	Details      DetailsViewModel
@@ -120,6 +144,10 @@ func NewModel() Model {
 		Identity: ContentIdentityViewModel{
 			Summary: "Finding usable drives and resumable jobs.",
 			Detail:  "The recovery shell is ready for simulator-driven workflows.",
+		},
+		PriorView: PriorProcessingViewModel{
+			Kind:        PriorProcessingNone,
+			HistoryLine: "History: no matching contents found on this computer",
 		},
 		Recovery: RecoveryViewModel{
 			Phase:  "Waiting to start",

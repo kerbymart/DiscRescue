@@ -17,6 +17,7 @@ type MediaIdentifiedMsg struct {
 }
 
 type PriorProcessingLookupMsg struct {
+	View    PriorProcessingViewModel
 	Records []PriorProcessingRecord
 	Err     error
 }

@@ -49,12 +49,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
 			return m, nil
 		}
+		m.PriorView = typed.View
 		m.PriorRecords = append([]PriorProcessingRecord(nil), typed.Records...)
-		if len(m.PriorRecords) == 0 {
-			m.PriorRecords = []PriorProcessingRecord{{
-				Title:  "History",
-				Detail: "no matching contents found on this computer",
-			}}
+		if m.PriorView.Kind == "" {
+			m.PriorView = defaultPriorProcessingView()
+		}
+		if m.PriorView.Kind == PriorProcessingNone && len(m.PriorRecords) == 0 {
+			m.PriorRecords = []PriorProcessingRecord{{Title: "History", Detail: "no matching contents found on this computer"}}
 		}
 		return m, nil
 	case JobStartedMsg:
@@ -177,9 +178,27 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		m.Identity.Detail = selected.Path
 		return m, identifyMediaEffect(selected.Path)
 	case PagePriorProcessing:
-		m.Page = PageChooseAction
-		m.Cursor = 0
-		return m, nil
+		switch m.PriorView.Kind {
+		case PriorProcessingStrongCompleted, PriorProcessingStrongResumable, PriorProcessingProbable:
+			switch m.Cursor {
+			case 0:
+				m.Page = PageChooseAction
+				m.Cursor = 0
+				return m, nil
+			case len(m.PriorView.Options) - 1:
+				m.Page = PageChooseDrive
+				m.Cursor = 0
+				return m, nil
+			default:
+				m.Page = PageChooseAction
+				m.Cursor = 0
+				return m, nil
+			}
+		default:
+			m.Page = PageChooseAction
+			m.Cursor = 0
+			return m, nil
+		}
 	case PageChooseAction:
 		switch m.Cursor {
 		case 0:
@@ -234,7 +253,9 @@ func (m Model) cursorLimit() int {
 	case PageChooseDrive:
 		return len(m.Devices)
 	case PageChooseAction:
-		return 4
+		return 5
+	case PagePriorProcessing:
+		return len(m.PriorView.Options)
 	default:
 		return 0
 	}
@@ -270,5 +291,12 @@ func lookupPriorProcessingEffect() tea.Cmd {
 func startJobEffect() tea.Cmd {
 	return func() tea.Msg {
 		return EffectRequestedMsg{Kind: EffectStartJob}
+	}
+}
+
+func defaultPriorProcessingView() PriorProcessingViewModel {
+	return PriorProcessingViewModel{
+		Kind:        PriorProcessingNone,
+		HistoryLine: "History: no matching contents found on this computer",
 	}
 }

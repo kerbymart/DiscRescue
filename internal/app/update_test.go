@@ -71,7 +71,7 @@ func TestMediaIdentifiedMovesToPriorProcessingAndRequestsLookup(t *testing.T) {
 	next, cmd := model.Update(MediaIdentifiedMsg{
 		Identity: ContentIdentityViewModel{
 			Summary: "Matching contents were processed before",
-			Detail:  "Archived successfully",
+			Detail:  "DVD-ROM, 4.38 GiB",
 		},
 	})
 	updated := next.(Model)
@@ -88,6 +88,12 @@ func TestMediaIdentifiedMovesToPriorProcessingAndRequestsLookup(t *testing.T) {
 func TestEnterAdvancesSetupFlow(t *testing.T) {
 	model := NewModel()
 	model.Page = PagePriorProcessing
+	model.PriorView = PriorProcessingViewModel{
+		Kind:    PriorProcessingStrongCompleted,
+		Title:   "Matching disc contents were processed before",
+		Body:    []string{"Archived successfully on 2 August 2026"},
+		Options: []string{"Verify the previous archive", "Start another capture", "View previous job", "Edit physical-copy label", "Back"},
+	}
 
 	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
@@ -105,6 +111,23 @@ func TestEnterAdvancesSetupFlow(t *testing.T) {
 	updated = next.(Model)
 	if updated.Page != PageReview {
 		t.Fatalf("unexpected page after output: got %v want %v", updated.Page, PageReview)
+	}
+}
+
+func TestPriorProcessingSafeDefaultOptions(t *testing.T) {
+	model := NewModel()
+	model.Page = PagePriorProcessing
+	model.PriorView = PriorProcessingViewModel{
+		Kind:    PriorProcessingStrongCompleted,
+		Title:   "Matching disc contents were processed before",
+		Body:    []string{"Archived successfully on 2 August 2026"},
+		Options: []string{"Verify the previous archive", "Start another capture", "View previous job", "Edit physical-copy label", "Back"},
+	}
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageChooseAction {
+		t.Fatalf("unexpected page after prior-processing default: got %v want %v", updated.Page, PageChooseAction)
 	}
 }
 

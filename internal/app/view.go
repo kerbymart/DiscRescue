@@ -120,15 +120,40 @@ func renderDeviceList(m Model, width int) []string {
 }
 
 func renderPriorProcessing(m Model, width int) []string {
-	lines := append([]string{}, wrapText(m.Identity.Summary, width)...)
-	if m.Identity.Detail != "" {
-		lines = append(lines, "")
-		lines = append(lines, wrapText(m.Identity.Detail, width)...)
+	if m.PriorView.Kind == PriorProcessingNone || m.PriorView.Kind == PriorProcessingIndeterminate {
+		return wrapText(m.PriorView.HistoryLine, width)
 	}
-	for _, record := range m.PriorRecords {
+
+	lines := append([]string{}, wrapText(m.PriorView.Title, width)...)
+	for _, line := range m.PriorView.Body {
 		lines = append(lines, "")
-		lines = append(lines, wrapText(record.Title, width)...)
-		lines = append(lines, wrapText(record.Detail, width)...)
+		lines = append(lines, wrapText(line, width)...)
+	}
+	if m.PriorView.ImagePath != "" {
+		lines = append(lines, "")
+		lines = append(lines, fitToWidth("Image   "+m.PriorView.ImagePath, width))
+	}
+	if m.PriorView.CopyLabel != "" {
+		lines = append(lines, fitToWidth("Copy    "+m.PriorView.CopyLabel, width))
+	}
+	if m.PriorView.LastSaved != "" {
+		lines = append(lines, fitToWidth("Last saved       "+m.PriorView.LastSaved, width))
+	}
+	if m.PriorView.Recovered != "" {
+		lines = append(lines, fitToWidth("Recovered        "+m.PriorView.Recovered, width))
+	}
+	if m.PriorView.UnreadableSectors != "" {
+		lines = append(lines, fitToWidth("Unreadable       "+m.PriorView.UnreadableSectors, width))
+	}
+	if len(m.PriorView.Options) > 0 {
+		lines = append(lines, "")
+		for i, option := range m.PriorView.Options {
+			prefix := "  "
+			if i == m.Cursor {
+				prefix = "> "
+			}
+			lines = append(lines, fitToWidth(prefix+option, width))
+		}
 	}
 	return lines
 }
@@ -137,8 +162,9 @@ func renderActionList(m Model, width int) []string {
 	actions := []string{
 		"Start a new recovery",
 		"Resume an unfinished recovery",
+		"Verify an existing image",
+		"Merge recovery captures",
 		"Browse processed media",
-		"About",
 	}
 	lines := make([]string, 0, len(actions))
 	for i, action := range actions {
@@ -147,6 +173,11 @@ func renderActionList(m Model, width int) []string {
 			prefix = "> "
 		}
 		lines = append(lines, fitToWidth(prefix+action, width))
+	}
+	lines = append(lines, "")
+	lines = append(lines, wrapText(m.PriorView.HistoryLine, width)...)
+	if m.Identity.Detail != "" {
+		lines = append(lines, fitToWidth("Disc: "+m.Identity.Detail, width))
 	}
 	return lines
 }
