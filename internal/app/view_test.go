@@ -355,3 +355,21 @@ func TestViewDetailsUsesAltScreen(t *testing.T) {
 		t.Fatalf("unexpected details content: %q", view.Content)
 	}
 }
+
+func TestViewAboutShowsBuildMetadata(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageAbout
+
+	view := model.View().Content
+	if !strings.Contains(view, "Version dev") {
+		t.Fatalf("expected default build version, got %q", view)
+	}
+	if !strings.Contains(view, "Commit unknown") {
+		t.Fatalf("expected default build commit, got %q", view)
+	}
+	if !strings.Contains(view, "Build date unknown") {
+		t.Fatalf("expected default build date, got %q", view)
+	}
+}

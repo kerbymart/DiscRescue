@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"discrescue/internal/buildinfo"
 )
 
 type layoutTier uint8
@@ -130,7 +132,7 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 	case PageAdvanced:
 		return wrapText("Advanced settings stay separate from the normal setup flow.", width)
 	case PageAbout:
-		return wrapText("DiscRescue is a guided optical-disc recovery tool.", width)
+		return renderAboutPage(width)
 	default:
 		return nil
 	}
@@ -372,6 +374,22 @@ func renderStopConfirmPage(m Model, width int) []string {
 		lines = append(lines, wrapText(prefix+option, width)...)
 	}
 	return lines
+}
+
+func renderAboutPage(width int) []string {
+	lines := []string{
+		"DiscRescue is a guided optical-disc recovery tool.",
+		"",
+		"Version    " + buildinfo.Version,
+		"Commit     " + buildinfo.Commit,
+		"Build date " + buildinfo.BuildDate,
+	}
+
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, wrapText(line, width)...)
+	}
+	return out
 }
 
 func selectedDriveLabel(m Model) string {

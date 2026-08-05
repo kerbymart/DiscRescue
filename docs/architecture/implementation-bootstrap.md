@@ -30,3 +30,7 @@ This repository is bootstrapped from the project-owned TDD in `.project/discresc
 - `docs/formats/content-identity-v1.md`
 - `docs/formats/catalog-v1.md`
 - `docs/formats/event-log.md`
+
+## Release Notes
+
+- `docs/architecture/linux-release-packaging.md`
