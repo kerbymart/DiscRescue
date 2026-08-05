@@ -1,5 +1,8 @@
 package logging
 
 type Event struct {
-	Kind string
+	Time      string
+	Level     string
+	Component string
+	Kind      string
 }
