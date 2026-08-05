@@ -176,9 +176,9 @@ func UnmarshalCommandResult(payload []byte) (CommandResult, error) {
 
 func encodeCommandKind(kind CommandKind) (uint16, error) {
 	switch kind {
-	case CommandProbe:
+	case CommandInquiry:
 		return 1, nil
-	case CommandRead:
+	case CommandReadBlocks:
 		return 2, nil
 	default:
 		return 0, fmt.Errorf("encode command kind: unsupported command %q", kind)
@@ -188,9 +188,9 @@ func encodeCommandKind(kind CommandKind) (uint16, error) {
 func decodeCommandKind(code uint16) (CommandKind, error) {
 	switch code {
 	case 1:
-		return CommandProbe, nil
+		return CommandInquiry, nil
 	case 2:
-		return CommandRead, nil
+		return CommandReadBlocks, nil
 	default:
 		return "", fmt.Errorf("decode command kind: unsupported code %d", code)
 	}

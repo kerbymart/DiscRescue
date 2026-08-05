@@ -56,7 +56,7 @@ func TestUnmarshalFrameRejectsCorruptCRC(t *testing.T) {
 
 func TestMarshalAndUnmarshalCommandRequest(t *testing.T) {
 	request := CommandRequest{
-		Command:  CommandRead,
+		Command:  CommandReadBlocks,
 		StartLBA: 1234,
 		Sectors:  16,
 	}
