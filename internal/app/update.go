@@ -482,8 +482,10 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 			m.PreviousPage = PageChooseAction
 			m.Page = PageChooseOutput
 			m.Cursor = 0
-			m.Notice = &NoticeModel{Text: "Edit the suggested path if you want a different folder or file name.", Severity: SeverityInfo}
-			return m, nil
+			requestID := m.nextRequestID()
+			m.ActiveTargetRequest = requestID
+			m.Notice = &NoticeModel{Text: "Checking the suggested output path.", Severity: SeverityInfo}
+			return m, inspectTargetEffect(m.Setup.OutputPath, requestID)
 		case 1:
 			if !m.MediaRecoverable {
 				m.Notice = &NoticeModel{Text: firstNonEmpty(m.MediaRecoverabilityNote, "This disc cannot be recovered by the current build."), Severity: SeverityWarning}

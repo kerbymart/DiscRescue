@@ -302,13 +302,17 @@ func TestChooseActionStartMovesToReview(t *testing.T) {
 	model.Page = PageChooseAction
 	model.MediaRecoverable = true
 
-	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
 	if updated.Page != PageChooseOutput {
 		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseOutput)
 	}
-	if updated.Notice == nil || updated.Notice.Text != "Edit the suggested path if you want a different folder or file name." {
+	if updated.Notice == nil || updated.Notice.Text != "Checking the suggested output path." {
 		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	}
+	requested := cmd().(EffectRequestedMsg)
+	if requested.Kind != EffectInspectTarget {
+		t.Fatalf("unexpected effect request: %+v", requested)
 	}
 }
 
