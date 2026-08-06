@@ -43,14 +43,16 @@ type CatalogUpdatedMsg struct {
 }
 
 type JobStartedMsg struct {
-	JobID             string
-	OutputPath        string
-	Phase             string
-	Status            string
-	TotalSectors      uint64
-	RecoveredSectors  uint64
-	DeferredSectors   uint64
-	UnreadableSectors uint64
+	JobID              string
+	OutputPath         string
+	Phase              string
+	Status             string
+	TotalSectors       uint64
+	RecoveredSectors   uint64
+	PassCoveredSectors uint64
+	PassTargetSectors  uint64
+	DeferredSectors    uint64
+	UnreadableSectors  uint64
 }
 
 type JobStartFailedMsg struct {
@@ -89,12 +91,14 @@ type JobCheckpointedMsg struct {
 }
 
 type JobPausedMsg struct {
-	OutputPath        string
-	MapPath           string
-	RecoveredSectors  uint64
-	TotalSectors      uint64
-	DeferredSectors   uint64
-	UnreadableSectors uint64
+	OutputPath         string
+	MapPath            string
+	RecoveredSectors   uint64
+	TotalSectors       uint64
+	PassCoveredSectors uint64
+	PassTargetSectors  uint64
+	DeferredSectors    uint64
+	UnreadableSectors  uint64
 }
 
 type JobStoppedMsg struct {

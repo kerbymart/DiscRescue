@@ -192,6 +192,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.Phase = typed.Phase
 		m.Recovery.TotalSectors = typed.TotalSectors
 		m.Recovery.RecoveredSectors = typed.RecoveredSectors
+		m.Recovery.PassCoveredSectors = typed.PassCoveredSectors
+		m.Recovery.PassTargetSectors = typed.PassTargetSectors
 		m.Recovery.DeferredSectors = typed.DeferredSectors
 		m.Recovery.UnreadableSectors = typed.UnreadableSectors
 		m.Recovery.PausePending = false
@@ -204,6 +206,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.OutputPath = typed.OutputPath
 		m.Recovery.RecoveredSectors = typed.RecoveredSectors
 		m.Recovery.TotalSectors = typed.TotalSectors
+		m.Recovery.PassCoveredSectors = typed.PassCoveredSectors
+		m.Recovery.PassTargetSectors = typed.PassTargetSectors
 		m.Recovery.DeferredSectors = typed.DeferredSectors
 		m.Recovery.UnreadableSectors = typed.UnreadableSectors
 		m.Recovery.PausePending = false
@@ -224,6 +228,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.Phase = typed.Snapshot.Phase
 		m.Recovery.RecoveredSectors = typed.Snapshot.RecoveredSectors
 		m.Recovery.TotalSectors = typed.Snapshot.TotalSectors
+		m.Recovery.PassCoveredSectors = typed.Snapshot.PassCoveredSectors
+		m.Recovery.PassTargetSectors = typed.Snapshot.PassTargetSectors
 		m.Recovery.DeferredSectors = typed.Snapshot.DeferredSectors
 		m.Recovery.UnreadableSectors = typed.Snapshot.UnreadableSectors
 		m.Recovery.Status = typed.Snapshot.Status
@@ -653,6 +659,20 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		default:
 			return m, nil
 		}
+	case PageAdvanced:
+		switch m.Cursor {
+		case 0:
+			m.Setup.MethodLabel = nextMethodLabel(m.Setup.MethodLabel)
+			m.Setup.MethodDetail = recoveryMethodDetail(m.Setup.MethodLabel)
+			m.Notice = &NoticeModel{Text: m.Setup.MethodDetail, Severity: SeverityInfo}
+			return m, nil
+		case 1:
+			m.Page = PageChooseAction
+			m.Cursor = 0
+			return m, nil
+		default:
+			return m, nil
+		}
 	default:
 		return m, nil
 	}
@@ -694,6 +714,8 @@ func (m Model) cursorLimit() int {
 		}
 		return len(m.HistoryItems) + 1
 	case PagePaused:
+		return 2
+	case PageAdvanced:
 		return 2
 	case PageChooseOutput:
 		return 3
@@ -974,6 +996,7 @@ func buildRecoveryDetails(m Model) []string {
 		"Output: " + firstNonEmpty(m.Recovery.OutputPath, m.Setup.OutputPath),
 		"Map: " + firstNonEmpty(m.Setup.ResumeMapPath, replaceExtension(firstNonEmpty(m.Recovery.OutputPath, m.Setup.OutputPath), ".drmap")),
 		"Phase: " + firstNonEmpty(m.Recovery.Phase, "Waiting to start"),
+		"Pass coverage: " + formatCount(m.Recovery.PassCoveredSectors) + " of " + formatCount(m.Recovery.PassTargetSectors) + " sectors",
 		"Recovered sectors: " + formatCount(m.Recovery.RecoveredSectors),
 		"Deferred sectors: " + formatCount(m.Recovery.DeferredSectors),
 		"Unreadable sectors: " + formatCount(m.Recovery.UnreadableSectors),
@@ -1014,12 +1037,19 @@ func buildSummaryDetails(m Model, msg JobStoppedMsg) []string {
 
 func nextMethodLabel(current string) string {
 	switch current {
-	case "Balanced recovery":
-		return "Fast recovery"
 	case "Fast recovery":
-		return "Gentle recovery"
+		return "Continue through retry pass"
 	default:
-		return "Balanced recovery"
+		return "Fast recovery"
+	}
+}
+
+func recoveryMethodDetail(current string) string {
+	switch current {
+	case "Continue through retry pass":
+		return "Finish the fast pass, then continue directly into deferred-sector retry work."
+	default:
+		return "Skip damaged ranges for now and stop after the fast pass."
 	}
 }
 

@@ -56,6 +56,7 @@ type JobSetupModel struct {
 	OutputFormat      string
 	FreeSpace         string
 	MethodLabel       string
+	MethodDetail      string
 	CopyLabel         string
 	ResumeReady       bool
 	ResumeMapPath     string
@@ -114,19 +115,21 @@ type PriorProcessingViewModel struct {
 }
 
 type RecoveryViewModel struct {
-	Phase             string
-	RecoveredSectors  uint64
-	TotalSectors      uint64
-	DeferredSectors   uint64
-	UnreadableSectors uint64
-	Status            string
-	OutputPath        string
-	Elapsed           string
-	Remaining         string
-	ETA               string
-	Throughput        string
-	LastIssue         []string
-	PausePending      bool
+	Phase              string
+	RecoveredSectors   uint64
+	TotalSectors       uint64
+	PassCoveredSectors uint64
+	PassTargetSectors  uint64
+	DeferredSectors    uint64
+	UnreadableSectors  uint64
+	Status             string
+	OutputPath         string
+	Elapsed            string
+	Remaining          string
+	ETA                string
+	Throughput         string
+	LastIssue          []string
+	PausePending       bool
 }
 
 type DetailsViewModel struct {
@@ -146,19 +149,21 @@ type NoticeModel struct {
 }
 
 type ProgressSnapshot struct {
-	Phase             string
-	RecoveredSectors  uint64
-	TotalSectors      uint64
-	DeferredSectors   uint64
-	UnreadableSectors uint64
-	Status            string
-	Elapsed           string
-	Remaining         string
-	ETA               string
-	Throughput        string
-	LastIssue         []string
-	OutputPath        string
-	PausePending      bool
+	Phase              string
+	RecoveredSectors   uint64
+	TotalSectors       uint64
+	PassCoveredSectors uint64
+	PassTargetSectors  uint64
+	DeferredSectors    uint64
+	UnreadableSectors  uint64
+	Status             string
+	Elapsed            string
+	Remaining          string
+	ETA                string
+	Throughput         string
+	LastIssue          []string
+	OutputPath         string
+	PausePending       bool
 }
 
 type JobSummary struct {
@@ -223,7 +228,8 @@ func NewModel() Model {
 			DefaultPath:       "Not chosen yet",
 			OutputFormat:      "ISO",
 			FreeSpace:         "Unknown until an output location is selected",
-			MethodLabel:       "Balanced recovery",
+			MethodLabel:       "Fast recovery",
+			MethodDetail:      "Skip damaged ranges for now and stop after the fast pass.",
 			CopyLabel:         "Not set (optional)",
 		},
 		Identity: ContentIdentityViewModel{

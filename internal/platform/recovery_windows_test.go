@@ -237,3 +237,15 @@ func TestRetryPassNarrowsDeferredClusterToActualUnreadableSector(t *testing.T) {
 		t.Fatalf("expected one unreadable sector after retry pass, got %d", unreadable)
 	}
 }
+
+func TestShouldContinueRecoveryOnlyWhenPolicyRequestsRetryPass(t *testing.T) {
+	if shouldContinueRecovery(RecoveryPolicyFast, recoveryPassFast, recoveryPassRetry) {
+		t.Fatal("expected fast policy to stop after fast pass")
+	}
+	if !shouldContinueRecovery(RecoveryPolicyContinueRetry, recoveryPassFast, recoveryPassRetry) {
+		t.Fatal("expected continue policy to enter retry pass")
+	}
+	if shouldContinueRecovery(RecoveryPolicyContinueRetry, recoveryPassRetry, recoveryPassFast) {
+		t.Fatal("did not expect retry pass to loop back into another pass automatically")
+	}
+}

@@ -352,6 +352,20 @@ func TestChooseActionBrowseHistoryRequestsFolderScan(t *testing.T) {
 	}
 }
 
+func TestAdvancedPageCyclesRecoveryMode(t *testing.T) {
+	model := NewModel()
+	model.Page = PageAdvanced
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Setup.MethodLabel != "Continue through retry pass" {
+		t.Fatalf("unexpected recovery mode: %q", updated.Setup.MethodLabel)
+	}
+	if updated.Setup.MethodDetail != "Finish the fast pass, then continue directly into deferred-sector retry work." {
+		t.Fatalf("unexpected method detail: %q", updated.Setup.MethodDetail)
+	}
+}
+
 func TestReviewChooseAnotherDriveReturnsToDriveList(t *testing.T) {
 	model := NewModel()
 	model.Page = PageReview
@@ -725,18 +739,23 @@ func TestProgressAndWorkerStatusRemainResponsive(t *testing.T) {
 	model.Page = PageRecovering
 
 	next, _ := model.Update(ProgressMsg{Snapshot: ProgressSnapshot{
-		Phase:            "Finding readable areas",
-		RecoveredSectors: 120,
-		TotalSectors:     240,
-		Status:           "Reading difficult areas.",
-		Remaining:        "1.42 GiB of 4.38 GiB remaining",
-		ETA:              "about 7 minutes",
-		LastIssue:        []string{"Last issue: sector 1,891,840 could not be read.", "It will be tried again during the recovery pass."},
-		OutputPath:       "D:/Archives/archive-disc.iso",
+		Phase:              "Finding readable areas",
+		RecoveredSectors:   120,
+		TotalSectors:       240,
+		PassCoveredSectors: 180,
+		PassTargetSectors:  240,
+		Status:             "Reading difficult areas.",
+		Remaining:          "1.42 GiB of this pass remaining",
+		ETA:                "about 7 minutes",
+		LastIssue:          []string{"Last issue: sector 1,891,840 could not be read.", "It will be tried again during the recovery pass."},
+		OutputPath:         "D:/Archives/archive-disc.iso",
 	}})
 	updated := next.(Model)
 	if updated.Recovery.Phase != "Finding readable areas" {
 		t.Fatalf("unexpected recovery phase: %q", updated.Recovery.Phase)
+	}
+	if updated.Recovery.PassCoveredSectors != 180 || updated.Recovery.PassTargetSectors != 240 {
+		t.Fatalf("unexpected pass coverage: %+v", updated.Recovery)
 	}
 
 	next, _ = updated.Update(WorkerUnresponsiveMsg{Since: 3 * time.Second})
