@@ -23,6 +23,7 @@ type ProgramModel struct {
 type programState struct {
 	activeRecovery platform.RecoveryJob
 	activeJobID    string
+	pendingPause   bool
 }
 
 func NewProgramModel(runtime platform.Runtime) ProgramModel {
@@ -122,49 +123,64 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			Err:       err,
 		}
 	case EffectStartJob:
-		jobID := fmt.Sprintf("job-%d", time.Now().UnixNano())
-		job, err := m.runtime.Recovery.StartImageRecovery(platform.RecoveryInput{
-			DevicePath:        m.SelectedDrive.Path,
-			OutputPath:        m.Setup.OutputPath,
-			LogicalSectorSize: m.MediaLogicalSectorSize,
-			CapacitySectors:   m.MediaCapacitySectors,
-		})
-		if err != nil {
-			return JobStartFailedMsg{Err: err}
-		}
-		m.state.activeRecovery = job
-		m.state.activeJobID = jobID
-		phase := "Reading optical sectors"
-		status := "Reading sectors from the selected optical drive."
-		if snapshot := job.Snapshot(); snapshot.Resumed {
-			phase = "Resuming optical recovery"
-			status = "Resuming from the saved recovery map."
-		}
-		return JobStartedMsg{
-			JobID:        jobID,
-			OutputPath:   m.Setup.OutputPath,
-			Phase:        phase,
-			Status:       status,
-			TotalSectors: m.MediaCapacitySectors,
-		}
+		return m.startRecoveryJob()
 	case EffectPauseJob:
-		return StatusMsg{Text: "Pause is not implemented for the current recovery backend.", Severity: SeverityWarning}
+		if m.state.activeRecovery == nil {
+			return StatusMsg{Text: "No active recovery job is available to pause.", Severity: SeverityWarning}
+		}
+		m.state.pendingPause = true
+		m.state.activeRecovery.Cancel()
+		return StatusMsg{Text: "Pausing recovery after the current read completes.", Severity: SeverityInfo}
 	case EffectResumeJob:
-		return StatusMsg{Text: "Resume is not implemented for the current recovery backend.", Severity: SeverityWarning}
+		if m.state.activeRecovery != nil {
+			return StatusMsg{Text: "Recovery is already running.", Severity: SeverityWarning}
+		}
+		return m.startRecoveryJob()
 	case EffectStopJob:
 		if m.state.activeRecovery == nil {
 			return StatusMsg{Text: "No active recovery job is available to stop.", Severity: SeverityWarning}
 		}
+		m.state.pendingPause = false
 		m.state.activeRecovery.Cancel()
 		return StatusMsg{Text: "Stopping recovery after the current read completes.", Severity: SeverityWarning}
 	case EffectStopNow:
 		if m.state.activeRecovery == nil {
 			return StatusMsg{Text: "No active recovery job is available to stop.", Severity: SeverityWarning}
 		}
+		m.state.pendingPause = false
 		m.state.activeRecovery.Cancel()
 		return StatusMsg{Text: "Immediate stop requested.", Severity: SeverityWarning}
 	default:
 		return FatalMsg{Err: fmt.Errorf("unsupported effect: %s", request.Kind)}
+	}
+}
+
+func (m ProgramModel) startRecoveryJob() tea.Msg {
+	jobID := fmt.Sprintf("job-%d", time.Now().UnixNano())
+	job, err := m.runtime.Recovery.StartImageRecovery(platform.RecoveryInput{
+		DevicePath:        m.SelectedDrive.Path,
+		OutputPath:        m.Setup.OutputPath,
+		LogicalSectorSize: m.MediaLogicalSectorSize,
+		CapacitySectors:   m.MediaCapacitySectors,
+	})
+	if err != nil {
+		return JobStartFailedMsg{Err: err}
+	}
+	m.state.activeRecovery = job
+	m.state.activeJobID = jobID
+	m.state.pendingPause = false
+	phase := "Reading optical sectors"
+	status := "Reading sectors from the selected optical drive."
+	if snapshot := job.Snapshot(); snapshot.Resumed {
+		phase = "Resuming optical recovery"
+		status = "Resuming from the saved recovery map."
+	}
+	return JobStartedMsg{
+		JobID:        jobID,
+		OutputPath:   m.Setup.OutputPath,
+		Phase:        phase,
+		Status:       status,
+		TotalSectors: m.MediaCapacitySectors,
 	}
 }
 
@@ -311,7 +327,7 @@ func fileExists(path string) bool {
 
 func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 	switch msg.(type) {
-	case JobStartedMsg, ProgressMsg, StatusMsg:
+	case JobStartedMsg, JobPausedMsg, ProgressMsg, StatusMsg:
 		if m.state != nil && m.state.activeRecovery != nil {
 			return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 				snapshot := m.state.activeRecovery.Snapshot()
@@ -322,6 +338,16 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 				}
 				if snapshot.Done {
 					m.state.activeRecovery = nil
+					if m.state.pendingPause {
+						m.state.pendingPause = false
+						return JobPausedMsg{
+							OutputPath:        m.Setup.OutputPath,
+							MapPath:           snapshot.MapPath,
+							RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
+							TotalSectors:      totalSectors,
+							UnreadableSectors: snapshot.UnreadableSectors,
+						}
+					}
 					summary := JobSummary{
 						ImagePath:         m.Setup.OutputPath,
 						MapPath:           snapshot.MapPath,
@@ -365,6 +391,7 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						Throughput:        throughputLabel(snapshot.StartedAt, snapshot.CopiedBytes),
 						LastIssue:         append([]string(nil), snapshot.LastIssue...),
 						OutputPath:        m.Setup.OutputPath,
+						PausePending:      m.state.pendingPause,
 					},
 				}
 			})

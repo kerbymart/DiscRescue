@@ -171,8 +171,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.TotalSectors = typed.TotalSectors
 		m.Recovery.RecoveredSectors = 0
 		m.Recovery.UnreadableSectors = 0
+		m.Recovery.PausePending = false
 		m.Details.Lines = buildRecoveryDetails(m)
 		m.Notice = nil
+		return m, nil
+	case JobPausedMsg:
+		m.Page = PagePaused
+		m.Recovery.Status = "Recovery paused"
+		m.Recovery.OutputPath = typed.OutputPath
+		m.Recovery.RecoveredSectors = typed.RecoveredSectors
+		m.Recovery.TotalSectors = typed.TotalSectors
+		m.Recovery.UnreadableSectors = typed.UnreadableSectors
+		m.Recovery.PausePending = false
+		if typed.MapPath != "" {
+			m.Setup.ResumeMapPath = typed.MapPath
+		}
+		m.Details.Lines = buildRecoveryDetails(m)
+		m.Notice = &NoticeModel{Text: "Progress saved. Continue recovery when you are ready.", Severity: SeverityInfo}
 		return m, nil
 	case JobStartFailedMsg:
 		m.LastError = typed.Err
@@ -288,8 +303,10 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case matchesKey(key, DefaultKeys().Pause):
 		switch m.Page {
 		case PageRecovering:
-			m.Notice = &NoticeModel{Text: "Pause is not implemented for the current recovery backend.", Severity: SeverityWarning}
-			return m, nil
+			m.Page = PagePaused
+			m.Recovery.PausePending = true
+			m.Cursor = 0
+			return m, pauseJobEffect()
 		case PagePaused:
 			m.Page = PageRecovering
 			m.Cursor = 0

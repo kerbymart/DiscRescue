@@ -84,6 +84,14 @@ type JobCheckpointedMsg struct {
 	At time.Time
 }
 
+type JobPausedMsg struct {
+	OutputPath        string
+	MapPath           string
+	RecoveredSectors  uint64
+	TotalSectors      uint64
+	UnreadableSectors uint64
+}
+
 type JobStoppedMsg struct {
 	Summary JobSummary
 	Err     error

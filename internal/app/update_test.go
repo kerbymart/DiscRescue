@@ -491,19 +491,43 @@ func TestDetailsKeyOpensAndEscReturns(t *testing.T) {
 	}
 }
 
-func TestSpaceDuringRecoveryShowsTruthfulPauseNotice(t *testing.T) {
+func TestSpaceDuringRecoveryMovesToPausedAndRequestsPause(t *testing.T) {
 	model := NewModel()
 	model.Page = PageRecovering
 
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	updated := next.(Model)
-	if cmd != nil {
-		t.Fatalf("expected no pause command, got %#v", cmd)
+	if updated.Page != PagePaused {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PagePaused)
 	}
-	if updated.Page != PageRecovering {
-		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageRecovering)
+	if !updated.Recovery.PausePending {
+		t.Fatalf("expected pause pending state: %+v", updated.Recovery)
 	}
-	if updated.Notice == nil || updated.Notice.Text != "Pause is not implemented for the current recovery backend." {
+	requested := cmd().(EffectRequestedMsg)
+	if requested.Kind != EffectPauseJob {
+		t.Fatalf("unexpected pause effect: %+v", requested)
+	}
+}
+
+func TestJobPausedMovesToPausedState(t *testing.T) {
+	model := NewModel()
+	model.Page = PageRecovering
+
+	next, _ := model.Update(JobPausedMsg{
+		OutputPath:        "D:/Archives/archive-disc.iso",
+		MapPath:           "D:/Archives/archive-disc.drmap",
+		RecoveredSectors:  120,
+		TotalSectors:      240,
+		UnreadableSectors: 3,
+	})
+	updated := next.(Model)
+	if updated.Page != PagePaused {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PagePaused)
+	}
+	if updated.Recovery.PausePending {
+		t.Fatalf("expected pause pending to clear: %+v", updated.Recovery)
+	}
+	if updated.Notice == nil || updated.Notice.Text != "Progress saved. Continue recovery when you are ready." {
 		t.Fatalf("unexpected notice: %+v", updated.Notice)
 	}
 }
