@@ -64,6 +64,12 @@ type ResumableJobsDiscoveredMsg struct {
 	Err       error
 }
 
+type ProcessedMediaDiscoveredMsg struct {
+	RequestID int
+	Items     []ProcessedMediaViewModel
+	Err       error
+}
+
 type ProgressMsg struct {
 	Snapshot ProgressSnapshot
 }
@@ -98,6 +104,7 @@ const (
 	EffectLookupHistory   EffectKind = "lookup_history"
 	EffectInspectTarget   EffectKind = "inspect_target"
 	EffectFindResumeJobs  EffectKind = "find_resume_jobs"
+	EffectBrowseHistory   EffectKind = "browse_history"
 	EffectStartJob        EffectKind = "start_job"
 	EffectPauseJob        EffectKind = "pause_job"
 	EffectResumeJob       EffectKind = "resume_job"

@@ -108,6 +108,9 @@ func TestViewActionPageShowsHistoryLineAndDiscSummary(t *testing.T) {
 	if !strings.Contains(view, "Resume an unfinished recovery") {
 		t.Fatalf("expected resume action, got %q", view)
 	}
+	if !strings.Contains(view, "Browse processed media") {
+		t.Fatalf("expected browse-history action, got %q", view)
+	}
 }
 
 func TestViewReviewUsesCompactUserFacingSummary(t *testing.T) {
@@ -177,6 +180,32 @@ func TestViewResumeJobsShowsSavedRecoveries(t *testing.T) {
 	if !strings.Contains(view, "Resume recovery from 120 recovered sectors and 3 unreadable") ||
 		!strings.Contains(view, "sectors.") {
 		t.Fatalf("expected resume details, got %q", view)
+	}
+}
+
+func TestViewHistoryShowsProcessedMediaList(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageHistory
+	model.HistoryItems = []ProcessedMediaViewModel{{
+		Title:      "archive-disc.iso",
+		ImagePath:  "D:/Archives/archive-disc.iso",
+		MapPath:    "D:/Archives/archive-disc.drmap",
+		Status:     "Resumable",
+		ModifiedAt: "2026-08-06 10:15",
+		Detail:     "Resume recovery from 120 recovered sectors and 3 unreadable sectors.",
+	}}
+
+	view := model.View().Content
+	if !strings.Contains(view, "Browse processed media") {
+		t.Fatalf("expected history page title, got %q", view)
+	}
+	if !strings.Contains(view, "> archive-disc.iso") {
+		t.Fatalf("expected history item row, got %q", view)
+	}
+	if !strings.Contains(view, "Status") || !strings.Contains(view, "Resumable") {
+		t.Fatalf("expected item status details, got %q", view)
 	}
 }
 

@@ -108,6 +108,13 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			Jobs:      jobs,
 			Err:       err,
 		}
+	case EffectBrowseHistory:
+		items, err := m.findProcessedMedia(request.BasePath)
+		return ProcessedMediaDiscoveredMsg{
+			RequestID: request.RequestID,
+			Items:     items,
+			Err:       err,
+		}
 	case EffectStartJob:
 		jobID := fmt.Sprintf("job-%d", time.Now().UnixNano())
 		job, err := m.runtime.Recovery.StartImageRecovery(platform.RecoveryInput{
@@ -196,6 +203,68 @@ func (m ProgramModel) findResumableJobs(basePath string) ([]ResumableJobViewMode
 		return strings.ToLower(jobs[i].OutputPath) < strings.ToLower(jobs[j].OutputPath)
 	})
 	return jobs, nil
+}
+
+func (m ProgramModel) findProcessedMedia(basePath string) ([]ProcessedMediaViewModel, error) {
+	basePath = strings.TrimSpace(basePath)
+	if basePath == "" {
+		basePath = "."
+	}
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return nil, fmt.Errorf("browse processed media in %s: %w", basePath, err)
+	}
+
+	items := make([]ProcessedMediaViewModel, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".iso") {
+			continue
+		}
+		outputPath := filepath.Join(basePath, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			return nil, fmt.Errorf("inspect processed media %s: %w", outputPath, err)
+		}
+		mapPath := replaceExtension(outputPath, ".drmap")
+		item := ProcessedMediaViewModel{
+			Title:      entry.Name(),
+			ImagePath:  outputPath,
+			ModifiedAt: info.ModTime().Local().Format("2006-01-02 15:04"),
+			Status:     "Image only",
+			Detail:     "No recovery map was found next to this image.",
+		}
+
+		status, inspectErr := m.runtime.Recovery.InspectRecoveryTarget(platform.RecoveryInput{
+			DevicePath:        m.SelectedDrive.Path,
+			OutputPath:        outputPath,
+			LogicalSectorSize: m.MediaLogicalSectorSize,
+			CapacitySectors:   m.MediaCapacitySectors,
+		})
+		switch {
+		case inspectErr == nil && status.CanResume:
+			item.MapPath = status.MapPath
+			item.Status = "Resumable"
+			item.Detail = status.Detail
+		case fileExists(mapPath):
+			item.MapPath = mapPath
+			item.Status = "Saved with map"
+			item.Detail = "A recovery map exists, but it does not match the currently selected disc."
+		default:
+			_ = status
+		}
+
+		items = append(items, item)
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return strings.ToLower(items[i].Title) < strings.ToLower(items[j].Title)
+	})
+	return items, nil
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {

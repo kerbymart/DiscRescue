@@ -85,6 +85,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Page = PageChooseAction
 		m.Cursor = 0
 		return m, nil
+	case ProcessedMediaDiscoveredMsg:
+		if typed.RequestID != m.ActiveHistoryRequest {
+			return m, nil
+		}
+		if typed.Err != nil {
+			m.LastError = typed.Err
+			m.HistoryItems = nil
+			m.Page = PageChooseAction
+			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			return m, nil
+		}
+		m.HistoryItems = append([]ProcessedMediaViewModel(nil), typed.Items...)
+		m.Page = PageHistory
+		m.Cursor = 0
+		if len(m.HistoryItems) == 0 {
+			m.Notice = &NoticeModel{Text: "No processed media were found in the current output folder.", Severity: SeverityInfo}
+		} else {
+			m.Notice = &NoticeModel{Text: "Browse saved images and recovery maps from the current output folder.", Severity: SeverityInfo}
+		}
+		return m, nil
 	case RecoveryTargetInspectedMsg:
 		if typed.RequestID != m.ActiveTargetRequest {
 			return m, nil
@@ -400,6 +420,14 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 			m.Notice = &NoticeModel{Text: "Checking the current output folder for resumable recoveries.", Severity: SeverityInfo}
 			return m, findResumeJobsEffect(firstNonEmpty(strings.TrimSpace(m.Setup.OutputDirectory), "."), requestID)
 		case 2:
+			requestID := m.nextRequestID()
+			m.ActiveHistoryRequest = requestID
+			m.HistoryItems = nil
+			m.Page = PageHistory
+			m.Cursor = 0
+			m.Notice = &NoticeModel{Text: "Scanning the current output folder for processed media.", Severity: SeverityInfo}
+			return m, browseHistoryEffect(firstNonEmpty(strings.TrimSpace(m.Setup.OutputDirectory), "."), requestID)
+		case 3:
 			m.Page = PageChooseDrive
 			m.Cursor = 0
 			m.Notice = &NoticeModel{Text: "Choose one optical drive.", Severity: SeverityInfo}
@@ -443,6 +471,17 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		m.Page = PageReview
 		m.Cursor = 0
 		m.Notice = &NoticeModel{Text: selected.Detail, Severity: SeverityInfo}
+		return m, nil
+	case PageHistory:
+		if len(m.HistoryItems) == 0 || m.Cursor >= len(m.HistoryItems) {
+			m.Page = PageChooseAction
+			m.Cursor = 0
+			return m, nil
+		}
+		selected := m.HistoryItems[m.Cursor]
+		m.PreviousPage = PageHistory
+		m.Details.Lines = buildProcessedMediaDetails(selected)
+		m.Page = PageDetails
 		return m, nil
 	case PagePaused:
 		switch m.Cursor {
@@ -518,7 +557,7 @@ func (m Model) cursorLimit() int {
 	case PageChooseDrive:
 		return len(m.Devices)
 	case PageChooseAction:
-		return 3
+		return 4
 	case PagePriorProcessing:
 		return len(m.PriorView.Options)
 	case PageReview:
@@ -528,6 +567,11 @@ func (m Model) cursorLimit() int {
 			return 1
 		}
 		return len(m.ResumeJobs) + 1
+	case PageHistory:
+		if len(m.HistoryItems) == 0 {
+			return 1
+		}
+		return len(m.HistoryItems) + 1
 	case PagePaused:
 		return 2
 	case PageStopConfirm:
@@ -591,6 +635,12 @@ func findResumeJobsEffect(basePath string, requestID int) tea.Cmd {
 	}
 }
 
+func browseHistoryEffect(basePath string, requestID int) tea.Cmd {
+	return func() tea.Msg {
+		return EffectRequestedMsg{Kind: EffectBrowseHistory, BasePath: basePath, RequestID: requestID}
+	}
+}
+
 func startJobEffect() tea.Cmd {
 	return func() tea.Msg {
 		return EffectRequestedMsg{Kind: EffectStartJob}
@@ -626,6 +676,23 @@ func defaultPriorProcessingView() PriorProcessingViewModel {
 		Kind:        PriorProcessingNone,
 		HistoryLine: "History lookup is unavailable in this build.",
 	}
+}
+
+func buildProcessedMediaDetails(item ProcessedMediaViewModel) []string {
+	lines := []string{
+		"Image: " + item.ImagePath,
+		"Status: " + item.Status,
+	}
+	if item.MapPath != "" {
+		lines = append(lines, "Map: "+item.MapPath)
+	}
+	if item.ModifiedAt != "" {
+		lines = append(lines, "Updated: "+item.ModifiedAt)
+	}
+	if item.Detail != "" {
+		lines = append(lines, "Notes: "+item.Detail)
+	}
+	return lines
 }
 
 func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {

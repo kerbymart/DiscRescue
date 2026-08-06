@@ -138,7 +138,7 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 	case PageResumeJobs:
 		return renderResumeJobsPage(m, width, tier)
 	case PageHistory:
-		return wrapText("Browse local processed-media history in a one-column list.", width)
+		return renderHistoryPage(m, width, tier)
 	case PageDetails:
 		return renderDetailsPage(m, width)
 	case PageAdvanced:
@@ -240,6 +240,7 @@ func renderActionList(m Model, width int, tier layoutTier) []string {
 	actions := []string{
 		"Start a new recovery",
 		"Resume an unfinished recovery",
+		"Browse processed media",
 		"Choose another drive",
 	}
 	lines := make([]string, 0, len(actions))
@@ -283,6 +284,38 @@ func renderResumeJobsPage(m Model, width int, tier layoutTier) []string {
 	lines = append(lines, "")
 	backPrefix := "  "
 	if m.Cursor >= len(m.ResumeJobs) {
+		backPrefix = "> "
+	}
+	lines = append(lines, wrapText(backPrefix+"Back", width)...)
+	return lines
+}
+
+func renderHistoryPage(m Model, width int, tier layoutTier) []string {
+	if len(m.HistoryItems) == 0 {
+		lines := wrapText("No processed media were found in the current output folder.", width)
+		lines = append(lines, "")
+		lines = append(lines, wrapText("Press Enter or Esc to go back.", width)...)
+		return lines
+	}
+
+	lines := wrapText("Browse saved recovery images and their local recovery maps.", width)
+	for i, item := range m.HistoryItems {
+		prefix := "  "
+		if i == m.Cursor {
+			prefix = "> "
+		}
+		lines = append(lines, "")
+		lines = append(lines, wrapText(prefix+item.Title, width)...)
+		if tier != layoutCompact {
+			lines = append(lines, labeledLines("Status", item.Status, width)...)
+			if item.ModifiedAt != "" {
+				lines = append(lines, labeledLines("Updated", item.ModifiedAt, width)...)
+			}
+		}
+	}
+	lines = append(lines, "")
+	backPrefix := "  "
+	if m.Cursor >= len(m.HistoryItems) {
 		backPrefix = "> "
 	}
 	lines = append(lines, wrapText(backPrefix+"Back", width)...)

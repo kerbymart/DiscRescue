@@ -70,6 +70,15 @@ type PriorProcessingRecord struct {
 	Detail string
 }
 
+type ProcessedMediaViewModel struct {
+	Title      string
+	ImagePath  string
+	MapPath    string
+	Status     string
+	ModifiedAt string
+	Detail     string
+}
+
 type ResumableJobViewModel struct {
 	OutputPath        string
 	MapPath           string
@@ -177,6 +186,7 @@ type Model struct {
 	MediaRecoverabilityNote string
 	PriorView               PriorProcessingViewModel
 	PriorRecords            []PriorProcessingRecord
+	HistoryItems            []ProcessedMediaViewModel
 	ResumeJobs              []ResumableJobViewModel
 	Recovery                RecoveryViewModel
 	Summary                 JobSummary
@@ -191,6 +201,7 @@ type Model struct {
 	ActiveMediaRequest      int
 	ActiveTargetRequest     int
 	ActiveResumeRequest     int
+	ActiveHistoryRequest    int
 }
 
 func NewModel() Model {

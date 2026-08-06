@@ -230,6 +230,24 @@ func TestChooseActionResumeRequestsJobDiscovery(t *testing.T) {
 	}
 }
 
+func TestChooseActionBrowseHistoryRequestsFolderScan(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseAction
+	model.MediaRecoverable = true
+	model.Cursor = 2
+	model.Setup.OutputDirectory = "D:/Archives"
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageHistory {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageHistory)
+	}
+	requested := cmd().(EffectRequestedMsg)
+	if requested.Kind != EffectBrowseHistory || requested.BasePath != "D:/Archives" {
+		t.Fatalf("unexpected effect request: %+v", requested)
+	}
+}
+
 func TestReviewChooseAnotherDriveReturnsToDriveList(t *testing.T) {
 	model := NewModel()
 	model.Page = PageReview
@@ -366,6 +384,27 @@ func TestResumableJobsDiscoveryMovesToResumePage(t *testing.T) {
 	}
 }
 
+func TestProcessedMediaDiscoveryMovesToHistoryPage(t *testing.T) {
+	model := NewModel()
+	model.ActiveHistoryRequest = 10
+
+	next, _ := model.Update(ProcessedMediaDiscoveredMsg{
+		RequestID: 10,
+		Items: []ProcessedMediaViewModel{{
+			Title:     "archive-disc.iso",
+			ImagePath: "D:/Archives/archive-disc.iso",
+			Status:    "Saved with map",
+		}},
+	})
+	updated := next.(Model)
+	if updated.Page != PageHistory {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageHistory)
+	}
+	if len(updated.HistoryItems) != 1 {
+		t.Fatalf("unexpected history items: %+v", updated.HistoryItems)
+	}
+}
+
 func TestResumeJobsSelectMovesToReview(t *testing.T) {
 	model := NewModel()
 	model.Page = PageResumeJobs
@@ -384,6 +423,28 @@ func TestResumeJobsSelectMovesToReview(t *testing.T) {
 	}
 	if updated.Setup.ActionLabel != "Resume recovery" || !updated.Setup.ResumeReady {
 		t.Fatalf("unexpected setup state: %+v", updated.Setup)
+	}
+}
+
+func TestHistorySelectOpensDetails(t *testing.T) {
+	model := NewModel()
+	model.Page = PageHistory
+	model.HistoryItems = []ProcessedMediaViewModel{{
+		Title:      "archive-disc.iso",
+		ImagePath:  "D:/Archives/archive-disc.iso",
+		MapPath:    "D:/Archives/archive-disc.drmap",
+		Status:     "Saved with map",
+		ModifiedAt: "2026-08-06 10:15",
+		Detail:     "A recovery map exists, but it does not match the currently selected disc.",
+	}}
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageDetails || updated.PreviousPage != PageHistory {
+		t.Fatalf("unexpected page transition: %+v", updated)
+	}
+	if len(updated.Details.Lines) == 0 || updated.Details.Lines[0] != "Image: D:/Archives/archive-disc.iso" {
+		t.Fatalf("unexpected details: %+v", updated.Details.Lines)
 	}
 }
 
