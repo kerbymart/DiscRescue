@@ -10,6 +10,27 @@ import (
 	"time"
 )
 
+func TestOSRecoveryRejectsExistingOutputPath(t *testing.T) {
+	tempDir := t.TempDir()
+	outputPath := filepath.Join(tempDir, "existing.iso")
+	if err := os.WriteFile(outputPath, []byte("occupied"), 0o644); err != nil {
+		t.Fatalf("seed existing output: %v", err)
+	}
+
+	_, err := OSRecovery{}.StartImageRecovery(RecoveryInput{
+		DevicePath:        "E:",
+		OutputPath:        outputPath,
+		LogicalSectorSize: 2048,
+		CapacitySectors:   16,
+	})
+	if err == nil {
+		t.Fatal("expected start recovery to reject an existing output path")
+	}
+	if !strings.Contains(err.Error(), "already exists; choose another output path") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestOSRecoveryCopiesMountedDiscData(t *testing.T) {
 	drive := strings.TrimSpace(os.Getenv("DISKRESCUE_WINDOWS_SMOKE_DRIVE"))
 	if drive == "" {

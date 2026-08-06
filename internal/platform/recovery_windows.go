@@ -70,6 +70,11 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	if input.CapacitySectors == 0 {
 		return nil, fmt.Errorf("start image recovery: capacity sectors must be greater than zero")
 	}
+	if _, err := os.Stat(input.OutputPath); err == nil {
+		return nil, fmt.Errorf("start image recovery: output image %s already exists; choose another output path", input.OutputPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("start image recovery: check output image %s: %w", input.OutputPath, err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &mountedRecoveryJob{
@@ -99,8 +104,12 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 			return
 		}
 	}
-	output, err := os.Create(input.OutputPath)
+	output, err := os.OpenFile(input.OutputPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o644)
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			j.finish(false, fmt.Errorf("create output image %s: the file already exists; choose another output path", input.OutputPath))
+			return
+		}
 		j.finish(false, fmt.Errorf("create output image %s: %w", input.OutputPath, err))
 		return
 	}
