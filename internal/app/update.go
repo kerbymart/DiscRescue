@@ -133,10 +133,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Setup.ResumeReady = false
 			m.Setup.ResumeMapPath = ""
 			m.Setup.ResumeDetail = ""
+			m.Setup.FreeSpace = "Unable to check free space for the selected target"
 			m.Page = PageChooseOutput
 			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
 			return m, nil
 		}
+		m.Setup.FreeSpace = describeTargetSpace(typed.Status)
 		if !typed.Status.CanStartNew && !typed.Status.CanResume {
 			m.Setup.ResumeReady = false
 			m.Setup.ResumeMapPath = ""
@@ -868,6 +870,7 @@ func clearResumeTargetState(setup *JobSetupModel) {
 	setup.ResumeMapPath = ""
 	setup.ResumeDetail = ""
 	setup.ActionLabel = "Start a new recovery"
+	setup.FreeSpace = "Check the selected target to see free space and required size"
 }
 
 func trimLastOutputRune(setup *JobSetupModel) {
@@ -973,4 +976,20 @@ func summarySecondaryActionLabel(m Model) string {
 		return "Retry unreadable sectors"
 	}
 	return "Verify an existing image"
+}
+
+func describeTargetSpace(status platform.RecoveryTargetStatus) string {
+	if !status.SpaceKnown {
+		if status.RequiredBytes > 0 {
+			return "Need " + humanBytes(status.RequiredBytes) + " for a full image; free space is unknown"
+		}
+		return "Free space is unknown for the selected target"
+	}
+	if status.RequiredBytes == 0 {
+		return humanBytes(status.AvailableBytes) + " free on the selected drive"
+	}
+	if status.AvailableBytes >= status.RequiredBytes {
+		return humanBytes(status.AvailableBytes) + " free; need " + humanBytes(status.RequiredBytes)
+	}
+	return humanBytes(status.AvailableBytes) + " free; need " + humanBytes(status.RequiredBytes) + " — choose another target"
 }

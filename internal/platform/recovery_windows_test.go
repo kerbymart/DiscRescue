@@ -31,6 +31,33 @@ func TestOSRecoveryRejectsExistingOutputPath(t *testing.T) {
 	}
 }
 
+func TestOSRecoveryInspectTargetReportsSpaceForNewTarget(t *testing.T) {
+	tempDir := t.TempDir()
+	outputPath := filepath.Join(tempDir, "fresh.iso")
+
+	status, err := OSRecovery{}.InspectRecoveryTarget(RecoveryInput{
+		DevicePath:        "E:",
+		OutputPath:        outputPath,
+		LogicalSectorSize: 2048,
+		CapacitySectors:   16,
+	})
+	if err != nil {
+		t.Fatalf("inspect target: %v", err)
+	}
+	if !status.CanStartNew {
+		t.Fatalf("expected a new target to be startable: %+v", status)
+	}
+	if status.RequiredBytes != 32768 {
+		t.Fatalf("unexpected required bytes: %d", status.RequiredBytes)
+	}
+	if !status.SpaceKnown {
+		t.Fatalf("expected known free-space data: %+v", status)
+	}
+	if status.AvailableBytes == 0 {
+		t.Fatalf("expected non-zero available space: %+v", status)
+	}
+}
+
 func TestOSRecoveryCopiesMountedDiscData(t *testing.T) {
 	drive := strings.TrimSpace(os.Getenv("DISKRESCUE_WINDOWS_SMOKE_DRIVE"))
 	if drive == "" {

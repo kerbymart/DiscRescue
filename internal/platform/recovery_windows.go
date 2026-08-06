@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"discrescue/internal/mapfile"
+	"golang.org/x/sys/windows"
 )
 
 type OSRecovery struct{}
@@ -389,16 +390,35 @@ func loadRecoveryMapState(input RecoveryInput, mapPath string) (*recoveryMapStat
 
 func inspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStatus, error) {
 	mapPath := recoveryMapPath(input.OutputPath)
+	requiredBytes := input.CapacitySectors * uint64(input.LogicalSectorSize)
+	availableBytes, spaceKnown, spaceErr := availableBytesForOutputPath(input.OutputPath)
 	outputInfo, outputErr := os.Stat(input.OutputPath)
 	_, mapErr := os.Stat(mapPath)
 
 	switch {
 	case errors.Is(outputErr, os.ErrNotExist) && errors.Is(mapErr, os.ErrNotExist):
+		if spaceErr == nil && spaceKnown && availableBytes < requiredBytes {
+			return RecoveryTargetStatus{
+				OutputPath:     input.OutputPath,
+				MapPath:        mapPath,
+				RequiredBytes:  requiredBytes,
+				AvailableBytes: availableBytes,
+				SpaceKnown:     true,
+				Detail: fmt.Sprintf(
+					"The selected output drive does not have enough free space for this image. Need %s and only %s are free. Choose another output path.",
+					formatBytes(requiredBytes),
+					formatBytes(availableBytes),
+				),
+			}, nil
+		}
 		return RecoveryTargetStatus{
-			OutputPath:  input.OutputPath,
-			MapPath:     mapPath,
-			CanStartNew: true,
-			Detail:      "A new recovery will be created at this path.",
+			OutputPath:     input.OutputPath,
+			MapPath:        mapPath,
+			CanStartNew:    true,
+			RequiredBytes:  requiredBytes,
+			AvailableBytes: availableBytes,
+			SpaceKnown:     spaceKnown && spaceErr == nil,
+			Detail:         "A new recovery will be created at this path.",
 		}, nil
 	case outputErr == nil && mapErr == nil:
 		data, err := os.ReadFile(mapPath)
@@ -426,25 +446,57 @@ func inspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStatus, error) {
 			CanResume:         true,
 			RecoveredSectors:  recoveredSectors,
 			UnreadableSectors: unreadableSectors,
+			RequiredBytes:     requiredBytes,
+			AvailableBytes:    availableBytes,
+			SpaceKnown:        spaceKnown && spaceErr == nil,
 			Detail:            fmt.Sprintf("Resume recovery from %s recovered sectors and %s unreadable sectors.", formatUint(recoveredSectors), formatUint(unreadableSectors)),
 		}, nil
 	case outputErr == nil && errors.Is(mapErr, os.ErrNotExist):
 		return RecoveryTargetStatus{
-			OutputPath: input.OutputPath,
-			MapPath:    mapPath,
-			Detail:     fmt.Sprintf("Output image %s already exists without %s. Choose another output path.", input.OutputPath, mapPath),
+			OutputPath:     input.OutputPath,
+			MapPath:        mapPath,
+			RequiredBytes:  requiredBytes,
+			AvailableBytes: availableBytes,
+			SpaceKnown:     spaceKnown && spaceErr == nil,
+			Detail:         fmt.Sprintf("Output image %s already exists without %s. Choose another output path.", input.OutputPath, mapPath),
 		}, nil
 	case errors.Is(outputErr, os.ErrNotExist) && mapErr == nil:
 		return RecoveryTargetStatus{
-			OutputPath: input.OutputPath,
-			MapPath:    mapPath,
-			Detail:     fmt.Sprintf("Recovery map %s exists without image %s. Choose another output path.", mapPath, input.OutputPath),
+			OutputPath:     input.OutputPath,
+			MapPath:        mapPath,
+			RequiredBytes:  requiredBytes,
+			AvailableBytes: availableBytes,
+			SpaceKnown:     spaceKnown && spaceErr == nil,
+			Detail:         fmt.Sprintf("Recovery map %s exists without image %s. Choose another output path.", mapPath, input.OutputPath),
 		}, nil
 	case outputErr != nil && !errors.Is(outputErr, os.ErrNotExist):
 		return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: check output image %s: %w", input.OutputPath, outputErr)
 	default:
 		return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: check recovery map %s: %w", mapPath, mapErr)
 	}
+}
+
+func availableBytesForOutputPath(outputPath string) (uint64, bool, error) {
+	absolutePath, err := filepath.Abs(outputPath)
+	if err != nil {
+		return 0, false, fmt.Errorf("resolve output path %s: %w", outputPath, err)
+	}
+	volume := filepath.VolumeName(absolutePath)
+	if volume == "" {
+		return 0, false, nil
+	}
+	root := volume + `\`
+	rootPtr, err := windows.UTF16PtrFromString(root)
+	if err != nil {
+		return 0, false, fmt.Errorf("encode output root %s: %w", root, err)
+	}
+	var freeCaller uint64
+	var totalBytes uint64
+	var freeTotal uint64
+	if err := windows.GetDiskFreeSpaceEx(rootPtr, &freeCaller, &totalBytes, &freeTotal); err != nil {
+		return 0, false, fmt.Errorf("check free space for %s: %w", root, err)
+	}
+	return freeTotal, true, nil
 }
 
 func readRecoveryMapBytes(data []byte) (mapfile.Header, mapfile.Checkpoint, int, error) {
@@ -585,4 +637,17 @@ func recoveryMapPath(outputPath string) string {
 
 func formatUint(value uint64) string {
 	return fmt.Sprintf("%d", value)
+}
+
+func formatBytes(value uint64) string {
+	const unit = 1024
+	if value < unit {
+		return fmt.Sprintf("%d B", value)
+	}
+	div, exp := uint64(unit), 0
+	for n := value / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(value)/float64(div), "KMGTPE"[exp])
 }

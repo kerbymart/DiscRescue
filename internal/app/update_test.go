@@ -420,10 +420,13 @@ func TestRecoveryTargetInspectionMovesToReviewForNewTarget(t *testing.T) {
 	next, _ := model.Update(RecoveryTargetInspectedMsg{
 		RequestID: 7,
 		Status: platform.RecoveryTargetStatus{
-			OutputPath:  "D:/Archives/disc.iso",
-			MapPath:     "D:/Archives/disc.drmap",
-			CanStartNew: true,
-			Detail:      "A new recovery will be created at this path.",
+			OutputPath:     "D:/Archives/disc.iso",
+			MapPath:        "D:/Archives/disc.drmap",
+			CanStartNew:    true,
+			RequiredBytes:  4096,
+			AvailableBytes: 8192,
+			SpaceKnown:     true,
+			Detail:         "A new recovery will be created at this path.",
 		},
 	})
 	updated := next.(Model)
@@ -432,6 +435,9 @@ func TestRecoveryTargetInspectionMovesToReviewForNewTarget(t *testing.T) {
 	}
 	if updated.Setup.ActionLabel != "Start a new recovery" {
 		t.Fatalf("unexpected action label: %q", updated.Setup.ActionLabel)
+	}
+	if updated.Setup.FreeSpace != "8.0 KiB free; need 4.0 KiB" {
+		t.Fatalf("unexpected free-space summary: %q", updated.Setup.FreeSpace)
 	}
 }
 
@@ -448,6 +454,9 @@ func TestRecoveryTargetInspectionMovesToReviewForResumableTarget(t *testing.T) {
 			CanResume:         true,
 			RecoveredSectors:  120,
 			UnreadableSectors: 3,
+			RequiredBytes:     4096,
+			AvailableBytes:    8192,
+			SpaceKnown:        true,
 			Detail:            "Resume recovery from 120 recovered sectors and 3 unreadable sectors.",
 		},
 	})
@@ -460,6 +469,9 @@ func TestRecoveryTargetInspectionMovesToReviewForResumableTarget(t *testing.T) {
 	}
 	if !updated.Setup.ResumeReady || updated.Setup.ResumeMapPath != "D:/Archives/disc.drmap" {
 		t.Fatalf("unexpected resume state: %+v", updated.Setup)
+	}
+	if updated.Setup.FreeSpace != "8.0 KiB free; need 4.0 KiB" {
+		t.Fatalf("unexpected free-space summary: %q", updated.Setup.FreeSpace)
 	}
 }
 
@@ -727,5 +739,49 @@ func TestRecoveryTargetInspectionKeepsChooseOutputForOccupiedTarget(t *testing.T
 	}
 	if updated.Notice == nil || updated.Notice.Text != "Output image D:/Archives/disc.iso already exists without D:/Archives/disc.drmap. Choose another output path." {
 		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	}
+}
+
+func TestRecoveryTargetInspectionBlocksTooSmallTargetBeforeReview(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.ActiveTargetRequest = 12
+
+	next, _ := model.Update(RecoveryTargetInspectedMsg{
+		RequestID: 12,
+		Status: platform.RecoveryTargetStatus{
+			OutputPath:     "D:/Archives/disc.iso",
+			MapPath:        "D:/Archives/disc.drmap",
+			RequiredBytes:  16384,
+			AvailableBytes: 8192,
+			SpaceKnown:     true,
+			Detail:         "The selected output drive does not have enough free space for this image. Need 16.0 KiB and only 8.0 KiB are free. Choose another output path.",
+		},
+	})
+	updated := next.(Model)
+	if updated.Page != PageChooseOutput {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseOutput)
+	}
+	if updated.Setup.FreeSpace != "8.0 KiB free; need 16.0 KiB — choose another target" {
+		t.Fatalf("unexpected free-space summary: %q", updated.Setup.FreeSpace)
+	}
+	if updated.Notice == nil || updated.Notice.Text != "The selected output drive does not have enough free space for this image. Need 16.0 KiB and only 8.0 KiB are free. Choose another output path." {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	}
+}
+
+func TestChooseOutputEditingClearsPreviousTargetSpaceStatus(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.Setup.OutputDirectory = "D:/Archives"
+	model.Setup.OutputFileName = "disc.iso"
+	model.Setup.ActiveOutputField = OutputFieldFileName
+	model.Setup.FreeSpace = "8.0 GiB free; need 4.0 GiB"
+	syncOutputPath(&model.Setup)
+
+	next, _ := model.Update(tea.KeyPressMsg{Text: "2"})
+	updated := next.(Model)
+	if updated.Setup.FreeSpace != "Check the selected target to see free space and required size" {
+		t.Fatalf("unexpected free-space reset: %q", updated.Setup.FreeSpace)
 	}
 }

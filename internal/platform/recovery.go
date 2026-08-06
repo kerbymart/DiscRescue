@@ -16,6 +16,9 @@ type RecoveryTargetStatus struct {
 	CanResume         bool
 	RecoveredSectors  uint64
 	UnreadableSectors uint64
+	RequiredBytes     uint64
+	AvailableBytes    uint64
+	SpaceKnown        bool
 	Detail            string
 }
 
