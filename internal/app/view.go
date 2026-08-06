@@ -68,8 +68,14 @@ func pageTitle(page Page) string {
 	switch page {
 	case PageDiscover:
 		return "Finding usable drives and resumable jobs"
+	case PageNoDrives:
+		return "No optical drives found"
+	case PageDiscoveryError:
+		return "Drive discovery needs attention"
 	case PageChooseDrive:
 		return "Choose a drive"
+	case PageInspectingMedia:
+		return "Inspecting selected media"
 	case PagePriorProcessing:
 		return "Matching contents and local history"
 	case PageChooseAction:
@@ -105,8 +111,14 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 	switch m.Page {
 	case PageDiscover:
 		return wrapText("One status sentence is shown here while discovery runs.", width)
+	case PageNoDrives:
+		return renderNoDrivesPage(width)
+	case PageDiscoveryError:
+		return renderDiscoveryErrorPage(m, width)
 	case PageChooseDrive:
 		return renderDeviceList(m, width)
+	case PageInspectingMedia:
+		return renderInspectingMediaPage(m, width)
 	case PagePriorProcessing:
 		return renderPriorProcessing(m, width, tier)
 	case PageChooseAction:
@@ -150,6 +162,38 @@ func renderDeviceList(m Model, width int) []string {
 		}
 		lines = append(lines, wrapText(prefix+device.DisplayName+" - "+device.Status, width)...)
 	}
+	return lines
+}
+
+func renderNoDrivesPage(width int) []string {
+	lines := wrapText("No optical drives are currently available to DiscRescue.", width)
+	lines = append(lines, "")
+	lines = append(lines, wrapText("Press Enter to retry discovery or q to quit.", width)...)
+	return lines
+}
+
+func renderDiscoveryErrorPage(m Model, width int) []string {
+	text := "Drive discovery failed."
+	if m.Notice != nil && m.Notice.Text != "" {
+		text = m.Notice.Text
+	}
+	lines := wrapText(text, width)
+	lines = append(lines, "")
+	lines = append(lines, wrapText("Press Enter to retry discovery or q to quit.", width)...)
+	return lines
+}
+
+func renderInspectingMediaPage(m Model, width int) []string {
+	lines := wrapText("Inspecting the media in the selected drive.", width)
+	if m.SelectedDrive.DisplayName != "" {
+		lines = append(lines, "")
+		lines = append(lines, labeledLines("Drive", m.SelectedDrive.DisplayName, width)...)
+	}
+	if m.SelectedDrive.Path != "" {
+		lines = append(lines, labeledLines("Path", m.SelectedDrive.Path, width)...)
+	}
+	lines = append(lines, "")
+	lines = append(lines, wrapText("Press Enter to retry or Esc to return to the drive list.", width)...)
 	return lines
 }
 
@@ -453,6 +497,8 @@ func renderFooter(page Page, width int, tier layoutTier) string {
 		footer = "j/k select  -  enter choose  -  esc continue"
 	case PageDetails:
 		footer = "esc back  -  up/down scroll"
+	case PageNoDrives, PageDiscoveryError, PageInspectingMedia:
+		footer = "enter retry  -  esc back  -  q quit"
 	default:
 		if tier == layoutCompact {
 			footer = "enter select  esc back"

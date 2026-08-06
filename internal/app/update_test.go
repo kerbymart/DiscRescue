@@ -35,7 +35,8 @@ func TestDevicesDiscoveredMovesToChooseDrive(t *testing.T) {
 	model := NewModel()
 
 	next, _ := model.Update(DevicesDiscoveredMsg{
-		Devices: []DeviceSummary{{Path: "D:/dev/cdrom", DisplayName: "DVD Drive", Status: "ready"}},
+		RequestID: model.ActiveDiscoveryRequest,
+		Devices:   []DeviceSummary{{Path: "D:/dev/cdrom", DisplayName: "DVD Drive", Status: "ready"}},
 	})
 	updated := next.(Model)
 
@@ -67,8 +68,10 @@ func TestSelectDriveRequestsIdentifyEffect(t *testing.T) {
 
 func TestMediaIdentifiedMovesToPriorProcessingAndRequestsLookup(t *testing.T) {
 	model := NewModel()
+	model.ActiveMediaRequest = 1
 
 	next, cmd := model.Update(MediaIdentifiedMsg{
+		RequestID: 1,
 		Identity: ContentIdentityViewModel{
 			Summary: "Matching contents were processed before",
 			Detail:  "DVD-ROM, 4.38 GiB",

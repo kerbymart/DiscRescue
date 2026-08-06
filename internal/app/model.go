@@ -4,7 +4,10 @@ type Page uint8
 
 const (
 	PageDiscover Page = iota
+	PageNoDrives
+	PageDiscoveryError
 	PageChooseDrive
+	PageInspectingMedia
 	PagePriorProcessing
 	PageChooseAction
 	PageChooseOutput
@@ -131,24 +134,28 @@ type JobSummary struct {
 }
 
 type Model struct {
-	Page         Page
-	PreviousPage Page
-	Width        int
-	Height       int
-	Devices      []DeviceSummary
-	Cursor       int
-	Setup        JobSetupModel
-	Identity     ContentIdentityViewModel
-	PriorView    PriorProcessingViewModel
-	PriorRecords []PriorProcessingRecord
-	Recovery     RecoveryViewModel
-	Summary      JobSummary
-	Details      DetailsViewModel
-	Dialog       *DialogModel
-	Notice       *NoticeModel
-	LastError    error
-	Quitting     bool
-	Monochrome   bool
+	Page                   Page
+	PreviousPage           Page
+	Width                  int
+	Height                 int
+	Devices                []DeviceSummary
+	SelectedDrive          DeviceSummary
+	Cursor                 int
+	Setup                  JobSetupModel
+	Identity               ContentIdentityViewModel
+	PriorView              PriorProcessingViewModel
+	PriorRecords           []PriorProcessingRecord
+	Recovery               RecoveryViewModel
+	Summary                JobSummary
+	Details                DetailsViewModel
+	Dialog                 *DialogModel
+	Notice                 *NoticeModel
+	LastError              error
+	Quitting               bool
+	Monochrome             bool
+	NextRequestID          int
+	ActiveDiscoveryRequest int
+	ActiveMediaRequest     int
 }
 
 func NewModel() Model {
@@ -156,15 +163,15 @@ func NewModel() Model {
 		Page: PageDiscover,
 		Setup: JobSetupModel{
 			ActionLabel:  "Start a new recovery",
-			OutputPath:   "D:/Archives/discrescue-image.iso",
+			OutputPath:   "Not chosen yet",
 			OutputFormat: "ISO",
-			FreeSpace:    "Checking free space...",
+			FreeSpace:    "Unknown until an output location is selected",
 			MethodLabel:  "Balanced recovery",
 			CopyLabel:    "Not set (optional)",
 		},
 		Identity: ContentIdentityViewModel{
 			Summary: "Finding usable drives and resumable jobs.",
-			Detail:  "The recovery shell is ready for simulator-driven workflows.",
+			Detail:  "Waiting for discovery results.",
 		},
 		PriorView: PriorProcessingViewModel{
 			Kind:        PriorProcessingNone,
@@ -173,7 +180,7 @@ func NewModel() Model {
 		Recovery: RecoveryViewModel{
 			Phase:      "Waiting to start",
 			Status:     "No active job.",
-			OutputPath: "D:/Archives/discrescue-image.iso",
+			OutputPath: "Not chosen yet",
 		},
 		Details: DetailsViewModel{
 			Lines: []string{
@@ -186,5 +193,7 @@ func NewModel() Model {
 			Text:     "Finding usable drives and resumable jobs.",
 			Severity: SeverityInfo,
 		},
+		NextRequestID:          2,
+		ActiveDiscoveryRequest: 1,
 	}
 }

@@ -41,15 +41,18 @@ type Runtime struct {
 	Clock      Clock
 	Process    Process
 	Terminal   Terminal
+	Optical    OpticalDiscovery
 }
 
 func NewRuntime() Runtime {
-	return Runtime{
+	runtime := Runtime{
 		FileSystem: OSFileSystem{},
 		Clock:      SystemClock{},
 		Process:    OSProcess{},
 		Terminal:   OSTerminal{},
 	}
+	runtime.Optical = OSOpticalDiscovery{Process: runtime.Process}
+	return runtime
 }
 
 type OSFileSystem struct{}

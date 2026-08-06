@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -26,7 +27,15 @@ func run(runtime platform.Runtime) error {
 		return err
 	}
 
-	program := tea.NewProgram(app.NewModel())
+	program := newProgram(runtime, runtime.Process.Stdout())
 	_, err := program.Run()
 	return err
+}
+
+func newProgram(runtime platform.Runtime, output io.Writer, opts ...tea.ProgramOption) *tea.Program {
+	base := []tea.ProgramOption{
+		tea.WithOutput(output),
+	}
+	base = append(base, opts...)
+	return tea.NewProgram(app.NewProgramModel(runtime), base...)
 }

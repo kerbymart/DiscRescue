@@ -1,15 +1,18 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"discrescue/internal/platform"
 )
 
 func (m Model) Init() tea.Cmd {
-	return discoverDevicesEffect()
+	return discoverDevicesEffect(m.ActiveDiscoveryRequest)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -21,22 +24,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.handleKeyPress(typed)
 	case DevicesDiscoveredMsg:
+		if typed.RequestID != m.ActiveDiscoveryRequest {
+			return m, nil
+		}
 		if typed.Err != nil {
 			m.LastError = typed.Err
+			m.Page = PageDiscoveryError
+			if errors.Is(typed.Err, platform.ErrUnsupportedEnvironment) {
+				m.Notice = &NoticeModel{Text: "Optical drive discovery is not supported in this environment.", Severity: SeverityWarning}
+				return m, nil
+			}
 			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityError}
 			return m, nil
 		}
 		m.Devices = append([]DeviceSummary(nil), typed.Devices...)
 		m.Cursor = 0
+		if len(m.Devices) == 0 {
+			m.Page = PageNoDrives
+			m.Notice = &NoticeModel{Text: "No usable optical drives found.", Severity: SeverityWarning}
+			return m, nil
+		}
 		m.Page = PageChooseDrive
 		m.Notice = &NoticeModel{Text: "Choose one optical drive.", Severity: SeverityInfo}
-		if len(m.Devices) == 0 {
-			m.Notice = &NoticeModel{Text: "No usable optical drives found.", Severity: SeverityWarning}
-		}
 		return m, nil
 	case MediaIdentifiedMsg:
+		if typed.RequestID != m.ActiveMediaRequest {
+			return m, nil
+		}
 		if typed.Err != nil {
 			m.LastError = typed.Err
+			m.Page = PageInspectingMedia
 			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityError}
 			return m, nil
 		}
@@ -214,6 +231,9 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 		m.Cursor = 0
 	case PagePriorProcessing:
 		m.Page = PageChooseDrive
+	case PageInspectingMedia:
+		m.ActiveMediaRequest = 0
+		m.Page = PageChooseDrive
 	case PageSummary:
 		m.Page = PageChooseAction
 		m.Cursor = 0
@@ -224,15 +244,29 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 	switch m.Page {
 	case PageDiscover:
-		return m, discoverDevicesEffect()
+		return m.beginDiscovery()
+	case PageNoDrives, PageDiscoveryError:
+		return m.beginDiscovery()
 	case PageChooseDrive:
 		if len(m.Devices) == 0 {
 			return m, nil
 		}
 		selected := m.Devices[m.Cursor]
+		m.SelectedDrive = selected
+		m.Page = PageInspectingMedia
 		m.Identity.Summary = "Identifying logical contents for " + selected.DisplayName
 		m.Identity.Detail = selected.Path
-		return m, identifyMediaEffect(selected.Path)
+		requestID := m.nextRequestID()
+		m.ActiveMediaRequest = requestID
+		return m, identifyMediaEffect(selected.Path, requestID)
+	case PageInspectingMedia:
+		if m.SelectedDrive.Path == "" {
+			return m, nil
+		}
+		requestID := m.nextRequestID()
+		m.ActiveMediaRequest = requestID
+		m.Notice = &NoticeModel{Text: "Inspecting the selected media.", Severity: SeverityInfo}
+		return m, identifyMediaEffect(m.SelectedDrive.Path, requestID)
 	case PagePriorProcessing:
 		switch m.PriorView.Kind {
 		case PriorProcessingStrongCompleted, PriorProcessingStrongResumable, PriorProcessingProbable:
@@ -395,6 +429,25 @@ func (m Model) cursorLimit() int {
 	}
 }
 
+func (m *Model) nextRequestID() int {
+	requestID := m.NextRequestID
+	if requestID == 0 {
+		requestID = 1
+	}
+	m.NextRequestID = requestID + 1
+	return requestID
+}
+
+func (m Model) beginDiscovery() (tea.Model, tea.Cmd) {
+	m.Page = PageDiscover
+	m.LastError = nil
+	m.Notice = &NoticeModel{Text: "Finding usable drives and resumable jobs.", Severity: SeverityInfo}
+	requestID := m.nextRequestID()
+	m.ActiveDiscoveryRequest = requestID
+	m.ActiveMediaRequest = 0
+	return m, discoverDevicesEffect(requestID)
+}
+
 func matchesKey(key string, options []string) bool {
 	for _, option := range options {
 		if key == option {
@@ -404,15 +457,15 @@ func matchesKey(key string, options []string) bool {
 	return false
 }
 
-func discoverDevicesEffect() tea.Cmd {
+func discoverDevicesEffect(requestID int) tea.Cmd {
 	return func() tea.Msg {
-		return EffectRequestedMsg{Kind: EffectDiscoverDevices}
+		return EffectRequestedMsg{Kind: EffectDiscoverDevices, RequestID: requestID}
 	}
 }
 
-func identifyMediaEffect(devicePath string) tea.Cmd {
+func identifyMediaEffect(devicePath string, requestID int) tea.Cmd {
 	return func() tea.Msg {
-		return EffectRequestedMsg{Kind: EffectIdentifyMedia, DevicePath: devicePath}
+		return EffectRequestedMsg{Kind: EffectIdentifyMedia, DevicePath: devicePath, RequestID: requestID}
 	}
 }
 

@@ -7,13 +7,15 @@ type StartRequested struct{}
 type QuitRequested struct{}
 
 type DevicesDiscoveredMsg struct {
-	Devices []DeviceSummary
-	Err     error
+	RequestID int
+	Devices   []DeviceSummary
+	Err       error
 }
 
 type MediaIdentifiedMsg struct {
-	Identity ContentIdentityViewModel
-	Err      error
+	RequestID int
+	Identity  ContentIdentityViewModel
+	Err       error
 }
 
 type PriorProcessingLookupMsg struct {
@@ -73,4 +75,5 @@ const (
 type EffectRequestedMsg struct {
 	Kind       EffectKind
 	DevicePath string
+	RequestID  int
 }
