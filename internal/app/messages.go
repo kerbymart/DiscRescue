@@ -33,6 +33,10 @@ type JobStartedMsg struct {
 	JobID string
 }
 
+type JobStartFailedMsg struct {
+	Err error
+}
+
 type ProgressMsg struct {
 	Snapshot ProgressSnapshot
 }

@@ -71,40 +71,17 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			},
 		}
 	case EffectLookupHistory:
-		return PriorProcessingLookupMsg{
-			View: defaultPriorProcessingView(),
-			Records: []PriorProcessingRecord{
-				{Title: "History", Detail: "no matching contents found on this computer"},
-			},
-		}
+		return PriorProcessingLookupMsg{Err: fmt.Errorf("history lookup is unavailable in this build")}
 	case EffectStartJob:
-		return JobStartedMsg{JobID: "startup-demo"}
+		return JobStartFailedMsg{Err: fmt.Errorf("starting recovery is not connected to real device and image work yet")}
 	case EffectPauseJob:
-		return StatusMsg{Text: "Pause requested. Waiting for the current drive request to finish if needed.", Severity: SeverityInfo}
+		return StatusMsg{Text: "No active recovery job is running.", Severity: SeverityWarning}
 	case EffectResumeJob:
-		return StatusMsg{Text: "Recovery resumed.", Severity: SeverityInfo}
+		return StatusMsg{Text: "No paused recovery job is available to resume.", Severity: SeverityWarning}
 	case EffectStopJob:
-		return JobStoppedMsg{Summary: JobSummary{
-			Outcome:           "Recovery stopped",
-			ImagePath:         m.Recovery.OutputPath,
-			MapPath:           replaceExtension(m.Recovery.OutputPath, ".drmap"),
-			NextAction:        "Resume later",
-			RecoveredSectors:  m.Recovery.RecoveredSectors,
-			TotalSectors:      m.Recovery.TotalSectors,
-			UnresolvedSectors: m.Recovery.UnreadableSectors,
-			CatalogStatus:     "Not updated",
-		}}
+		return StatusMsg{Text: "No active recovery job is available to stop.", Severity: SeverityWarning}
 	case EffectStopNow:
-		return JobStoppedMsg{Summary: JobSummary{
-			Outcome:           "Recovery stopped immediately",
-			ImagePath:         m.Recovery.OutputPath,
-			MapPath:           replaceExtension(m.Recovery.OutputPath, ".drmap"),
-			NextAction:        "Review the saved state before resuming",
-			RecoveredSectors:  m.Recovery.RecoveredSectors,
-			TotalSectors:      m.Recovery.TotalSectors,
-			UnresolvedSectors: m.Recovery.UnreadableSectors,
-			CatalogStatus:     "Not updated",
-		}}
+		return StatusMsg{Text: "No active recovery job is available to stop.", Severity: SeverityWarning}
 	default:
 		return FatalMsg{Err: fmt.Errorf("unsupported effect: %s", request.Kind)}
 	}

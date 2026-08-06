@@ -170,12 +170,12 @@ func NewModel() Model {
 			CopyLabel:    "Not set (optional)",
 		},
 		Identity: ContentIdentityViewModel{
-			Summary: "Finding usable drives and resumable jobs.",
+			Summary: "Finding usable optical drives.",
 			Detail:  "Waiting for discovery results.",
 		},
 		PriorView: PriorProcessingViewModel{
 			Kind:        PriorProcessingNone,
-			HistoryLine: "History: no matching contents found on this computer",
+			HistoryLine: "History lookup is unavailable in this build.",
 		},
 		Recovery: RecoveryViewModel{
 			Phase:      "Waiting to start",
@@ -190,7 +190,7 @@ func NewModel() Model {
 			},
 		},
 		Notice: &NoticeModel{
-			Text:     "Finding usable drives and resumable jobs.",
+			Text:     "Finding usable optical drives.",
 			Severity: SeverityInfo,
 		},
 		NextRequestID:          2,

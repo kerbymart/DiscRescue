@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -78,13 +79,27 @@ func TestMediaIdentifiedMovesToPriorProcessingAndRequestsLookup(t *testing.T) {
 		},
 	})
 	updated := next.(Model)
-	requested := cmd().(EffectRequestedMsg)
-
-	if updated.Page != PagePriorProcessing {
-		t.Fatalf("unexpected page: got %v want %v", updated.Page, PagePriorProcessing)
+	if cmd != nil {
+		t.Fatalf("expected no follow-up lookup command, got %#v", cmd)
 	}
-	if requested.Kind != EffectLookupHistory {
-		t.Fatalf("unexpected effect kind: %q", requested.Kind)
+
+	if updated.Page != PageChooseAction {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseAction)
+	}
+}
+
+func TestPriorProcessingLookupUnavailableKeepsActionPageReachable(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseAction
+
+	next, _ := model.Update(PriorProcessingLookupMsg{Err: fmt.Errorf("history lookup is unavailable in this build")})
+	updated := next.(Model)
+
+	if updated.Page != PageChooseAction {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseAction)
+	}
+	if updated.Notice == nil || updated.Notice.Text != "History lookup is unavailable in this build." {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
 	}
 }
 
@@ -106,14 +121,11 @@ func TestEnterAdvancesSetupFlow(t *testing.T) {
 
 	next, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated = next.(Model)
-	if updated.Page != PageReview {
-		t.Fatalf("unexpected page after action: got %v want %v", updated.Page, PageReview)
+	if updated.Page != PageChooseAction {
+		t.Fatalf("unexpected page after unavailable action: got %v want %v", updated.Page, PageChooseAction)
 	}
-
-	next, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	updated = next.(Model)
-	if updated.Page != PageRecovering {
-		t.Fatalf("unexpected page after review: got %v want %v", updated.Page, PageRecovering)
+	if updated.Notice == nil || updated.Notice.Severity != SeverityWarning {
+		t.Fatalf("expected unavailable-action notice, got %+v", updated.Notice)
 	}
 }
 
@@ -142,11 +154,26 @@ func TestReviewEnterRequestsStartJob(t *testing.T) {
 	updated := next.(Model)
 	requested := cmd().(EffectRequestedMsg)
 
-	if updated.Page != PageRecovering {
-		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageRecovering)
+	if updated.Page != PageReview {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageReview)
 	}
 	if requested.Kind != EffectStartJob {
 		t.Fatalf("unexpected effect kind: %q", requested.Kind)
+	}
+}
+
+func TestJobStartFailedKeepsReviewActionable(t *testing.T) {
+	model := NewModel()
+	model.Page = PageReview
+
+	next, _ := model.Update(JobStartFailedMsg{Err: fmt.Errorf("starting recovery is not connected to real device and image work yet")})
+	updated := next.(Model)
+
+	if updated.Page != PageReview {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageReview)
+	}
+	if updated.Notice == nil || updated.Notice.Severity != SeverityWarning {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
 	}
 }
 
@@ -157,8 +184,11 @@ func TestChooseActionSupportsVerifyAndMergeSetup(t *testing.T) {
 	model.Cursor = 2
 	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
-	if updated.Page != PageChooseOutput || updated.Setup.ActionLabel != "Verify an existing image" {
-		t.Fatalf("unexpected verify flow: page=%v setup=%+v", updated.Page, updated.Setup)
+	if updated.Page != PageChooseAction {
+		t.Fatalf("unexpected verify flow page=%v", updated.Page)
+	}
+	if updated.Notice == nil || updated.Notice.Severity != SeverityWarning {
+		t.Fatalf("expected unavailable-action notice, got %+v", updated.Notice)
 	}
 
 	model = NewModel()
@@ -166,8 +196,8 @@ func TestChooseActionSupportsVerifyAndMergeSetup(t *testing.T) {
 	model.Cursor = 3
 	next, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated = next.(Model)
-	if updated.Page != PageChooseOutput || updated.Setup.ActionLabel != "Merge recovery captures" {
-		t.Fatalf("unexpected merge flow: page=%v setup=%+v", updated.Page, updated.Setup)
+	if updated.Page != PageChooseAction {
+		t.Fatalf("unexpected merge flow page=%v", updated.Page)
 	}
 }
 

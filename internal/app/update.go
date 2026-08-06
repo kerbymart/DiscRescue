@@ -58,27 +58,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.Identity = typed.Identity
-		m.Page = PagePriorProcessing
-		return m, lookupPriorProcessingEffect()
+		m.Page = PageChooseAction
+		m.Cursor = 0
+		m.PriorView = PriorProcessingViewModel{
+			Kind:        PriorProcessingNone,
+			HistoryLine: "History lookup is unavailable in this build.",
+		}
+		m.PriorRecords = nil
+		m.Notice = &NoticeModel{Text: "Media inspection completed. Recovery actions are not connected in this build.", Severity: SeverityWarning}
+		return m, nil
 	case PriorProcessingLookupMsg:
-		if typed.Err != nil {
-			m.LastError = typed.Err
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
-			return m, nil
-		}
-		m.PriorView = typed.View
-		m.PriorRecords = append([]PriorProcessingRecord(nil), typed.Records...)
-		if m.PriorView.Kind == "" {
-			m.PriorView = defaultPriorProcessingView()
-		}
-		if m.PriorView.Kind == PriorProcessingNone && len(m.PriorRecords) == 0 {
-			m.PriorRecords = []PriorProcessingRecord{{Title: "History", Detail: "no matching contents found on this computer"}}
-		}
+		m.LastError = typed.Err
+		m.Notice = &NoticeModel{Text: "History lookup is unavailable in this build.", Severity: SeverityWarning}
+		m.Page = PageChooseAction
+		m.Cursor = 0
 		return m, nil
 	case JobStartedMsg:
 		m.Page = PageRecovering
 		m.Recovery.Status = fmt.Sprintf("Job %s started.", typed.JobID)
 		m.Recovery.OutputPath = m.Setup.OutputPath
+		m.Notice = &NoticeModel{Text: "Recovery job started.", Severity: SeverityInfo}
+		return m, nil
+	case JobStartFailedMsg:
+		m.LastError = typed.Err
+		m.Page = PageReview
+		if typed.Err != nil {
+			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+		}
 		return m, nil
 	case ProgressMsg:
 		m.Recovery.Phase = typed.Snapshot.Phase
@@ -223,7 +229,7 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 		}
 		m.Cursor = 0
 	case PageChooseAction:
-		m.Page = PagePriorProcessing
+		m.Page = PageChooseDrive
 	case PageChooseOutput:
 		m.Page = PageChooseAction
 	case PageReview:
@@ -291,25 +297,13 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		}
 	case PageChooseAction:
 		switch m.Cursor {
-		case 0:
-			m.Setup.ActionLabel = "Start a new recovery"
-			m.Page = PageReview
+		case 0, 1, 2, 3, 4:
+			m.Notice = &NoticeModel{Text: "This action is not connected in this build yet.", Severity: SeverityWarning}
 			return m, nil
-		case 1:
-			m.PreviousPage = m.Page
-			m.Page = PageResumeJobs
-			return m, nil
-		case 2:
-			m.Setup.ActionLabel = "Verify an existing image"
-			m.Page = PageChooseOutput
-			return m, nil
-		case 3:
-			m.Setup.ActionLabel = "Merge recovery captures"
-			m.Page = PageChooseOutput
-			return m, nil
-		case 4:
-			m.PreviousPage = m.Page
-			m.Page = PageHistory
+		case 5:
+			m.Page = PageChooseDrive
+			m.Cursor = 0
+			m.Notice = &NoticeModel{Text: "Choose one optical drive.", Severity: SeverityInfo}
 			return m, nil
 		default:
 			return m, nil
@@ -320,7 +314,6 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 	case PageReview:
 		switch m.Cursor {
 		case 0:
-			m.Page = PageRecovering
 			return m, startJobEffect()
 		case 1:
 			m.Page = PageChooseOutput
@@ -441,7 +434,7 @@ func (m *Model) nextRequestID() int {
 func (m Model) beginDiscovery() (tea.Model, tea.Cmd) {
 	m.Page = PageDiscover
 	m.LastError = nil
-	m.Notice = &NoticeModel{Text: "Finding usable drives and resumable jobs.", Severity: SeverityInfo}
+	m.Notice = &NoticeModel{Text: "Finding usable optical drives.", Severity: SeverityInfo}
 	requestID := m.nextRequestID()
 	m.ActiveDiscoveryRequest = requestID
 	m.ActiveMediaRequest = 0
@@ -466,12 +459,6 @@ func discoverDevicesEffect(requestID int) tea.Cmd {
 func identifyMediaEffect(devicePath string, requestID int) tea.Cmd {
 	return func() tea.Msg {
 		return EffectRequestedMsg{Kind: EffectIdentifyMedia, DevicePath: devicePath, RequestID: requestID}
-	}
-}
-
-func lookupPriorProcessingEffect() tea.Cmd {
-	return func() tea.Msg {
-		return EffectRequestedMsg{Kind: EffectLookupHistory}
 	}
 }
 
@@ -508,7 +495,7 @@ func stopImmediatelyEffect() tea.Cmd {
 func defaultPriorProcessingView() PriorProcessingViewModel {
 	return PriorProcessingViewModel{
 		Kind:        PriorProcessingNone,
-		HistoryLine: "History: no matching contents found on this computer",
+		HistoryLine: "History lookup is unavailable in this build.",
 	}
 }
 

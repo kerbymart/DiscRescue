@@ -67,7 +67,7 @@ func usesAltScreen(page Page) bool {
 func pageTitle(page Page) string {
 	switch page {
 	case PageDiscover:
-		return "Finding usable drives and resumable jobs"
+		return "Finding usable optical drives"
 	case PageNoDrives:
 		return "No optical drives found"
 	case PageDiscoveryError:
@@ -238,11 +238,12 @@ func renderPriorProcessing(m Model, width int, tier layoutTier) []string {
 
 func renderActionList(m Model, width int, tier layoutTier) []string {
 	actions := []string{
-		"Start a new recovery",
-		"Resume an unfinished recovery",
-		"Verify an existing image",
-		"Merge recovery captures",
-		"Browse processed media",
+		"Start a new recovery (Unavailable)",
+		"Resume an unfinished recovery (Unavailable)",
+		"Verify an existing image (Unavailable)",
+		"Merge recovery captures (Unavailable)",
+		"Browse processed media (Unavailable)",
+		"Choose another drive",
 	}
 	lines := make([]string, 0, len(actions))
 	for i, action := range actions {

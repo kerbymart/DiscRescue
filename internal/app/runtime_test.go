@@ -67,7 +67,7 @@ func TestProgramModelStartupWorkflowLeavesDiscoveryAndSelectsDrive(t *testing.T)
 				_, _ = inputWriter.Write([]byte("\r"))
 				sentEnter = true
 			}
-			if sentEnter && strings.Contains(text, "Matching contents and local history") {
+			if sentEnter && strings.Contains(text, "What do you want to do?") {
 				program.Quit()
 				close(done)
 				return
@@ -87,8 +87,8 @@ func TestProgramModelStartupWorkflowLeavesDiscoveryAndSelectsDrive(t *testing.T)
 	if !strings.Contains(rendered, "Virtual DVD Drive") {
 		t.Fatalf("expected discovered drive in output, got %q", rendered)
 	}
-	if !strings.Contains(rendered, "Matching contents and local history") {
-		t.Fatalf("expected inspection or follow-up state, got %q", rendered)
+	if !strings.Contains(rendered, "What do you want to do?") {
+		t.Fatalf("expected actionable next step after drive selection, got %q", rendered)
 	}
 }
 

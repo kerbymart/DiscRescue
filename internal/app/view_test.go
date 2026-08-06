@@ -91,15 +91,18 @@ func TestViewActionPageShowsHistoryLineAndDiscSummary(t *testing.T) {
 	model.Identity = ContentIdentityViewModel{Detail: "DVD-ROM, 4.38 GiB"}
 	model.PriorView = PriorProcessingViewModel{
 		Kind:        PriorProcessingNone,
-		HistoryLine: "History: no matching contents found on this computer",
+		HistoryLine: "History lookup is unavailable in this build.",
 	}
 
 	view := model.View().Content
-	if !strings.Contains(view, "History: no matching contents found on this computer") {
+	if !strings.Contains(view, "History lookup is unavailable in this build.") {
 		t.Fatalf("expected history line, got %q", view)
 	}
 	if !strings.Contains(view, "Disc: DVD-ROM, 4.38 GiB") {
 		t.Fatalf("expected disc summary, got %q", view)
+	}
+	if !strings.Contains(view, "Start a new recovery (Unavailable)") {
+		t.Fatalf("expected unavailable action labeling, got %q", view)
 	}
 }
 
