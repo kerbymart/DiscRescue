@@ -18,9 +18,14 @@ import (
 type failingRangeReader struct {
 	sectorSize uint32
 	badLBAs    map[uint64]struct{}
+	badRanges  []lbaRange
+	readCalls  *int
 }
 
 func (r failingRangeReader) ReadAt(p []byte, off int64) (int, error) {
+	if r.readCalls != nil {
+		(*r.readCalls)++
+	}
 	if len(p) == 0 {
 		return 0, nil
 	}
@@ -34,11 +39,21 @@ func (r failingRangeReader) ReadAt(p []byte, off int64) (int, error) {
 		if _, bad := r.badLBAs[lba]; bad {
 			return 0, errors.New("simulated read failure")
 		}
+		for _, badRange := range r.badRanges {
+			if lba >= badRange.start && lba < badRange.end {
+				return 0, errors.New("simulated read failure")
+			}
+		}
 	}
 	for index := range p {
 		p[index] = byte((int(start) + index) % 251)
 	}
 	return len(p), nil
+}
+
+type lbaRange struct {
+	start uint64
+	end   uint64
 }
 
 func TestOSRecoveryRejectsExistingOutputPath(t *testing.T) {
@@ -147,7 +162,7 @@ func TestFastPassDefersFailedClusterAndKeepsScanning(t *testing.T) {
 		DevicePath:        "E:",
 		OutputPath:        filepath.Join(tempDir, "archive.iso"),
 		LogicalSectorSize: 2048,
-		CapacitySectors:   192,
+		CapacitySectors:   4096,
 	}
 	state, _, err := createRecoveryMapState(input, recoveryMapPath(input.OutputPath))
 	if err != nil {
@@ -175,11 +190,11 @@ func TestFastPassDefersFailedClusterAndKeepsScanning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run fast pass: %v", err)
 	}
-	if copied != uint64(128)*uint64(input.LogicalSectorSize) {
+	if copied != uint64(3072)*uint64(input.LogicalSectorSize) {
 		t.Fatalf("unexpected copied bytes: %d", copied)
 	}
-	if deferred := countExtentsByState(state.extents, mapfile.SectorStateSkipped); deferred != recoveryChunkSectors {
-		t.Fatalf("expected one deferred cluster, got %d sectors", deferred)
+	if deferred := countExtentsByState(state.extents, mapfile.SectorStateSkipped); deferred != fastDamageSkipInitial {
+		t.Fatalf("expected one deferred damage area, got %d sectors", deferred)
 	}
 	if unreadable := countExtentsByState(state.extents, mapfile.SectorStateMissing); unreadable != 0 {
 		t.Fatalf("expected no unreadable sectors during fast pass, got %d", unreadable)
@@ -195,7 +210,7 @@ func TestRetryPassNarrowsDeferredClusterToActualUnreadableSector(t *testing.T) {
 		DevicePath:        "E:",
 		OutputPath:        filepath.Join(tempDir, "archive.iso"),
 		LogicalSectorSize: 2048,
-		CapacitySectors:   192,
+		CapacitySectors:   4096,
 	}
 	state, _, err := createRecoveryMapState(input, recoveryMapPath(input.OutputPath))
 	if err != nil {
@@ -227,7 +242,7 @@ func TestRetryPassNarrowsDeferredClusterToActualUnreadableSector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run retry pass: %v", err)
 	}
-	if copied != uint64(191)*uint64(input.LogicalSectorSize) {
+	if copied != uint64(4095)*uint64(input.LogicalSectorSize) {
 		t.Fatalf("unexpected copied bytes after retry: %d", copied)
 	}
 	if deferred := countExtentsByState(state.extents, mapfile.SectorStateSkipped); deferred != 0 {
@@ -235,6 +250,49 @@ func TestRetryPassNarrowsDeferredClusterToActualUnreadableSector(t *testing.T) {
 	}
 	if unreadable := countExtentsByState(state.extents, mapfile.SectorStateMissing); unreadable != 1 {
 		t.Fatalf("expected one unreadable sector after retry pass, got %d", unreadable)
+	}
+}
+
+func TestFastPassJumpsAcrossContiguousDamagedBand(t *testing.T) {
+	tempDir := t.TempDir()
+	input := RecoveryInput{
+		DevicePath:        "E:",
+		OutputPath:        filepath.Join(tempDir, "archive.iso"),
+		LogicalSectorSize: 2048,
+		CapacitySectors:   20000,
+	}
+	state, _, err := createRecoveryMapState(input, recoveryMapPath(input.OutputPath))
+	if err != nil {
+		t.Fatalf("create recovery map state: %v", err)
+	}
+	defer state.close(false, false)
+
+	output, err := os.OpenFile(input.OutputPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		t.Fatalf("create output image: %v", err)
+	}
+	defer output.Close()
+	if err := output.Truncate(int64(input.CapacitySectors) * int64(input.LogicalSectorSize)); err != nil {
+		t.Fatalf("truncate output image: %v", err)
+	}
+
+	readCalls := 0
+	reader := failingRangeReader{
+		sectorSize: input.LogicalSectorSize,
+		badRanges:  []lbaRange{{start: 64, end: 10000}},
+		readCalls:  &readCalls,
+	}
+	job := &mountedRecoveryJob{state: state}
+	buffer := make([]byte, int(input.LogicalSectorSize)*int(recoveryChunkSectors))
+
+	if _, err := job.runFastPass(context.Background(), reader, output, input, buffer, 0, uint64(input.LogicalSectorSize)); err != nil {
+		t.Fatalf("run fast pass: %v", err)
+	}
+	if readCalls > 90 {
+		t.Fatalf("expected fast pass to jump across damaged band, got %d read calls", readCalls)
+	}
+	if deferred := countExtentsByState(state.extents, mapfile.SectorStateSkipped); deferred < fastDamageSkipInitial+fastDamageSkipInitial*2 {
+		t.Fatalf("expected large deferred damaged band, got %d sectors", deferred)
 	}
 }
 

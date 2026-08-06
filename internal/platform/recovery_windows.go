@@ -41,9 +41,11 @@ type recoveryMapState struct {
 type recoveryPassKind string
 
 const (
-	recoveryPassFast     recoveryPassKind = "fast"
-	recoveryPassRetry    recoveryPassKind = "retry"
-	recoveryChunkSectors                  = uint64(64)
+	recoveryPassFast      recoveryPassKind = "fast"
+	recoveryPassRetry     recoveryPassKind = "retry"
+	recoveryChunkSectors                   = uint64(64)
+	fastDamageSkipInitial                  = uint64(1024)
+	fastDamageSkipMax                      = uint64(8192)
 )
 
 func (j *mountedRecoveryJob) Snapshot() RecoverySnapshot {
@@ -671,6 +673,7 @@ func shouldContinueRecovery(policy RecoveryPolicy, completed recoveryPassKind, n
 }
 
 func (j *mountedRecoveryJob) runFastPass(ctx context.Context, source io.ReaderAt, output *os.File, input RecoveryInput, buffer []byte, copied uint64, logicalSectorSize uint64) (uint64, error) {
+	consecutiveFailures := uint8(0)
 	for lba := uint64(0); lba < input.CapacitySectors; {
 		if err := checkRecoveryCanceled(ctx, copied, j); err != nil {
 			return copied, err
@@ -704,12 +707,14 @@ func (j *mountedRecoveryJob) runFastPass(ctx context.Context, source io.ReaderAt
 			copied += uint64(readSize)
 			j.setProgress(copied)
 			lba += sectorsToRead
+			consecutiveFailures = 0
 			continue
 		}
 
+		deferredSectors := fastDamageDeferralSectors(sectorsToRead, consecutiveFailures, input.CapacitySectors-lba)
 		if err := j.state.appendExtent(mapfile.Extent{
 			StartLBA:   lba,
-			Sectors:    uint32(sectorsToRead),
+			Sectors:    uint32(deferredSectors),
 			State:      mapfile.SectorStateSkipped,
 			Confidence: mapfile.ConfidenceNone,
 		}); err != nil {
@@ -717,12 +722,35 @@ func (j *mountedRecoveryJob) runFastPass(ctx context.Context, source io.ReaderAt
 		}
 		j.setProgress(copied)
 		j.setLastIssue(
-			fmt.Sprintf("Deferred damaged range at LBA %d to %d.", lba, lba+sectorsToRead-1),
-			"The fast pass skipped ahead so the remaining readable sectors can finish first.",
+			fmt.Sprintf("Deferred damaged area at LBA %d to %d.", lba, lba+deferredSectors-1),
+			"The fast pass jumped ahead to find the next readable area.",
 		)
-		lba += sectorsToRead
+		lba += deferredSectors
+		if consecutiveFailures < 8 {
+			consecutiveFailures++
+		}
 	}
 	return copied, nil
+}
+
+func fastDamageDeferralSectors(requested uint64, consecutiveFailures uint8, remaining uint64) uint64 {
+	if requested == 0 || remaining == 0 {
+		return 0
+	}
+	deferral := fastDamageSkipInitial
+	for i := uint8(0); i < consecutiveFailures && deferral < fastDamageSkipMax; i++ {
+		deferral *= 2
+		if deferral > fastDamageSkipMax {
+			deferral = fastDamageSkipMax
+		}
+	}
+	if deferral < requested {
+		deferral = requested
+	}
+	if deferral > remaining {
+		return remaining
+	}
+	return deferral
 }
 
 func (j *mountedRecoveryJob) runRetryPass(ctx context.Context, source io.ReaderAt, output *os.File, input RecoveryInput, copied uint64, logicalSectorSize uint64) (uint64, error) {

@@ -47,7 +47,7 @@ DiscRescue now defaults to `Fast recovery`.
 - `Fast recovery` skips damaged ranges during the fast pass and stops after easy data is covered so you can decide whether to retry deferred sectors later.
 - `Continue through retry pass` finishes the fast pass and then immediately starts the deferred-sector retry pass.
 
-The active recovery view shows disc coverage for the current pass so progress remains meaningful even when damaged areas are being deferred instead of recovered immediately.
+The active recovery view shows disc coverage for the current pass so progress remains meaningful even when damaged areas are being deferred instead of recovered immediately. When the fast pass reaches a damaged band, it jumps ahead by a bounded amount and probes for the next readable area instead of testing every nearby cluster during the first pass.
 
 ## Controlled startup workflow
 
