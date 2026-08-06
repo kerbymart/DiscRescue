@@ -38,16 +38,16 @@ type DeviceSummary struct {
 }
 
 type JobSetupModel struct {
-	ActionLabel  string
-	OutputPath   string
-	DefaultPath  string
-	OutputFormat string
-	FreeSpace    string
-	MethodLabel  string
-	CopyLabel    string
-	ResumeReady  bool
+	ActionLabel   string
+	OutputPath    string
+	DefaultPath   string
+	OutputFormat  string
+	FreeSpace     string
+	MethodLabel   string
+	CopyLabel     string
+	ResumeReady   bool
 	ResumeMapPath string
-	ResumeDetail string
+	ResumeDetail  string
 }
 
 type ContentIdentityViewModel struct {
@@ -90,6 +90,7 @@ type RecoveryViewModel struct {
 	UnreadableSectors uint64
 	Status            string
 	OutputPath        string
+	Elapsed           string
 	Remaining         string
 	ETA               string
 	Throughput        string
@@ -119,6 +120,7 @@ type ProgressSnapshot struct {
 	TotalSectors      uint64
 	UnreadableSectors uint64
 	Status            string
+	Elapsed           string
 	Remaining         string
 	ETA               string
 	Throughput        string

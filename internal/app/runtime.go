@@ -195,6 +195,7 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						TotalSectors:      totalSectors,
 						UnreadableSectors: snapshot.UnreadableSectors,
 						Status:            status,
+						Elapsed:           elapsedLabel(snapshot.StartedAt),
 						Remaining:         humanBytes(snapshot.TotalBytes-snapshot.CopiedBytes) + " remaining",
 						ETA:               estimateETA(snapshot.StartedAt, snapshot.CopiedBytes, snapshot.TotalBytes),
 						Throughput:        throughputLabel(snapshot.StartedAt, snapshot.CopiedBytes),
@@ -215,6 +216,14 @@ func throughputLabel(startedAt time.Time, copiedBytes uint64) string {
 	}
 	bytesPerSecond := float64(copiedBytes) / elapsed.Seconds()
 	return humanBytes(uint64(bytesPerSecond)) + "/s"
+}
+
+func elapsedLabel(startedAt time.Time) string {
+	elapsed := time.Since(startedAt)
+	if elapsed < time.Second {
+		return "less than 1 second"
+	}
+	return elapsed.Round(time.Second).String()
 }
 
 func estimateETA(startedAt time.Time, copiedBytes, totalBytes uint64) string {

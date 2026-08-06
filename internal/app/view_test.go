@@ -182,8 +182,10 @@ func TestViewRecoveringUsesAltScreenAndNoTelemetryTable(t *testing.T) {
 		RecoveredSectors:  1554208,
 		TotalSectors:      2295104,
 		UnreadableSectors: 37,
+		Elapsed:           "2m11s",
 		Remaining:         "1.42 GiB of 4.38 GiB remaining",
 		ETA:               "about 7 minutes",
+		Throughput:        "18.2 MiB/s",
 		LastIssue:         []string{"Last issue: sector 1,891,840 could not be read.", "It will be tried again during the recovery pass."},
 		Status:            "Reading difficult areas.",
 	}
@@ -195,7 +197,10 @@ func TestViewRecoveringUsesAltScreenAndNoTelemetryTable(t *testing.T) {
 	if !strings.Contains(view.Content, "Reading healthy areas") || !strings.Contains(view.Content, "about 7 minutes") {
 		t.Fatalf("expected recovery summary fields, got %q", view.Content)
 	}
-	if strings.Contains(strings.ToLower(view.Content), "throughput") || strings.Contains(strings.ToLower(view.Content), "chart") {
+	if !strings.Contains(view.Content, "Rate") || !strings.Contains(view.Content, "Elapsed") {
+		t.Fatalf("expected richer progress details, got %q", view.Content)
+	}
+	if strings.Contains(strings.ToLower(view.Content), "chart") {
 		t.Fatalf("unexpected telemetry content: %q", view.Content)
 	}
 }
@@ -210,6 +215,7 @@ func TestViewRecoveringUsesCompactLayoutAtFortyByTwelve(t *testing.T) {
 		RecoveredSectors:  1554208,
 		TotalSectors:      2295104,
 		UnreadableSectors: 37,
+		Elapsed:           "2m11s",
 		Remaining:         "1.42 GiB of 4.38 GiB remaining",
 		ETA:               "about 7 minutes",
 		LastIssue:         []string{"Last issue: sector 1,891,840 could not be read.", "It will be tried again during the recovery pass."},
@@ -244,6 +250,22 @@ func TestViewRecoveringUsesMonochromeSafeProgressBar(t *testing.T) {
 	}
 	if strings.Contains(view, "█") || strings.Contains(view, "░") {
 		t.Fatalf("unexpected non-monochrome glyphs in progress bar: %q", view)
+	}
+}
+
+func TestViewRecoveringUsesUnicodeProgressBarWhenAllowed(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageRecovering
+	model.Recovery = RecoveryViewModel{
+		RecoveredSectors: 120,
+		TotalSectors:     240,
+	}
+
+	view := model.View().Content
+	if !strings.Contains(view, "█") && !strings.Contains(view, "░") {
+		t.Fatalf("expected unicode progress bar, got %q", view)
 	}
 }
 

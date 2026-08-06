@@ -134,6 +134,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.TotalSectors = typed.Snapshot.TotalSectors
 		m.Recovery.UnreadableSectors = typed.Snapshot.UnreadableSectors
 		m.Recovery.Status = typed.Snapshot.Status
+		m.Recovery.Elapsed = typed.Snapshot.Elapsed
 		m.Recovery.Remaining = typed.Snapshot.Remaining
 		m.Recovery.ETA = typed.Snapshot.ETA
 		m.Recovery.Throughput = typed.Snapshot.Throughput
@@ -607,6 +608,9 @@ func buildRecoveryDetails(m Model) []string {
 	}
 	if m.Recovery.Remaining != "" {
 		lines = append(lines, "Remaining: "+m.Recovery.Remaining)
+	}
+	if m.Recovery.Elapsed != "" {
+		lines = append(lines, "Elapsed: "+m.Recovery.Elapsed)
 	}
 	if m.Recovery.ETA != "" {
 		lines = append(lines, "ETA: "+m.Recovery.ETA)

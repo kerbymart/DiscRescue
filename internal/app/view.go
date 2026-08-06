@@ -326,17 +326,25 @@ func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 	if m.Recovery.Status != "" {
 		lines = append(lines, wrapText(m.Recovery.Status, width)...)
 	}
-	if m.Recovery.Remaining != "" {
-		remaining := m.Recovery.Remaining
-		if m.Recovery.ETA != "" && tier != layoutCompact {
-			remaining += "  -  " + m.Recovery.ETA
+	if tier == layoutCompact {
+		if m.Recovery.Remaining != "" {
+			lines = append(lines, wrapText(m.Recovery.Remaining, width)...)
 		}
-		if m.Recovery.Throughput != "" && tier != layoutCompact {
-			remaining += "  -  " + m.Recovery.Throughput
+	} else {
+		if m.Recovery.Remaining != "" {
+			lines = append(lines, labeledLines("Remaining", m.Recovery.Remaining, width)...)
 		}
-		lines = append(lines, wrapText(remaining, width)...)
-	} else if m.Recovery.ETA == "" && tier == layoutFull {
-		lines = append(lines, fitToWidth("Estimating time remaining...", width))
+		if m.Recovery.ETA != "" {
+			lines = append(lines, labeledLines("Estimated", m.Recovery.ETA, width)...)
+		} else if tier == layoutFull {
+			lines = append(lines, labeledLines("Estimated", "Waiting for enough data to predict the finish time.", width)...)
+		}
+		if m.Recovery.Throughput != "" {
+			lines = append(lines, labeledLines("Rate", m.Recovery.Throughput, width)...)
+		}
+		if m.Recovery.Elapsed != "" {
+			lines = append(lines, labeledLines("Elapsed", m.Recovery.Elapsed, width)...)
+		}
 	}
 	lines = append(lines, "")
 	lines = append(lines, fitToWidth(fmt.Sprintf("Recovered     %s sectors", formatCount(m.Recovery.RecoveredSectors)), width))
@@ -657,21 +665,52 @@ func progressBarFor(m Model, tier layoutTier) string {
 		width = 8
 	}
 
-	filled := 0
-	if m.Recovery.TotalSectors > 0 {
-		filled = int((m.Recovery.RecoveredSectors * uint64(width)) / m.Recovery.TotalSectors)
+	if m.Recovery.TotalSectors == 0 {
+		return "[" + strings.Repeat(".", width) + "]"
+	}
+
+	if m.Monochrome || tier == layoutCompact {
+		filled := int((m.Recovery.RecoveredSectors * uint64(width)) / m.Recovery.TotalSectors)
 		if filled > width {
 			filled = width
 		}
+		return "[" + strings.Repeat("#", filled) + strings.Repeat(".", width-filled) + "]"
 	}
 
-	filledGlyph := "#"
-	emptyGlyph := "."
-	if !m.Monochrome && tier != layoutCompact {
-		filledGlyph = "#"
-		emptyGlyph = "-"
+	return unicodeProgressBar(width, m.Recovery.RecoveredSectors, m.Recovery.TotalSectors)
+}
+
+func unicodeProgressBar(width int, recovered, total uint64) string {
+	if total == 0 {
+		return "[" + strings.Repeat("░", width) + "]"
 	}
-	return "[" + strings.Repeat(filledGlyph, filled) + strings.Repeat(emptyGlyph, width-filled) + "]"
+	levels := []string{"▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"}
+	scaled := (float64(recovered) / float64(total)) * float64(width)
+	full := int(scaled)
+	if full > width {
+		full = width
+	}
+	partial := 0
+	if full < width {
+		remainder := scaled - float64(full)
+		partial = int(remainder * 8)
+	}
+
+	var bar strings.Builder
+	bar.Grow(width*3 + 2)
+	bar.WriteString("[")
+	if full > 0 {
+		bar.WriteString(strings.Repeat("█", full))
+	}
+	if partial > 0 && full < width {
+		bar.WriteString(levels[partial-1])
+		full++
+	}
+	if full < width {
+		bar.WriteString(strings.Repeat("░", width-full))
+	}
+	bar.WriteString("]")
+	return bar.String()
 }
 
 func firstNonEmpty(values ...string) string {
