@@ -73,17 +73,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Cursor = 0
 		m.PriorView = defaultPriorProcessingView()
 		m.PriorRecords = nil
+		requestID := m.nextRequestID()
+		m.ActiveLookupRequest = requestID
 		if typed.Recoverable {
 			m.Notice = &NoticeModel{Text: "Media inspection completed. Start a new recovery to create an image.", Severity: SeverityInfo}
 		} else {
 			m.Notice = &NoticeModel{Text: typed.RecoverabilityNote, Severity: SeverityWarning}
 		}
-		return m, nil
+		return m, lookupHistoryEffect(firstNonEmpty(strings.TrimSpace(m.Setup.OutputDirectory), "."), requestID)
 	case PriorProcessingLookupMsg:
-		m.LastError = typed.Err
-		m.Notice = &NoticeModel{Text: "History lookup is unavailable in this build.", Severity: SeverityWarning}
-		m.Page = PageChooseAction
-		m.Cursor = 0
+		if typed.RequestID != m.ActiveLookupRequest {
+			return m, nil
+		}
+		if typed.Err != nil {
+			m.LastError = typed.Err
+			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			m.Page = PageChooseAction
+			m.Cursor = 0
+			return m, nil
+		}
+		if typed.View.HistoryLine != "" {
+			m.PriorView = typed.View
+		}
+		m.PriorRecords = append([]PriorProcessingRecord(nil), typed.Records...)
 		return m, nil
 	case ProcessedMediaDiscoveredMsg:
 		if typed.RequestID != m.ActiveHistoryRequest {
@@ -623,6 +635,12 @@ func identifyMediaEffect(devicePath string, requestID int) tea.Cmd {
 	}
 }
 
+func lookupHistoryEffect(basePath string, requestID int) tea.Cmd {
+	return func() tea.Msg {
+		return EffectRequestedMsg{Kind: EffectLookupHistory, BasePath: basePath, RequestID: requestID}
+	}
+}
+
 func inspectTargetEffect(outputPath string, requestID int) tea.Cmd {
 	return func() tea.Msg {
 		return EffectRequestedMsg{Kind: EffectInspectTarget, OutputPath: outputPath, RequestID: requestID}
@@ -674,7 +692,7 @@ func stopImmediatelyEffect() tea.Cmd {
 func defaultPriorProcessingView() PriorProcessingViewModel {
 	return PriorProcessingViewModel{
 		Kind:        PriorProcessingNone,
-		HistoryLine: "History lookup is unavailable in this build.",
+		HistoryLine: "Checking this computer for matching saved work.",
 	}
 }
 

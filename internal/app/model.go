@@ -199,6 +199,7 @@ type Model struct {
 	NextRequestID           int
 	ActiveDiscoveryRequest  int
 	ActiveMediaRequest      int
+	ActiveLookupRequest     int
 	ActiveTargetRequest     int
 	ActiveResumeRequest     int
 	ActiveHistoryRequest    int

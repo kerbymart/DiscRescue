@@ -86,8 +86,12 @@ func TestMediaIdentifiedMovesToChooseAction(t *testing.T) {
 		SuggestedOutputPath: "disc.iso",
 	})
 	updated := next.(Model)
-	if cmd != nil {
-		t.Fatalf("expected no follow-up command, got %#v", cmd)
+	if cmd == nil {
+		t.Fatal("expected history lookup follow-up command")
+	}
+	requested := cmd().(EffectRequestedMsg)
+	if requested.Kind != EffectLookupHistory {
+		t.Fatalf("unexpected follow-up effect: %+v", requested)
 	}
 
 	if updated.Page != PageChooseAction {
@@ -99,20 +103,42 @@ func TestMediaIdentifiedMovesToChooseAction(t *testing.T) {
 	if updated.Setup.OutputDirectory != "." || updated.Setup.OutputFileName != "disc.iso" {
 		t.Fatalf("unexpected output parts: %+v", updated.Setup)
 	}
+	if cmd == nil {
+		t.Fatal("expected history lookup effect")
+	}
 }
 
 func TestPriorProcessingLookupUnavailableKeepsActionPageReachable(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseAction
+	model.ActiveLookupRequest = 3
 
-	next, _ := model.Update(PriorProcessingLookupMsg{Err: fmt.Errorf("history lookup is unavailable in this build")})
+	next, _ := model.Update(PriorProcessingLookupMsg{RequestID: 3, Err: fmt.Errorf("history lookup failed")})
 	updated := next.(Model)
 
 	if updated.Page != PageChooseAction {
 		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseAction)
 	}
-	if updated.Notice == nil || updated.Notice.Text != "History lookup is unavailable in this build." {
+	if updated.Notice == nil || updated.Notice.Text != "history lookup failed" {
 		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	}
+}
+
+func TestPriorProcessingLookupUpdatesHistoryLine(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseAction
+	model.ActiveLookupRequest = 4
+
+	next, _ := model.Update(PriorProcessingLookupMsg{
+		RequestID: 4,
+		View: PriorProcessingViewModel{
+			Kind:        PriorProcessingStrongResumable,
+			HistoryLine: "Found 1 resumable matching recoveries in D:/Archives.",
+		},
+	})
+	updated := next.(Model)
+	if updated.PriorView.HistoryLine != "Found 1 resumable matching recoveries in D:/Archives." {
+		t.Fatalf("unexpected prior view: %+v", updated.PriorView)
 	}
 }
 

@@ -92,11 +92,11 @@ func TestViewActionPageShowsHistoryLineAndDiscSummary(t *testing.T) {
 	model.MediaRecoverable = true
 	model.PriorView = PriorProcessingViewModel{
 		Kind:        PriorProcessingNone,
-		HistoryLine: "History lookup is unavailable in this build.",
+		HistoryLine: "Checking this computer for matching saved work.",
 	}
 
 	view := model.View().Content
-	if !strings.Contains(view, "History lookup is unavailable in this build.") {
+	if !strings.Contains(view, "Checking this computer for matching saved work.") {
 		t.Fatalf("expected history line, got %q", view)
 	}
 	if !strings.Contains(view, "Disc: DVD-ROM, 4.38 GiB") {

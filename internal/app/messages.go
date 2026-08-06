@@ -30,9 +30,10 @@ type MediaIdentifiedMsg struct {
 }
 
 type PriorProcessingLookupMsg struct {
-	View    PriorProcessingViewModel
-	Records []PriorProcessingRecord
-	Err     error
+	RequestID int
+	View      PriorProcessingViewModel
+	Records   []PriorProcessingRecord
+	Err       error
 }
 
 type CatalogUpdatedMsg struct {

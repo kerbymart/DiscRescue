@@ -88,7 +88,13 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			RecoverabilityNote:  media.RecoverabilityNote,
 		}
 	case EffectLookupHistory:
-		return PriorProcessingLookupMsg{Err: fmt.Errorf("history lookup is unavailable in this build")}
+		view, records, err := m.lookupPriorProcessing(request.BasePath)
+		return PriorProcessingLookupMsg{
+			RequestID: request.RequestID,
+			View:      view,
+			Records:   records,
+			Err:       err,
+		}
 	case EffectInspectTarget:
 		status, err := m.runtime.Recovery.InspectRecoveryTarget(platform.RecoveryInput{
 			DevicePath:        m.SelectedDrive.Path,
@@ -160,6 +166,42 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 	default:
 		return FatalMsg{Err: fmt.Errorf("unsupported effect: %s", request.Kind)}
 	}
+}
+
+func (m ProgramModel) lookupPriorProcessing(basePath string) (PriorProcessingViewModel, []PriorProcessingRecord, error) {
+	jobs, err := m.findResumableJobs(basePath)
+	if err != nil {
+		return PriorProcessingViewModel{}, nil, err
+	}
+	if len(jobs) == 0 {
+		return PriorProcessingViewModel{
+			Kind:        PriorProcessingNone,
+			HistoryLine: "No matching contents found on this computer.",
+		}, nil, nil
+	}
+
+	view := PriorProcessingViewModel{
+		Kind:        PriorProcessingStrongResumable,
+		Title:       "Matching contents were found on this computer",
+		HistoryLine: fmt.Sprintf("Found %d resumable matching recoveries in %s.", len(jobs), strings.TrimSpace(basePath)),
+		ImagePath:   jobs[0].OutputPath,
+		Recovered:   formatCount(jobs[0].RecoveredSectors) + " sectors",
+	}
+	if jobs[0].UnreadableSectors > 0 {
+		view.UnreadableSectors = formatCount(jobs[0].UnreadableSectors) + " sectors"
+	}
+	view.Body = []string{
+		"The current disc matches saved recovery work on this computer.",
+		"Use Resume an unfinished recovery to continue from the saved map.",
+	}
+	records := make([]PriorProcessingRecord, 0, len(jobs))
+	for _, job := range jobs {
+		records = append(records, PriorProcessingRecord{
+			Title:  filepath.Base(job.OutputPath),
+			Detail: job.Detail,
+		})
+	}
+	return view, records, nil
 }
 
 func (m ProgramModel) findResumableJobs(basePath string) ([]ResumableJobViewModel, error) {
