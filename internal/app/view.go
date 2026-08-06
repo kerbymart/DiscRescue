@@ -359,15 +359,15 @@ func renderOutputPage(m Model, width int, tier layoutTier) []string {
 	if fileName == "" {
 		fileName = " "
 	}
-	if m.Setup.ActiveOutputField == OutputFieldDirectory {
+	if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldDirectory {
 		directory += "|"
-	} else {
+	} else if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName {
 		fileName += "|"
 	}
 	lines := wrapText("Choose where to save the recovery image. Press Enter to use the suggested target below, or edit the folder or file name first.", width)
 	lines = append(lines, "")
-	lines = append(lines, labeledLines("Folder", directory, width)...)
-	lines = append(lines, labeledLines("File name", fileName, width)...)
+	lines = append(lines, selectableFieldLines("Folder", directory, width, m.Cursor == 0, m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldDirectory)...)
+	lines = append(lines, selectableFieldLines("File name", fileName, width, m.Cursor == 1, m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName)...)
 	lines = append(lines, labeledLines("Full path", firstNonEmpty(m.Setup.OutputPath, "Not chosen yet"), width)...)
 	if m.Setup.DefaultPath != "" && m.Setup.DefaultPath != "Not chosen yet" {
 		lines = append(lines, labeledLines("Suggested", m.Setup.DefaultPath, width)...)
@@ -379,6 +379,12 @@ func renderOutputPage(m Model, width int, tier layoutTier) []string {
 	if tier != layoutCompact {
 		lines = append(lines, labeledLines("Space", m.Setup.FreeSpace, width)...)
 	}
+	lines = append(lines, "")
+	continuePrefix := "  "
+	if m.Cursor == 2 {
+		continuePrefix = "> "
+	}
+	lines = append(lines, wrapText(continuePrefix+"Continue with this target", width)...)
 	return lines
 }
 
@@ -617,9 +623,11 @@ func renderFooter(page Page, width int, tier layoutTier) string {
 	switch page {
 	case PageChooseOutput:
 		if tier == layoutCompact {
-			footer = "tab switch  type edit  enter continue"
+			if page == PageChooseOutput {
+				footer = "j/k move  enter edit/select"
+			}
 		} else {
-			footer = "tab switch field  -  type edit  -  backspace delete  -  enter continue  -  esc back"
+			footer = "j/k move  -  enter edit/select  -  type edit  -  backspace delete  -  tab switch field  -  esc back"
 		}
 	case PageRecovering:
 		if tier == layoutCompact {
@@ -705,6 +713,17 @@ func labeledLines(label, value string, width int) []string {
 		prefix += strings.Repeat(" ", 11-len(prefix))
 	}
 	return wrapTextWithPrefix(prefix, value, width)
+}
+
+func selectableFieldLines(label, value string, width int, selected bool, editing bool) []string {
+	prefix := "  "
+	if selected {
+		prefix = "> "
+	}
+	if editing {
+		label += " (editing)"
+	}
+	return wrapTextWithPrefix(prefix+label, value, width)
 }
 
 func wrapTextWithPrefix(prefix, value string, width int) []string {

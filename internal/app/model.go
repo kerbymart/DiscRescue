@@ -51,6 +51,7 @@ type JobSetupModel struct {
 	OutputDirectory   string
 	OutputFileName    string
 	ActiveOutputField OutputField
+	OutputEditing     bool
 	DefaultPath       string
 	OutputFormat      string
 	FreeSpace         string

@@ -380,9 +380,11 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 		} else {
 			m.Page = PageChooseAction
 		}
+		m.Setup.OutputEditing = false
 	case PageReview:
 		m.Page = PageChooseOutput
-		m.Cursor = 0
+		m.Cursor = 2
+		m.Setup.OutputEditing = false
 	case PagePriorProcessing:
 		m.Page = PageChooseDrive
 	case PageInspectingMedia:
@@ -481,7 +483,8 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 			}
 			m.PreviousPage = PageChooseAction
 			m.Page = PageChooseOutput
-			m.Cursor = 0
+			m.Cursor = 2
+			m.Setup.OutputEditing = false
 			requestID := m.nextRequestID()
 			m.ActiveTargetRequest = requestID
 			m.Notice = &NoticeModel{Text: "Checking the suggested output path.", Severity: SeverityInfo}
@@ -515,8 +518,22 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case PageChooseOutput:
+		if m.Cursor == 0 {
+			m.Setup.ActiveOutputField = OutputFieldDirectory
+			m.Setup.OutputEditing = true
+			m.Notice = &NoticeModel{Text: "Editing the output folder.", Severity: SeverityInfo}
+			return m, nil
+		}
+		if m.Cursor == 1 {
+			m.Setup.ActiveOutputField = OutputFieldFileName
+			m.Setup.OutputEditing = true
+			m.Notice = &NoticeModel{Text: "Editing the output file name.", Severity: SeverityInfo}
+			return m, nil
+		}
 		requestID := m.nextRequestID()
 		m.ActiveTargetRequest = requestID
+		m.Setup.OutputEditing = false
+		m.Notice = &NoticeModel{Text: "Checking the selected output path.", Severity: SeverityInfo}
 		return m, inspectTargetEffect(m.Setup.OutputPath, requestID)
 	case PageReview:
 		switch m.Cursor {
@@ -525,7 +542,8 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		case 1:
 			m.PreviousPage = PageReview
 			m.Page = PageChooseOutput
-			m.Cursor = 0
+			m.Cursor = 2
+			m.Setup.OutputEditing = false
 			return m, nil
 		case 2:
 			m.Page = PageChooseDrive
@@ -660,6 +678,8 @@ func (m Model) cursorLimit() int {
 		return len(m.HistoryItems) + 1
 	case PagePaused:
 		return 2
+	case PageChooseOutput:
+		return 3
 	case PagePausing:
 		return 0
 	case PageStopConfirm:
@@ -792,15 +812,42 @@ func buildProcessedMediaDetails(item ProcessedMediaViewModel) []string {
 func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
 	switch {
 	case matchesKey(key, DefaultKeys().Back):
+		if m.Setup.OutputEditing {
+			m.Setup.OutputEditing = false
+			m.Notice = &NoticeModel{Text: "Stopped editing the output target.", Severity: SeverityInfo}
+			return m, nil
+		}
 		return m.handleBack()
-	case key == "tab" || matchesKey(key, DefaultKeys().Down) || matchesKey(key, DefaultKeys().Up):
+	case key == "tab":
 		if m.Setup.ActiveOutputField == OutputFieldDirectory {
 			m.Setup.ActiveOutputField = OutputFieldFileName
 		} else {
 			m.Setup.ActiveOutputField = OutputFieldDirectory
 		}
+		if m.Setup.OutputEditing {
+			if m.Setup.ActiveOutputField == OutputFieldDirectory {
+				m.Cursor = 0
+			} else {
+				m.Cursor = 1
+			}
+		}
+		return m, nil
+	case matchesKey(key, DefaultKeys().Up):
+		if m.Setup.OutputEditing {
+			return m, nil
+		}
+		m.moveCursor(-1)
+		return m, nil
+	case matchesKey(key, DefaultKeys().Down):
+		if m.Setup.OutputEditing {
+			return m, nil
+		}
+		m.moveCursor(1)
 		return m, nil
 	case matchesKey(key, DefaultKeys().Select):
+		if !m.Setup.OutputEditing {
+			return m.handleSelect()
+		}
 		m.Setup.OutputDirectory = strings.TrimSpace(m.Setup.OutputDirectory)
 		m.Setup.OutputFileName = strings.TrimSpace(m.Setup.OutputFileName)
 		syncOutputPath(&m.Setup)
@@ -812,17 +859,19 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 			m.Notice = &NoticeModel{Text: "Choose an output file name before continuing.", Severity: SeverityWarning}
 			return m, nil
 		}
-		requestID := m.nextRequestID()
-		m.ActiveTargetRequest = requestID
-		m.Notice = &NoticeModel{Text: "Checking the selected output path.", Severity: SeverityInfo}
-		return m, inspectTargetEffect(m.Setup.OutputPath, requestID)
+		m.Setup.OutputEditing = false
+		m.Notice = &NoticeModel{Text: "Finished editing the output target.", Severity: SeverityInfo}
+		return m, nil
 	case key == "backspace" || key == "ctrl+h":
+		if !m.Setup.OutputEditing {
+			return m, nil
+		}
 		trimLastOutputRune(&m.Setup)
 		syncOutputPath(&m.Setup)
 		clearResumeTargetState(&m.Setup)
 		return m, nil
 	default:
-		if msg.Text != "" {
+		if m.Setup.OutputEditing && msg.Text != "" {
 			appendOutputText(&m.Setup, msg.Text)
 			syncOutputPath(&m.Setup)
 			clearResumeTargetState(&m.Setup)

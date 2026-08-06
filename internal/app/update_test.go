@@ -367,6 +367,7 @@ func TestReviewChooseAnotherDriveReturnsToDriveList(t *testing.T) {
 func TestChooseOutputEnterRequestsTargetInspection(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseOutput
+	model.Cursor = 2
 	model.Setup.OutputDirectory = "D:/Archives"
 	model.Setup.OutputFileName = "disc.iso"
 	syncOutputPath(&model.Setup)
@@ -389,6 +390,7 @@ func TestChooseOutputTabSwitchesActiveField(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseOutput
 	model.Setup.ActiveOutputField = OutputFieldDirectory
+	model.Setup.OutputEditing = true
 
 	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	updated := next.(Model)
@@ -403,6 +405,7 @@ func TestChooseOutputTypingEditsActiveFieldAndBuildsFullPath(t *testing.T) {
 	model.Setup.OutputDirectory = "D:/Archives"
 	model.Setup.OutputFileName = "disc"
 	model.Setup.ActiveOutputField = OutputFieldFileName
+	model.Setup.OutputEditing = true
 	syncOutputPath(&model.Setup)
 
 	next, _ := model.Update(tea.KeyPressMsg{Text: ".iso"})
@@ -412,6 +415,56 @@ func TestChooseOutputTypingEditsActiveFieldAndBuildsFullPath(t *testing.T) {
 	}
 	if updated.Setup.OutputPath != filepath.Join("D:/Archives", "disc.iso") {
 		t.Fatalf("unexpected output path: %q", updated.Setup.OutputPath)
+	}
+}
+
+func TestChooseOutputEnterOnFolderStartsEditing(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.Cursor = 0
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if cmd != nil {
+		t.Fatalf("expected no command, got %#v", cmd)
+	}
+	if !updated.Setup.OutputEditing || updated.Setup.ActiveOutputField != OutputFieldDirectory {
+		t.Fatalf("unexpected editing state: %+v", updated.Setup)
+	}
+}
+
+func TestChooseOutputEnterWhileEditingStopsEditing(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.Cursor = 1
+	model.Setup.OutputDirectory = "D:/Archives"
+	model.Setup.OutputFileName = "disc.iso"
+	model.Setup.ActiveOutputField = OutputFieldFileName
+	model.Setup.OutputEditing = true
+	syncOutputPath(&model.Setup)
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if cmd != nil {
+		t.Fatalf("expected no command, got %#v", cmd)
+	}
+	if updated.Setup.OutputEditing {
+		t.Fatalf("expected editing to stop: %+v", updated.Setup)
+	}
+	if updated.Notice == nil || updated.Notice.Text != "Finished editing the output target." {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	}
+}
+
+func TestChooseOutputArrowMovesSelectionWhenNotEditing(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.Cursor = 2
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	updated := next.(Model)
+	if updated.Cursor != 1 {
+		t.Fatalf("unexpected cursor: %d", updated.Cursor)
 	}
 }
 
@@ -780,6 +833,7 @@ func TestChooseOutputEditingClearsPreviousTargetSpaceStatus(t *testing.T) {
 	model.Setup.OutputDirectory = "D:/Archives"
 	model.Setup.OutputFileName = "disc.iso"
 	model.Setup.ActiveOutputField = OutputFieldFileName
+	model.Setup.OutputEditing = true
 	model.Setup.FreeSpace = "8.0 GiB free; need 4.0 GiB"
 	syncOutputPath(&model.Setup)
 
