@@ -364,7 +364,7 @@ func renderOutputPage(m Model, width int, tier layoutTier) []string {
 	} else if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName {
 		fileName += "|"
 	}
-	lines := wrapText("Choose where to save the recovery image. Press Enter to use the suggested target below, or edit the folder or file name first.", width)
+	lines := wrapText("Choose where to save the recovery image. Move to Folder or File name and press Enter to edit, or choose Continue with this target.", width)
 	lines = append(lines, "")
 	lines = append(lines, selectableFieldLines("Folder", directory, width, m.Cursor == 0, m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldDirectory)...)
 	lines = append(lines, selectableFieldLines("File name", fileName, width, m.Cursor == 1, m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName)...)
@@ -623,9 +623,7 @@ func renderFooter(page Page, width int, tier layoutTier) string {
 	switch page {
 	case PageChooseOutput:
 		if tier == layoutCompact {
-			if page == PageChooseOutput {
-				footer = "j/k move  enter edit/select"
-			}
+			footer = "j/k move  enter edit/select"
 		} else {
 			footer = "j/k move  -  enter edit/select  -  type edit  -  backspace delete  -  tab switch field  -  esc back"
 		}
