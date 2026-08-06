@@ -120,11 +120,36 @@ func TestViewReviewUsesCompactUserFacingSummary(t *testing.T) {
 	if !strings.Contains(view, "Drive") || !strings.Contains(view, "/dev/sr0") {
 		t.Fatalf("expected selected drive summary, got %q", view)
 	}
-	if !strings.Contains(view, "> Start recovery") {
+	if !strings.Contains(view, "> Start a new recovery") {
 		t.Fatalf("expected safe default review action, got %q", view)
 	}
 	if strings.Contains(strings.ToLower(view), "cluster") || strings.Contains(strings.ToLower(view), "retry budget") {
 		t.Fatalf("unexpected advanced raw values in review page: %q", view)
+	}
+}
+
+func TestViewReviewShowsResumeTargetWhenAvailable(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageReview
+	model.SelectedDrive = DeviceSummary{DisplayName: "Optical drive E:"}
+	model.Identity = ContentIdentityViewModel{Detail: "DVD-ROM, 4.38 GiB"}
+	model.Setup.OutputPath = "D:/Archives/archive-disc.iso"
+	model.Setup.ActionLabel = "Resume recovery"
+	model.Setup.ResumeReady = true
+	model.Setup.ResumeMapPath = "D:/Archives/archive-disc.drmap"
+	model.Setup.ResumeDetail = "Resume recovery from 120 recovered sectors and 3 unreadable sectors."
+
+	view := model.View().Content
+	if !strings.Contains(view, "Map") || !strings.Contains(view, "archive-disc.drmap") {
+		t.Fatalf("expected resume map details, got %q", view)
+	}
+	if !strings.Contains(view, "> Resume recovery") {
+		t.Fatalf("expected resume action, got %q", view)
+	}
+	if !strings.Contains(view, "Resume recovery from 120 recovered sectors and 3 unreadable sectors.") {
+		t.Fatalf("expected resume detail, got %q", view)
 	}
 }
 
@@ -141,6 +166,9 @@ func TestViewOutputWrapsLongPathInsteadOfTruncating(t *testing.T) {
 	}
 	if !strings.Contains(view, "Archive-Disc-Volume-07.iso") {
 		t.Fatalf("expected wrapped path tail, got %q", view)
+	}
+	if !strings.Contains(view, "Choose where to save the recovery image.") {
+		t.Fatalf("expected clearer output guidance, got %q", view)
 	}
 }
 

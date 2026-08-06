@@ -45,6 +45,9 @@ type JobSetupModel struct {
 	FreeSpace    string
 	MethodLabel  string
 	CopyLabel    string
+	ResumeReady  bool
+	ResumeMapPath string
+	ResumeDetail string
 }
 
 type ContentIdentityViewModel struct {
@@ -165,6 +168,7 @@ type Model struct {
 	NextRequestID           int
 	ActiveDiscoveryRequest  int
 	ActiveMediaRequest      int
+	ActiveTargetRequest     int
 }
 
 func NewModel() Model {

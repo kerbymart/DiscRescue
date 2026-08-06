@@ -6,6 +6,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"discrescue/internal/platform"
 )
 
 func TestInitRequestsDeviceDiscovery(t *testing.T) {
@@ -201,6 +203,9 @@ func TestChooseActionStartMovesToReview(t *testing.T) {
 	if updated.Page != PageChooseOutput {
 		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseOutput)
 	}
+	if updated.Notice == nil || updated.Notice.Text != "Edit the suggested path if you want a different folder or file name." {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	}
 }
 
 func TestReviewChooseAnotherDriveReturnsToDriveList(t *testing.T) {
@@ -215,15 +220,74 @@ func TestReviewChooseAnotherDriveReturnsToDriveList(t *testing.T) {
 	}
 }
 
-func TestChooseOutputEnterMovesToReview(t *testing.T) {
+func TestChooseOutputEnterRequestsTargetInspection(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseOutput
 	model.Setup.OutputPath = "D:/Archives/disc.iso"
 
-	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageChooseOutput {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseOutput)
+	}
+	requested := cmd().(EffectRequestedMsg)
+	if requested.Kind != EffectInspectTarget || requested.OutputPath != "D:/Archives/disc.iso" {
+		t.Fatalf("unexpected effect request: %+v", requested)
+	}
+	if updated.Notice == nil || updated.Notice.Text != "Checking the selected output path." {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	}
+}
+
+func TestRecoveryTargetInspectionMovesToReviewForNewTarget(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.ActiveTargetRequest = 7
+	model.Setup.OutputPath = "D:/Archives/disc.iso"
+
+	next, _ := model.Update(RecoveryTargetInspectedMsg{
+		RequestID: 7,
+		Status: platform.RecoveryTargetStatus{
+			OutputPath:  "D:/Archives/disc.iso",
+			MapPath:     "D:/Archives/disc.drmap",
+			CanStartNew: true,
+			Detail:      "A new recovery will be created at this path.",
+		},
+	})
 	updated := next.(Model)
 	if updated.Page != PageReview {
 		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageReview)
+	}
+	if updated.Setup.ActionLabel != "Start a new recovery" {
+		t.Fatalf("unexpected action label: %q", updated.Setup.ActionLabel)
+	}
+}
+
+func TestRecoveryTargetInspectionMovesToReviewForResumableTarget(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.ActiveTargetRequest = 8
+
+	next, _ := model.Update(RecoveryTargetInspectedMsg{
+		RequestID: 8,
+		Status: platform.RecoveryTargetStatus{
+			OutputPath:        "D:/Archives/disc.iso",
+			MapPath:           "D:/Archives/disc.drmap",
+			CanResume:         true,
+			RecoveredSectors:  120,
+			UnreadableSectors: 3,
+			Detail:            "Resume recovery from 120 recovered sectors and 3 unreadable sectors.",
+		},
+	})
+	updated := next.(Model)
+	if updated.Page != PageReview {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageReview)
+	}
+	if updated.Setup.ActionLabel != "Resume recovery" {
+		t.Fatalf("unexpected action label: %q", updated.Setup.ActionLabel)
+	}
+	if !updated.Setup.ResumeReady || updated.Setup.ResumeMapPath != "D:/Archives/disc.drmap" {
+		t.Fatalf("unexpected resume state: %+v", updated.Setup)
 	}
 }
 

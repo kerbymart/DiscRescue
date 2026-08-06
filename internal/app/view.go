@@ -264,14 +264,17 @@ func renderOutputPage(m Model, width int, tier layoutTier) []string {
 	if path == "" {
 		path = " "
 	}
-	path += "▌"
-	lines := wrapText("Choose the output file path. Press Enter to continue with the current value, or edit it directly.", width)
+	path += "|"
+	lines := wrapText("Choose where to save the recovery image. Edit the folder or file name if you want a different target, or press Enter to use the current path.", width)
 	lines = append(lines, "")
 	lines = append(lines, labeledLines("Path", path, width)...)
 	if m.Setup.DefaultPath != "" && m.Setup.DefaultPath != "Not chosen yet" {
 		lines = append(lines, labeledLines("Suggested", m.Setup.DefaultPath, width)...)
 	}
 	lines = append(lines, labeledLines("Format", m.Setup.OutputFormat, width)...)
+	if m.Setup.ResumeReady {
+		lines = append(lines, labeledLines("Resume", firstNonEmpty(m.Setup.ResumeDetail, "This target can resume a previous recovery."), width)...)
+	}
 	if tier != layoutCompact {
 		lines = append(lines, labeledLines("Space", m.Setup.FreeSpace, width)...)
 	}
@@ -283,9 +286,16 @@ func renderReviewPage(m Model, width int, tier layoutTier) []string {
 	lines = append(lines, labeledLines("Drive", selectedDriveLabel(m), width)...)
 	lines = append(lines, labeledLines("Disc", discSummary(m), width)...)
 	lines = append(lines, labeledLines("Output", m.Setup.OutputPath, width)...)
+	if m.Setup.ResumeReady {
+		lines = append(lines, labeledLines("Map", m.Setup.ResumeMapPath, width)...)
+	}
+	if m.Setup.ResumeDetail != "" {
+		lines = append(lines, "")
+		lines = append(lines, wrapText(m.Setup.ResumeDetail, width)...)
+	}
 	lines = append(lines, "")
 	options := []string{
-		"Start recovery",
+		firstNonEmpty(m.Setup.ActionLabel, "Start a new recovery"),
 		"Edit output path",
 		"Choose another drive",
 	}
@@ -658,8 +668,8 @@ func progressBarFor(m Model, tier layoutTier) string {
 	filledGlyph := "#"
 	emptyGlyph := "."
 	if !m.Monochrome && tier != layoutCompact {
-		filledGlyph = "█"
-		emptyGlyph = "░"
+		filledGlyph = "#"
+		emptyGlyph = "-"
 	}
 	return "[" + strings.Repeat(filledGlyph, filled) + strings.Repeat(emptyGlyph, width-filled) + "]"
 }

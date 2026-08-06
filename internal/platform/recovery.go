@@ -9,6 +9,16 @@ type RecoveryInput struct {
 	CapacitySectors   uint64
 }
 
+type RecoveryTargetStatus struct {
+	OutputPath        string
+	MapPath           string
+	CanStartNew       bool
+	CanResume         bool
+	RecoveredSectors  uint64
+	UnreadableSectors uint64
+	Detail            string
+}
+
 type RecoverySnapshot struct {
 	StartedAt         time.Time
 	TotalBytes        uint64
@@ -29,4 +39,5 @@ type RecoveryJob interface {
 
 type RecoveryService interface {
 	StartImageRecovery(input RecoveryInput) (RecoveryJob, error)
+	InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStatus, error)
 }

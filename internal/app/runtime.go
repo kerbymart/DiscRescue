@@ -86,6 +86,18 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 		}
 	case EffectLookupHistory:
 		return PriorProcessingLookupMsg{Err: fmt.Errorf("history lookup is unavailable in this build")}
+	case EffectInspectTarget:
+		status, err := m.runtime.Recovery.InspectRecoveryTarget(platform.RecoveryInput{
+			DevicePath:        m.SelectedDrive.Path,
+			OutputPath:        request.OutputPath,
+			LogicalSectorSize: m.MediaLogicalSectorSize,
+			CapacitySectors:   m.MediaCapacitySectors,
+		})
+		return RecoveryTargetInspectedMsg{
+			RequestID: request.RequestID,
+			Status:    status,
+			Err:       err,
+		}
 	case EffectStartJob:
 		jobID := fmt.Sprintf("job-%d", time.Now().UnixNano())
 		job, err := m.runtime.Recovery.StartImageRecovery(platform.RecoveryInput{
@@ -99,11 +111,17 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 		}
 		m.state.activeRecovery = job
 		m.state.activeJobID = jobID
+		phase := "Reading optical sectors"
+		status := "Reading sectors from the selected optical drive."
+		if snapshot := job.Snapshot(); snapshot.Resumed {
+			phase = "Resuming optical recovery"
+			status = "Resuming from the saved recovery map."
+		}
 		return JobStartedMsg{
 			JobID:        jobID,
 			OutputPath:   m.Setup.OutputPath,
-			Phase:        "Reading optical sectors",
-			Status:       "Reading sectors from the selected optical drive.",
+			Phase:        phase,
+			Status:       status,
 			TotalSectors: m.MediaCapacitySectors,
 		}
 	case EffectPauseJob:
@@ -142,7 +160,7 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 					m.state.activeRecovery = nil
 					summary := JobSummary{
 						ImagePath:         m.Setup.OutputPath,
-						MapPath:           "",
+						MapPath:           snapshot.MapPath,
 						RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
 						TotalSectors:      totalSectors,
 						UnresolvedSectors: snapshot.UnreadableSectors,
@@ -150,27 +168,33 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 					}
 					if snapshot.Canceled {
 						summary.Outcome = "Recovery stopped"
-						summary.NextAction = "Review the partial image before trying again"
+						summary.NextAction = "The image and recovery map are safe to resume later."
 					} else if snapshot.ErrText != "" {
 						summary.Outcome = "Recovery failed"
-						summary.NextAction = "Review the error and try again"
+						summary.NextAction = "Fix the reported problem or choose a different output target."
 						return JobStoppedMsg{Summary: summary, Err: errors.New(snapshot.ErrText)}
 					} else if snapshot.UnreadableSectors > 0 {
 						summary.Outcome = "Recovery finished with unreadable sectors"
-						summary.NextAction = "Review unreadable sectors before trying again"
+						summary.NextAction = "Review unreadable sectors before deciding whether to retry."
 					} else {
 						summary.Outcome = "Recovery complete"
-						summary.NextAction = "Recovery image is ready"
+						summary.NextAction = "Recovery image is ready."
 					}
 					return JobStoppedMsg{Summary: summary}
 				}
+				phase := "Reading optical sectors"
+				status := "Reading sectors from the selected optical drive."
+				if snapshot.Resumed {
+					phase = "Resuming optical recovery"
+					status = "Continuing from the saved recovery map."
+				}
 				return ProgressMsg{
 					Snapshot: ProgressSnapshot{
-						Phase:             "Reading optical sectors",
+						Phase:             phase,
 						RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
 						TotalSectors:      totalSectors,
 						UnreadableSectors: snapshot.UnreadableSectors,
-						Status:            "Reading sectors from the selected optical drive.",
+						Status:            status,
 						Remaining:         humanBytes(snapshot.TotalBytes-snapshot.CopiedBytes) + " remaining",
 						ETA:               estimateETA(snapshot.StartedAt, snapshot.CopiedBytes, snapshot.TotalBytes),
 						Throughput:        throughputLabel(snapshot.StartedAt, snapshot.CopiedBytes),

@@ -117,6 +117,17 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	return job, nil
 }
 
+func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStatus, error) {
+	if input.OutputPath == "" || input.OutputPath == "Not chosen yet" {
+		return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: output path is not configured")
+	}
+	status, err := inspectRecoveryTarget(input)
+	if err != nil {
+		return RecoveryTargetStatus{}, err
+	}
+	return status, nil
+}
+
 func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	rawPath := rawVolumePath(input.DevicePath)
 	source, err := os.Open(rawPath)
@@ -282,23 +293,18 @@ func writeFullAt(file *os.File, data []byte, offset int64) error {
 }
 
 func openRecoveryMapState(input RecoveryInput) (*recoveryMapState, bool, error) {
-	mapPath := recoveryMapPath(input.OutputPath)
-	outputInfo, outputErr := os.Stat(input.OutputPath)
-	_, mapErr := os.Stat(mapPath)
-
+	status, err := inspectRecoveryTarget(input)
+	if err != nil {
+		return nil, false, err
+	}
 	switch {
-	case errors.Is(outputErr, os.ErrNotExist) && errors.Is(mapErr, os.ErrNotExist):
+	case status.CanStartNew:
+		mapPath := recoveryMapPath(input.OutputPath)
 		return createRecoveryMapState(input, mapPath)
-	case outputErr == nil && mapErr == nil:
-		return loadRecoveryMapState(input, mapPath, outputInfo)
-	case outputErr == nil && errors.Is(mapErr, os.ErrNotExist):
-		return nil, false, fmt.Errorf("start image recovery: output image %s already exists without %s; choose another output path", input.OutputPath, mapPath)
-	case errors.Is(outputErr, os.ErrNotExist) && mapErr == nil:
-		return nil, false, fmt.Errorf("start image recovery: recovery map %s exists without image %s; choose another output path", mapPath, input.OutputPath)
-	case outputErr != nil && !errors.Is(outputErr, os.ErrNotExist):
-		return nil, false, fmt.Errorf("start image recovery: check output image %s: %w", input.OutputPath, outputErr)
+	case status.CanResume:
+		return loadRecoveryMapState(input, status.MapPath)
 	default:
-		return nil, false, fmt.Errorf("start image recovery: check recovery map %s: %w", mapPath, mapErr)
+		return nil, false, fmt.Errorf("start image recovery: %s", status.Detail)
 	}
 }
 
@@ -351,7 +357,7 @@ func createRecoveryMapState(input RecoveryInput, mapPath string) (*recoveryMapSt
 	}, false, nil
 }
 
-func loadRecoveryMapState(input RecoveryInput, mapPath string, outputInfo os.FileInfo) (*recoveryMapState, bool, error) {
+func loadRecoveryMapState(input RecoveryInput, mapPath string) (*recoveryMapState, bool, error) {
 	data, err := os.ReadFile(mapPath)
 	if err != nil {
 		return nil, false, fmt.Errorf("read recovery map %s: %w", mapPath, err)
@@ -367,9 +373,6 @@ func loadRecoveryMapState(input RecoveryInput, mapPath string, outputInfo os.Fil
 	if err != nil {
 		return nil, false, fmt.Errorf("replay recovery map %s: %w", mapPath, err)
 	}
-	if requiredImageBytes(replayed.Extents, input.LogicalSectorSize) > uint64(outputInfo.Size()) {
-		return nil, false, fmt.Errorf("start image recovery: image %s is smaller than the durable recovery map", input.OutputPath)
-	}
 	file, err := os.OpenFile(mapPath, os.O_RDWR|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, false, fmt.Errorf("open recovery map %s for append: %w", mapPath, err)
@@ -382,6 +385,66 @@ func loadRecoveryMapState(input RecoveryInput, mapPath string, outputInfo os.Fil
 		nextSequence:  replayed.LastSequence + 1,
 		extents:       append([]mapfile.Extent(nil), replayed.Extents...),
 	}, true, nil
+}
+
+func inspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStatus, error) {
+	mapPath := recoveryMapPath(input.OutputPath)
+	outputInfo, outputErr := os.Stat(input.OutputPath)
+	_, mapErr := os.Stat(mapPath)
+
+	switch {
+	case errors.Is(outputErr, os.ErrNotExist) && errors.Is(mapErr, os.ErrNotExist):
+		return RecoveryTargetStatus{
+			OutputPath:  input.OutputPath,
+			MapPath:     mapPath,
+			CanStartNew: true,
+			Detail:      "A new recovery will be created at this path.",
+		}, nil
+	case outputErr == nil && mapErr == nil:
+		data, err := os.ReadFile(mapPath)
+		if err != nil {
+			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: read recovery map %s: %w", mapPath, err)
+		}
+		header, checkpoint, journalOffset, err := readRecoveryMapBytes(data)
+		if err != nil {
+			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: load recovery map %s: %w", mapPath, err)
+		}
+		if header.LogicalSectorSize != input.LogicalSectorSize || header.ExpectedSectorCount != input.CapacitySectors {
+			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: recovery map %s does not match the selected media", mapPath)
+		}
+		replayed, err := mapfile.ReplayJournal(checkpoint, data[journalOffset:])
+		if err != nil {
+			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: replay recovery map %s: %w", mapPath, err)
+		}
+		if requiredImageBytes(replayed.Extents, input.LogicalSectorSize) > uint64(outputInfo.Size()) {
+			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: image %s is smaller than the durable recovery map", input.OutputPath)
+		}
+		recoveredSectors, unreadableSectors := summarizeExtentsToSectors(replayed.Extents)
+		return RecoveryTargetStatus{
+			OutputPath:        input.OutputPath,
+			MapPath:           mapPath,
+			CanResume:         true,
+			RecoveredSectors:  recoveredSectors,
+			UnreadableSectors: unreadableSectors,
+			Detail:            fmt.Sprintf("Resume recovery from %s recovered sectors and %s unreadable sectors.", formatUint(recoveredSectors), formatUint(unreadableSectors)),
+		}, nil
+	case outputErr == nil && errors.Is(mapErr, os.ErrNotExist):
+		return RecoveryTargetStatus{
+			OutputPath: input.OutputPath,
+			MapPath:    mapPath,
+			Detail:     fmt.Sprintf("Output image %s already exists without %s. Choose another output path.", input.OutputPath, mapPath),
+		}, nil
+	case errors.Is(outputErr, os.ErrNotExist) && mapErr == nil:
+		return RecoveryTargetStatus{
+			OutputPath: input.OutputPath,
+			MapPath:    mapPath,
+			Detail:     fmt.Sprintf("Recovery map %s exists without image %s. Choose another output path.", mapPath, input.OutputPath),
+		}, nil
+	case outputErr != nil && !errors.Is(outputErr, os.ErrNotExist):
+		return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: check output image %s: %w", input.OutputPath, outputErr)
+	default:
+		return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: check recovery map %s: %w", mapPath, mapErr)
+	}
 }
 
 func readRecoveryMapBytes(data []byte) (mapfile.Header, mapfile.Checkpoint, int, error) {
@@ -459,18 +522,23 @@ func (s *recoveryMapState) close(canceled bool, success bool) error {
 }
 
 func summarizeExtents(extents []mapfile.Extent, logicalSectorSize uint32) (uint64, uint64) {
-	var copiedBytes uint64
+	recoveredSectors, unreadable := summarizeExtentsToSectors(extents)
+	return recoveredSectors * uint64(logicalSectorSize), unreadable
+}
+
+func summarizeExtentsToSectors(extents []mapfile.Extent) (uint64, uint64) {
+	var recoveredSectors uint64
 	var unreadable uint64
 	for _, extent := range extents {
 		if claimsImageData(extent.State) {
-			copiedBytes += uint64(extent.Sectors) * uint64(logicalSectorSize)
+			recoveredSectors += uint64(extent.Sectors)
 			continue
 		}
 		if extent.State == mapfile.SectorStateMissing {
 			unreadable += uint64(extent.Sectors)
 		}
 	}
-	return copiedBytes, unreadable
+	return recoveredSectors, unreadable
 }
 
 func claimsImageData(state mapfile.SectorState) bool {
@@ -513,4 +581,8 @@ func recoveryMapPath(outputPath string) string {
 		return strings.TrimSuffix(outputPath, ".iso") + ".drmap"
 	}
 	return outputPath + ".drmap"
+}
+
+func formatUint(value uint64) string {
+	return fmt.Sprintf("%d", value)
 }

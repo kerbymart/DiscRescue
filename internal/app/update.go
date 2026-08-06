@@ -84,6 +84,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Page = PageChooseAction
 		m.Cursor = 0
 		return m, nil
+	case RecoveryTargetInspectedMsg:
+		if typed.RequestID != m.ActiveTargetRequest {
+			return m, nil
+		}
+		if typed.Err != nil {
+			m.LastError = typed.Err
+			m.Setup.ResumeReady = false
+			m.Setup.ResumeMapPath = ""
+			m.Setup.ResumeDetail = ""
+			m.Page = PageChooseOutput
+			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			return m, nil
+		}
+		m.Setup.ResumeReady = typed.Status.CanResume
+		m.Setup.ResumeMapPath = typed.Status.MapPath
+		m.Setup.ResumeDetail = typed.Status.Detail
+		if typed.Status.CanResume {
+			m.Setup.ActionLabel = "Resume recovery"
+			m.Notice = &NoticeModel{Text: firstNonEmpty(typed.Status.Detail, "A matching recovery can be resumed safely."), Severity: SeverityInfo}
+		} else {
+			m.Setup.ActionLabel = "Start a new recovery"
+			m.Notice = nil
+		}
+		m.Page = PageReview
+		m.Cursor = 0
+		return m, nil
 	case JobStartedMsg:
 		m.Page = PageRecovering
 		m.Recovery.Status = typed.Status
@@ -136,6 +162,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Page = PageSummary
 		m.Summary = typed.Summary
 		m.Recovery.Status = typed.Summary.Outcome
+		if typed.Summary.ImagePath != "" {
+			m.Recovery.OutputPath = typed.Summary.ImagePath
+		}
 		m.Recovery.RecoveredSectors = typed.Summary.RecoveredSectors
 		m.Recovery.TotalSectors = typed.Summary.TotalSectors
 		m.Recovery.UnreadableSectors = typed.Summary.UnresolvedSectors
@@ -325,9 +354,13 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.Setup.ActionLabel = "Start a new recovery"
+			m.Setup.ResumeReady = false
+			m.Setup.ResumeMapPath = ""
+			m.Setup.ResumeDetail = ""
 			m.PreviousPage = PageChooseAction
 			m.Page = PageChooseOutput
 			m.Cursor = 0
+			m.Notice = &NoticeModel{Text: "Edit the suggested path if you want a different folder or file name.", Severity: SeverityInfo}
 			return m, nil
 		case 1:
 			m.Page = PageChooseDrive
@@ -338,9 +371,9 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case PageChooseOutput:
-		m.Page = PageReview
-		m.PreviousPage = PageChooseOutput
-		return m, nil
+		requestID := m.nextRequestID()
+		m.ActiveTargetRequest = requestID
+		return m, inspectTargetEffect(m.Setup.OutputPath, requestID)
 	case PageReview:
 		switch m.Cursor {
 		case 0:
@@ -488,6 +521,12 @@ func identifyMediaEffect(devicePath string, requestID int) tea.Cmd {
 	}
 }
 
+func inspectTargetEffect(outputPath string, requestID int) tea.Cmd {
+	return func() tea.Msg {
+		return EffectRequestedMsg{Kind: EffectInspectTarget, OutputPath: outputPath, RequestID: requestID}
+	}
+}
+
 func startJobEffect() tea.Cmd {
 	return func() tea.Msg {
 		return EffectRequestedMsg{Kind: EffectStartJob}
@@ -536,9 +575,10 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 			return m, nil
 		}
 		m.Setup.OutputPath = path
-		m.Page = PageReview
-		m.Cursor = 0
-		return m, nil
+		requestID := m.nextRequestID()
+		m.ActiveTargetRequest = requestID
+		m.Notice = &NoticeModel{Text: "Checking the selected output path.", Severity: SeverityInfo}
+		return m, inspectTargetEffect(path, requestID)
 	case key == "backspace" || key == "ctrl+h":
 		if len(m.Setup.OutputPath) > 0 && m.Setup.OutputPath != "Not chosen yet" {
 			m.Setup.OutputPath = m.Setup.OutputPath[:len(m.Setup.OutputPath)-1]
@@ -560,6 +600,7 @@ func buildRecoveryDetails(m Model) []string {
 		"Drive: " + firstNonEmpty(m.SelectedDrive.DisplayName, m.SelectedDrive.Path, "not selected"),
 		"Media: " + firstNonEmpty(m.Identity.Detail, "not identified"),
 		"Output: " + firstNonEmpty(m.Recovery.OutputPath, m.Setup.OutputPath),
+		"Map: " + firstNonEmpty(m.Setup.ResumeMapPath, replaceExtension(firstNonEmpty(m.Recovery.OutputPath, m.Setup.OutputPath), ".drmap")),
 		"Phase: " + firstNonEmpty(m.Recovery.Phase, "Waiting to start"),
 		"Recovered sectors: " + formatCount(m.Recovery.RecoveredSectors),
 		"Unreadable sectors: " + formatCount(m.Recovery.UnreadableSectors),
@@ -573,7 +614,7 @@ func buildRecoveryDetails(m Model) []string {
 	if m.Recovery.Throughput != "" {
 		lines = append(lines, "Rate: "+m.Recovery.Throughput)
 	}
-	lines = append(lines, "Status: "+firstNonEmpty(m.Recovery.Status, "Waiting to start"))
+	lines = append(lines, "Status: "+recoveryDetailsStatusLine(m))
 	lines = append(lines, m.Recovery.LastIssue...)
 	return lines
 }
@@ -611,6 +652,13 @@ func nextCopyLabel(current string) string {
 		return "Shelf B · Disc 14"
 	}
 	return "Not set (optional)"
+}
+
+func recoveryDetailsStatusLine(m Model) string {
+	if m.Page == PageSummary && m.Summary.NextAction != "" {
+		return m.Summary.NextAction
+	}
+	return firstNonEmpty(m.Recovery.Status, "Waiting to start")
 }
 
 func summarySecondaryActionLabel(m Model) string {

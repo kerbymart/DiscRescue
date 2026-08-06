@@ -1,6 +1,10 @@
 package app
 
-import "time"
+import (
+	"time"
+
+	"discrescue/internal/platform"
+)
 
 type StartRequested struct{}
 
@@ -48,6 +52,12 @@ type JobStartFailedMsg struct {
 	Err error
 }
 
+type RecoveryTargetInspectedMsg struct {
+	RequestID int
+	Status    platform.RecoveryTargetStatus
+	Err       error
+}
+
 type ProgressMsg struct {
 	Snapshot ProgressSnapshot
 }
@@ -80,6 +90,7 @@ const (
 	EffectDiscoverDevices EffectKind = "discover_devices"
 	EffectIdentifyMedia   EffectKind = "identify_media"
 	EffectLookupHistory   EffectKind = "lookup_history"
+	EffectInspectTarget   EffectKind = "inspect_target"
 	EffectStartJob        EffectKind = "start_job"
 	EffectPauseJob        EffectKind = "pause_job"
 	EffectResumeJob       EffectKind = "resume_job"
@@ -90,5 +101,6 @@ const (
 type EffectRequestedMsg struct {
 	Kind       EffectKind
 	DevicePath string
+	OutputPath string
 	RequestID  int
 }
