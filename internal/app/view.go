@@ -18,6 +18,21 @@ const (
 	layoutTooSmall
 )
 
+const (
+	progressEmptyCell = "\u2591"
+	progressFullCell  = "\u2588"
+)
+
+var progressPartialCells = []string{
+	"\u258F",
+	"\u258E",
+	"\u258D",
+	"\u258C",
+	"\u258B",
+	"\u258A",
+	"\u2589",
+}
+
 func (m Model) View() tea.View {
 	tier := layoutTierFor(m.Width, m.Height)
 	if tier == layoutTooSmall {
@@ -414,7 +429,7 @@ func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 		if m.Recovery.ETA != "" {
 			lines = append(lines, labeledLines("Estimated", m.Recovery.ETA, width)...)
 		} else if tier == layoutFull {
-			lines = append(lines, labeledLines("Estimated", "Waiting for enough data to predict the finish time.", width)...)
+			lines = append(lines, labeledLines("Estimated", "Estimating time remaining...", width)...)
 		}
 		if m.Recovery.Throughput != "" {
 			lines = append(lines, labeledLines("Rate", m.Recovery.Throughput, width)...)
@@ -768,7 +783,41 @@ func progressBarFor(m Model, tier layoutTier) string {
 		return "[" + strings.Repeat("=", filled) + strings.Repeat(".", width-filled) + "]"
 	}
 
-	return unicodeProgressBar(width, m.Recovery.RecoveredSectors, m.Recovery.TotalSectors)
+	return renderUnicodeProgressBar(width, m.Recovery.RecoveredSectors, m.Recovery.TotalSectors)
+}
+
+func renderUnicodeProgressBar(width int, recovered, total uint64) string {
+	if total == 0 {
+		return "[" + strings.Repeat(progressEmptyCell, width) + "]"
+	}
+
+	scaled := (float64(recovered) / float64(total)) * float64(width)
+	full := int(scaled)
+	if full > width {
+		full = width
+	}
+
+	partial := 0
+	if full < width {
+		remainder := scaled - float64(full)
+		partial = int(remainder * 8)
+	}
+
+	var bar strings.Builder
+	bar.Grow(width*3 + 2)
+	bar.WriteString("[")
+	if full > 0 {
+		bar.WriteString(strings.Repeat(progressFullCell, full))
+	}
+	if partial > 0 && full < width {
+		bar.WriteString(progressPartialCells[partial-1])
+		full++
+	}
+	if full < width {
+		bar.WriteString(strings.Repeat(progressEmptyCell, width-full))
+	}
+	bar.WriteString("]")
+	return bar.String()
 }
 
 func unicodeProgressBar(width int, recovered, total uint64) string {

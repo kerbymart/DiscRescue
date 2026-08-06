@@ -344,6 +344,9 @@ func TestViewRecoveringUsesUnicodeProgressBarWhenAllowed(t *testing.T) {
 	if !strings.Contains(view, "█") && !strings.Contains(view, "░") {
 		t.Fatalf("expected unicode progress bar, got %q", view)
 	}
+	if strings.Contains(view, "â–ˆ") || strings.Contains(view, "â–‘") {
+		t.Fatalf("expected valid unicode progress bar glyphs, got %q", view)
+	}
 }
 
 func TestViewPausingShowsPendingPauseLanguage(t *testing.T) {
