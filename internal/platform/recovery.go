@@ -14,6 +14,8 @@ type RecoverySnapshot struct {
 	TotalBytes        uint64
 	CopiedBytes       uint64
 	UnreadableSectors uint64
+	MapPath           string
+	Resumed           bool
 	LastIssue         []string
 	Done              bool
 	Canceled          bool

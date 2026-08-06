@@ -26,7 +26,7 @@ func TestOSRecoveryRejectsExistingOutputPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected start recovery to reject an existing output path")
 	}
-	if !strings.Contains(err.Error(), "already exists; choose another output path") {
+	if !strings.Contains(err.Error(), "already exists without") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
