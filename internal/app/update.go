@@ -111,6 +111,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Page = PageReview
 		m.Cursor = 0
 		return m, nil
+	case ResumableJobsDiscoveredMsg:
+		if typed.RequestID != m.ActiveResumeRequest {
+			return m, nil
+		}
+		if typed.Err != nil {
+			m.LastError = typed.Err
+			m.ResumeJobs = nil
+			m.Page = PageChooseAction
+			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			return m, nil
+		}
+		m.ResumeJobs = append([]ResumableJobViewModel(nil), typed.Jobs...)
+		m.Page = PageResumeJobs
+		m.Cursor = 0
+		if len(m.ResumeJobs) == 0 {
+			m.Notice = &NoticeModel{Text: "No resumable recoveries were found in the current output folder.", Severity: SeverityInfo}
+		} else {
+			m.Notice = &NoticeModel{Text: "Choose a saved recovery to resume safely.", Severity: SeverityInfo}
+		}
+		return m, nil
 	case JobStartedMsg:
 		m.Page = PageRecovering
 		m.Recovery.Status = typed.Status
@@ -368,6 +388,18 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 			m.Notice = &NoticeModel{Text: "Edit the suggested path if you want a different folder or file name.", Severity: SeverityInfo}
 			return m, nil
 		case 1:
+			if !m.MediaRecoverable {
+				m.Notice = &NoticeModel{Text: firstNonEmpty(m.MediaRecoverabilityNote, "This disc cannot be recovered by the current build."), Severity: SeverityWarning}
+				return m, nil
+			}
+			requestID := m.nextRequestID()
+			m.ActiveResumeRequest = requestID
+			m.ResumeJobs = nil
+			m.Page = PageResumeJobs
+			m.Cursor = 0
+			m.Notice = &NoticeModel{Text: "Checking the current output folder for resumable recoveries.", Severity: SeverityInfo}
+			return m, findResumeJobsEffect(firstNonEmpty(strings.TrimSpace(m.Setup.OutputDirectory), "."), requestID)
+		case 2:
 			m.Page = PageChooseDrive
 			m.Cursor = 0
 			m.Notice = &NoticeModel{Text: "Choose one optical drive.", Severity: SeverityInfo}
@@ -396,6 +428,22 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		default:
 			return m, nil
 		}
+	case PageResumeJobs:
+		if len(m.ResumeJobs) == 0 || m.Cursor >= len(m.ResumeJobs) {
+			m.Page = PageChooseAction
+			m.Cursor = 0
+			return m, nil
+		}
+		selected := m.ResumeJobs[m.Cursor]
+		applyOutputPath(&m.Setup, selected.OutputPath)
+		m.Setup.ResumeReady = true
+		m.Setup.ResumeMapPath = selected.MapPath
+		m.Setup.ResumeDetail = selected.Detail
+		m.Setup.ActionLabel = "Resume recovery"
+		m.Page = PageReview
+		m.Cursor = 0
+		m.Notice = &NoticeModel{Text: selected.Detail, Severity: SeverityInfo}
+		return m, nil
 	case PagePaused:
 		switch m.Cursor {
 		case 0:
@@ -470,11 +518,16 @@ func (m Model) cursorLimit() int {
 	case PageChooseDrive:
 		return len(m.Devices)
 	case PageChooseAction:
-		return 2
+		return 3
 	case PagePriorProcessing:
 		return len(m.PriorView.Options)
 	case PageReview:
 		return 3
+	case PageResumeJobs:
+		if len(m.ResumeJobs) == 0 {
+			return 1
+		}
+		return len(m.ResumeJobs) + 1
 	case PagePaused:
 		return 2
 	case PageStopConfirm:
@@ -529,6 +582,12 @@ func identifyMediaEffect(devicePath string, requestID int) tea.Cmd {
 func inspectTargetEffect(outputPath string, requestID int) tea.Cmd {
 	return func() tea.Msg {
 		return EffectRequestedMsg{Kind: EffectInspectTarget, OutputPath: outputPath, RequestID: requestID}
+	}
+}
+
+func findResumeJobsEffect(basePath string, requestID int) tea.Cmd {
+	return func() tea.Msg {
+		return EffectRequestedMsg{Kind: EffectFindResumeJobs, BasePath: basePath, RequestID: requestID}
 	}
 }
 

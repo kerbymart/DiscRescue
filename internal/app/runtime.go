@@ -3,6 +3,9 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -98,6 +101,13 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			Status:    status,
 			Err:       err,
 		}
+	case EffectFindResumeJobs:
+		jobs, err := m.findResumableJobs(request.BasePath)
+		return ResumableJobsDiscoveredMsg{
+			RequestID: request.RequestID,
+			Jobs:      jobs,
+			Err:       err,
+		}
 	case EffectStartJob:
 		jobID := fmt.Sprintf("job-%d", time.Now().UnixNano())
 		job, err := m.runtime.Recovery.StartImageRecovery(platform.RecoveryInput{
@@ -143,6 +153,49 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 	default:
 		return FatalMsg{Err: fmt.Errorf("unsupported effect: %s", request.Kind)}
 	}
+}
+
+func (m ProgramModel) findResumableJobs(basePath string) ([]ResumableJobViewModel, error) {
+	basePath = strings.TrimSpace(basePath)
+	if basePath == "" {
+		basePath = "."
+	}
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return nil, fmt.Errorf("find resumable recoveries in %s: %w", basePath, err)
+	}
+
+	jobs := make([]ResumableJobViewModel, 0)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if !strings.EqualFold(filepath.Ext(entry.Name()), ".iso") {
+			continue
+		}
+		outputPath := filepath.Join(basePath, entry.Name())
+		status, err := m.runtime.Recovery.InspectRecoveryTarget(platform.RecoveryInput{
+			DevicePath:        m.SelectedDrive.Path,
+			OutputPath:        outputPath,
+			LogicalSectorSize: m.MediaLogicalSectorSize,
+			CapacitySectors:   m.MediaCapacitySectors,
+		})
+		if err != nil || !status.CanResume {
+			continue
+		}
+		jobs = append(jobs, ResumableJobViewModel{
+			OutputPath:        outputPath,
+			MapPath:           status.MapPath,
+			RecoveredSectors:  status.RecoveredSectors,
+			UnreadableSectors: status.UnreadableSectors,
+			Detail:            status.Detail,
+		})
+	}
+
+	sort.Slice(jobs, func(i, j int) bool {
+		return strings.ToLower(jobs[i].OutputPath) < strings.ToLower(jobs[j].OutputPath)
+	})
+	return jobs, nil
 }
 
 func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {

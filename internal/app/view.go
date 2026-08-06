@@ -136,7 +136,7 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 	case PageSummary:
 		return renderSummaryPage(m, width, tier)
 	case PageResumeJobs:
-		return wrapText("Select a resumable job to continue safely.", width)
+		return renderResumeJobsPage(m, width, tier)
 	case PageHistory:
 		return wrapText("Browse local processed-media history in a one-column list.", width)
 	case PageDetails:
@@ -239,6 +239,7 @@ func renderPriorProcessing(m Model, width int, tier layoutTier) []string {
 func renderActionList(m Model, width int, tier layoutTier) []string {
 	actions := []string{
 		"Start a new recovery",
+		"Resume an unfinished recovery",
 		"Choose another drive",
 	}
 	lines := make([]string, 0, len(actions))
@@ -256,6 +257,35 @@ func renderActionList(m Model, width int, tier layoutTier) []string {
 			lines = append(lines, wrapText("Disc: "+m.Identity.Detail, width)...)
 		}
 	}
+	return lines
+}
+
+func renderResumeJobsPage(m Model, width int, tier layoutTier) []string {
+	if len(m.ResumeJobs) == 0 {
+		lines := wrapText("No resumable recoveries were found in the current output folder.", width)
+		lines = append(lines, "")
+		lines = append(lines, wrapText("Press Enter or Esc to go back.", width)...)
+		return lines
+	}
+
+	lines := wrapText("Select a saved recovery that matches the current disc contents.", width)
+	for i, job := range m.ResumeJobs {
+		prefix := "  "
+		if i == m.Cursor {
+			prefix = "> "
+		}
+		lines = append(lines, "")
+		lines = append(lines, wrapText(prefix+job.OutputPath, width)...)
+		if tier != layoutCompact {
+			lines = append(lines, labeledLines("Resume", job.Detail, width)...)
+		}
+	}
+	lines = append(lines, "")
+	backPrefix := "  "
+	if m.Cursor >= len(m.ResumeJobs) {
+		backPrefix = "> "
+	}
+	lines = append(lines, wrapText(backPrefix+"Back", width)...)
 	return lines
 }
 
@@ -539,6 +569,12 @@ func renderFooter(page Page, width int, tier layoutTier) string {
 		footer = "j/k select  -  enter choose  -  d details"
 	case PageStopConfirm:
 		footer = "j/k select  -  enter choose  -  esc continue"
+	case PageResumeJobs:
+		if tier == layoutCompact {
+			footer = "enter select  esc back"
+		} else {
+			footer = "j/k move  -  enter select  -  esc back"
+		}
 	case PageDetails:
 		footer = "esc back  -  up/down scroll"
 	case PageNoDrives, PageDiscoveryError, PageInspectingMedia:

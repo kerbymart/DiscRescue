@@ -58,6 +58,12 @@ type RecoveryTargetInspectedMsg struct {
 	Err       error
 }
 
+type ResumableJobsDiscoveredMsg struct {
+	RequestID int
+	Jobs      []ResumableJobViewModel
+	Err       error
+}
+
 type ProgressMsg struct {
 	Snapshot ProgressSnapshot
 }
@@ -91,6 +97,7 @@ const (
 	EffectIdentifyMedia   EffectKind = "identify_media"
 	EffectLookupHistory   EffectKind = "lookup_history"
 	EffectInspectTarget   EffectKind = "inspect_target"
+	EffectFindResumeJobs  EffectKind = "find_resume_jobs"
 	EffectStartJob        EffectKind = "start_job"
 	EffectPauseJob        EffectKind = "pause_job"
 	EffectResumeJob       EffectKind = "resume_job"
@@ -102,5 +109,6 @@ type EffectRequestedMsg struct {
 	Kind       EffectKind
 	DevicePath string
 	OutputPath string
+	BasePath   string
 	RequestID  int
 }

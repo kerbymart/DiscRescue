@@ -212,6 +212,24 @@ func TestChooseActionStartMovesToReview(t *testing.T) {
 	}
 }
 
+func TestChooseActionResumeRequestsJobDiscovery(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseAction
+	model.MediaRecoverable = true
+	model.Cursor = 1
+	model.Setup.OutputDirectory = "D:/Archives"
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageResumeJobs {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageResumeJobs)
+	}
+	requested := cmd().(EffectRequestedMsg)
+	if requested.Kind != EffectFindResumeJobs || requested.BasePath != "D:/Archives" {
+		t.Fatalf("unexpected effect request: %+v", requested)
+	}
+}
+
 func TestReviewChooseAnotherDriveReturnsToDriveList(t *testing.T) {
 	model := NewModel()
 	model.Page = PageReview
@@ -324,6 +342,48 @@ func TestRecoveryTargetInspectionMovesToReviewForResumableTarget(t *testing.T) {
 	}
 	if !updated.Setup.ResumeReady || updated.Setup.ResumeMapPath != "D:/Archives/disc.drmap" {
 		t.Fatalf("unexpected resume state: %+v", updated.Setup)
+	}
+}
+
+func TestResumableJobsDiscoveryMovesToResumePage(t *testing.T) {
+	model := NewModel()
+	model.ActiveResumeRequest = 9
+
+	next, _ := model.Update(ResumableJobsDiscoveredMsg{
+		RequestID: 9,
+		Jobs: []ResumableJobViewModel{{
+			OutputPath: "D:/Archives/disc.iso",
+			MapPath:    "D:/Archives/disc.drmap",
+			Detail:     "Resume recovery from 120 recovered sectors and 3 unreadable sectors.",
+		}},
+	})
+	updated := next.(Model)
+	if updated.Page != PageResumeJobs {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageResumeJobs)
+	}
+	if len(updated.ResumeJobs) != 1 {
+		t.Fatalf("unexpected resume jobs: %+v", updated.ResumeJobs)
+	}
+}
+
+func TestResumeJobsSelectMovesToReview(t *testing.T) {
+	model := NewModel()
+	model.Page = PageResumeJobs
+	model.ResumeJobs = []ResumableJobViewModel{{
+		OutputPath:        filepath.Join("D:/Archives", "disc.iso"),
+		MapPath:           filepath.Join("D:/Archives", "disc.drmap"),
+		RecoveredSectors:  120,
+		UnreadableSectors: 3,
+		Detail:            "Resume recovery from 120 recovered sectors and 3 unreadable sectors.",
+	}}
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageReview {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageReview)
+	}
+	if updated.Setup.ActionLabel != "Resume recovery" || !updated.Setup.ResumeReady {
+		t.Fatalf("unexpected setup state: %+v", updated.Setup)
 	}
 }
 

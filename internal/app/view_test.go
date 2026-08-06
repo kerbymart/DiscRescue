@@ -105,6 +105,9 @@ func TestViewActionPageShowsHistoryLineAndDiscSummary(t *testing.T) {
 	if !strings.Contains(view, "> Start a new recovery") {
 		t.Fatalf("expected start action, got %q", view)
 	}
+	if !strings.Contains(view, "Resume an unfinished recovery") {
+		t.Fatalf("expected resume action, got %q", view)
+	}
 }
 
 func TestViewReviewUsesCompactUserFacingSummary(t *testing.T) {
@@ -150,6 +153,30 @@ func TestViewReviewShowsResumeTargetWhenAvailable(t *testing.T) {
 	}
 	if !strings.Contains(view, "Resume recovery from 120 recovered sectors and 3 unreadable sectors.") {
 		t.Fatalf("expected resume detail, got %q", view)
+	}
+}
+
+func TestViewResumeJobsShowsSavedRecoveries(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageResumeJobs
+	model.ResumeJobs = []ResumableJobViewModel{{
+		OutputPath: "D:/Archives/archive-disc.iso",
+		MapPath:    "D:/Archives/archive-disc.drmap",
+		Detail:     "Resume recovery from 120 recovered sectors and 3 unreadable sectors.",
+	}}
+
+	view := model.View().Content
+	if !strings.Contains(view, "Resume unfinished recovery") {
+		t.Fatalf("expected resume page title, got %q", view)
+	}
+	if !strings.Contains(view, "> D:/Archives/archive-disc.iso") {
+		t.Fatalf("expected resumable job row, got %q", view)
+	}
+	if !strings.Contains(view, "Resume recovery from 120 recovered sectors and 3 unreadable") ||
+		!strings.Contains(view, "sectors.") {
+		t.Fatalf("expected resume details, got %q", view)
 	}
 }
 
