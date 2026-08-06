@@ -777,6 +777,28 @@ func TestJobStoppedMovesToSummaryWithPrimaryChoiceFocused(t *testing.T) {
 	}
 }
 
+func TestSummaryPrimaryChoiceRetriesDeferredSectors(t *testing.T) {
+	model := NewModel()
+	model.Page = PageSummary
+	model.Recovery = RecoveryViewModel{
+		DeferredSectors: 64,
+	}
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageRecovering {
+		t.Fatalf("expected retry choice to return to recovery, got %v", updated.Page)
+	}
+	if cmd == nil {
+		t.Fatal("expected retry choice to schedule resume effect")
+	}
+	msg := cmd()
+	request, ok := msg.(EffectRequestedMsg)
+	if !ok || request.Kind != EffectResumeJob {
+		t.Fatalf("expected resume effect, got %#v", msg)
+	}
+}
+
 func TestRecoveryTargetInspectionKeepsChooseOutputForOccupiedTarget(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseOutput

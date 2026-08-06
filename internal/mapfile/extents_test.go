@@ -159,3 +159,31 @@ func TestInsertExtentCoalescesCompatibleNeighbors(t *testing.T) {
 		t.Fatalf("unexpected coalesced extent: %+v", result[0])
 	}
 }
+
+func TestApplyExtentReplacesOverlappingRange(t *testing.T) {
+	extents := []Extent{
+		{StartLBA: 0, Sectors: 8, State: SectorStateSkipped, Confidence: ConfidenceNone},
+	}
+
+	result, err := ApplyExtent(extents, Extent{
+		StartLBA:   2,
+		Sectors:    3,
+		State:      SectorStateReadUnverified,
+		Confidence: ConfidenceSingleRead,
+	})
+	if err != nil {
+		t.Fatalf("apply extent: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("expected split result, got %+v", result)
+	}
+	if result[0].StartLBA != 0 || result[0].Sectors != 2 || result[0].State != SectorStateSkipped {
+		t.Fatalf("unexpected left extent: %+v", result[0])
+	}
+	if result[1].StartLBA != 2 || result[1].Sectors != 3 || result[1].State != SectorStateReadUnverified {
+		t.Fatalf("unexpected middle extent: %+v", result[1])
+	}
+	if result[2].StartLBA != 5 || result[2].Sectors != 3 || result[2].State != SectorStateSkipped {
+		t.Fatalf("unexpected right extent: %+v", result[2])
+	}
+}

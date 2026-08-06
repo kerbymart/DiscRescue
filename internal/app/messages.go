@@ -49,6 +49,7 @@ type JobStartedMsg struct {
 	Status            string
 	TotalSectors      uint64
 	RecoveredSectors  uint64
+	DeferredSectors   uint64
 	UnreadableSectors uint64
 }
 
@@ -92,6 +93,7 @@ type JobPausedMsg struct {
 	MapPath           string
 	RecoveredSectors  uint64
 	TotalSectors      uint64
+	DeferredSectors   uint64
 	UnreadableSectors uint64
 }
 

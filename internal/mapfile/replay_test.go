@@ -115,3 +115,32 @@ func TestReplayJournalAppliesExtentRecord(t *testing.T) {
 		t.Fatalf("unexpected replayed checkpoint: %+v", checkpoint)
 	}
 }
+
+func TestReplayJournalReplacesOverlappingExtentRecord(t *testing.T) {
+	base := Checkpoint{
+		LastSequence: 1,
+		Extents: []Extent{
+			{StartLBA: 0, Sectors: 8, State: SectorStateSkipped, Confidence: ConfidenceNone},
+		},
+	}
+	extent := Extent{StartLBA: 3, Sectors: 2, State: SectorStateMissing, Confidence: ConfidenceNone}
+	journal, err := AppendJournalRecord(nil, JournalRecord{
+		Type:     RecordExtentStateChanged,
+		Sequence: 2,
+		Extent:   &extent,
+	})
+	if err != nil {
+		t.Fatalf("append journal record: %v", err)
+	}
+
+	checkpoint, err := ReplayJournal(base, journal)
+	if err != nil {
+		t.Fatalf("replay journal: %v", err)
+	}
+	if len(checkpoint.Extents) != 3 {
+		t.Fatalf("expected replacement extents, got %+v", checkpoint.Extents)
+	}
+	if checkpoint.Extents[1].StartLBA != 3 || checkpoint.Extents[1].Sectors != 2 || checkpoint.Extents[1].State != SectorStateMissing {
+		t.Fatalf("unexpected replacement extent: %+v", checkpoint.Extents[1])
+	}
+}

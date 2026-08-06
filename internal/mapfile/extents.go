@@ -144,6 +144,51 @@ func InsertExtent(extents []Extent, candidate Extent) ([]Extent, error) {
 	return CoalesceExtents(result)
 }
 
+func ApplyExtent(extents []Extent, candidate Extent) ([]Extent, error) {
+	if err := candidate.Validate(); err != nil {
+		return nil, fmt.Errorf("apply extent candidate: %w", err)
+	}
+	if err := ValidateExtentSet(extents); err != nil {
+		return nil, fmt.Errorf("apply extent set: %w", err)
+	}
+
+	result := make([]Extent, 0, len(extents)+2)
+	inserted := false
+
+	for _, extent := range extents {
+		if extent.EndLBA() <= candidate.StartLBA || extent.StartLBA >= candidate.EndLBA() {
+			if !inserted && candidate.EndLBA() <= extent.StartLBA {
+				result = append(result, candidate)
+				inserted = true
+			}
+			result = append(result, extent)
+			continue
+		}
+
+		if extent.StartLBA < candidate.StartLBA {
+			left := extent
+			left.Sectors = uint32(candidate.StartLBA - extent.StartLBA)
+			result = append(result, left)
+		}
+		if !inserted {
+			result = append(result, candidate)
+			inserted = true
+		}
+		if candidate.EndLBA() < extent.EndLBA() {
+			right := extent
+			right.StartLBA = candidate.EndLBA()
+			right.Sectors = uint32(extent.EndLBA() - candidate.EndLBA())
+			result = append(result, right)
+		}
+	}
+
+	if !inserted {
+		result = append(result, candidate)
+	}
+
+	return CoalesceExtents(result)
+}
+
 func CoalesceExtents(extents []Extent) ([]Extent, error) {
 	if err := ValidateExtentSet(extents); err != nil {
 		return nil, err

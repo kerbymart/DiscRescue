@@ -486,6 +486,36 @@ func TestViewIncompleteSummaryAvoidsCleanSuccessTreatment(t *testing.T) {
 	}
 }
 
+func TestViewDeferredSummaryOffersRetryChoice(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageSummary
+	model.Summary = JobSummary{
+		ImagePath:       "D:/Archives/archive-disc.iso",
+		MapPath:         "D:/Archives/archive-disc.drmap",
+		DeferredSectors: 64,
+	}
+	model.Recovery = RecoveryViewModel{
+		Status:           "Fast pass finished with deferred sectors",
+		OutputPath:       "D:/Archives/archive-disc.iso",
+		RecoveredSectors: 2295040,
+		TotalSectors:     2295104,
+		DeferredSectors:  64,
+	}
+
+	view := model.View().Content
+	if !strings.Contains(view, "64 sectors were deferred to a later retry pass.") {
+		t.Fatalf("expected deferred summary explanation, got %q", view)
+	}
+	if !strings.Contains(view, "> Retry deferred sectors") {
+		t.Fatalf("expected retry-first choice, got %q", view)
+	}
+	if !strings.Contains(view, "Finish for now") {
+		t.Fatalf("expected finish-later option, got %q", view)
+	}
+}
+
 func TestViewCompleteSummaryShowsDuration(t *testing.T) {
 	model := NewModel()
 	model.Width = 80

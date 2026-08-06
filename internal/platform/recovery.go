@@ -15,6 +15,7 @@ type RecoveryTargetStatus struct {
 	CanStartNew       bool
 	CanResume         bool
 	RecoveredSectors  uint64
+	DeferredSectors   uint64
 	UnreadableSectors uint64
 	RequiredBytes     uint64
 	AvailableBytes    uint64
@@ -26,9 +27,12 @@ type RecoverySnapshot struct {
 	StartedAt         time.Time
 	TotalBytes        uint64
 	CopiedBytes       uint64
+	DeferredSectors   uint64
 	UnreadableSectors uint64
 	MapPath           string
 	Resumed           bool
+	Phase             string
+	Status            string
 	LastIssue         []string
 	Done              bool
 	Canceled          bool

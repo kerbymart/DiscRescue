@@ -184,10 +184,11 @@ func (m ProgramModel) startRecoveryJob() tea.Msg {
 	return JobStartedMsg{
 		JobID:             jobID,
 		OutputPath:        m.Setup.OutputPath,
-		Phase:             phase,
-		Status:            status,
+		Phase:             firstNonEmpty(snapshot.Phase, phase),
+		Status:            firstNonEmpty(snapshot.Status, status),
 		TotalSectors:      m.MediaCapacitySectors,
 		RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
+		DeferredSectors:   snapshot.DeferredSectors,
 		UnreadableSectors: snapshot.UnreadableSectors,
 	}
 }
@@ -265,6 +266,7 @@ func (m ProgramModel) findResumableJobs(basePath string) ([]ResumableJobViewMode
 			OutputPath:        outputPath,
 			MapPath:           status.MapPath,
 			RecoveredSectors:  status.RecoveredSectors,
+			DeferredSectors:   status.DeferredSectors,
 			UnreadableSectors: status.UnreadableSectors,
 			Detail:            status.Detail,
 		})
@@ -362,6 +364,7 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 							MapPath:           snapshot.MapPath,
 							RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
 							TotalSectors:      totalSectors,
+							DeferredSectors:   snapshot.DeferredSectors,
 							UnreadableSectors: snapshot.UnreadableSectors,
 						}
 					}
@@ -370,6 +373,7 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						MapPath:           snapshot.MapPath,
 						RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
 						TotalSectors:      totalSectors,
+						DeferredSectors:   snapshot.DeferredSectors,
 						UnresolvedSectors: snapshot.UnreadableSectors,
 						Duration:          time.Since(snapshot.StartedAt).Round(time.Second).String(),
 					}
@@ -380,6 +384,9 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						summary.Outcome = "Recovery failed"
 						summary.NextAction = "Fix the reported problem or choose a different output target."
 						return JobStoppedMsg{Summary: summary, Err: errors.New(snapshot.ErrText)}
+					} else if snapshot.DeferredSectors > 0 {
+						summary.Outcome = "Fast pass finished with deferred sectors"
+						summary.NextAction = "Retry the deferred sectors now, or stop and resume them later."
 					} else if snapshot.UnreadableSectors > 0 {
 						summary.Outcome = "Recovery finished with unreadable sectors"
 						summary.NextAction = "Review unreadable sectors before deciding whether to retry."
@@ -389,19 +396,14 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 					}
 					return JobStoppedMsg{Summary: summary}
 				}
-				phase := "Reading optical sectors"
-				status := "Reading sectors from the selected optical drive."
-				if snapshot.Resumed {
-					phase = "Resuming optical recovery"
-					status = "Continuing from the saved recovery map."
-				}
 				return ProgressMsg{
 					Snapshot: ProgressSnapshot{
-						Phase:             phase,
+						Phase:             firstNonEmpty(snapshot.Phase, "Reading optical sectors"),
 						RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
 						TotalSectors:      totalSectors,
+						DeferredSectors:   snapshot.DeferredSectors,
 						UnreadableSectors: snapshot.UnreadableSectors,
-						Status:            status,
+						Status:            firstNonEmpty(snapshot.Status, "Reading sectors from the selected optical drive."),
 						Elapsed:           elapsedLabel(snapshot.StartedAt),
 						Remaining:         humanBytes(snapshot.TotalBytes-snapshot.CopiedBytes) + " remaining",
 						ETA:               estimateETA(snapshot.StartedAt, snapshot.CopiedBytes, snapshot.TotalBytes),

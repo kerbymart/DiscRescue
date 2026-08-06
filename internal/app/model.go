@@ -85,6 +85,7 @@ type ResumableJobViewModel struct {
 	OutputPath        string
 	MapPath           string
 	RecoveredSectors  uint64
+	DeferredSectors   uint64
 	UnreadableSectors uint64
 	Detail            string
 }
@@ -116,6 +117,7 @@ type RecoveryViewModel struct {
 	Phase             string
 	RecoveredSectors  uint64
 	TotalSectors      uint64
+	DeferredSectors   uint64
 	UnreadableSectors uint64
 	Status            string
 	OutputPath        string
@@ -147,6 +149,7 @@ type ProgressSnapshot struct {
 	Phase             string
 	RecoveredSectors  uint64
 	TotalSectors      uint64
+	DeferredSectors   uint64
 	UnreadableSectors uint64
 	Status            string
 	Elapsed           string
@@ -163,6 +166,7 @@ type JobSummary struct {
 	ImagePath         string
 	MapPath           string
 	NextAction        string
+	DeferredSectors   uint64
 	UnresolvedSectors uint64
 	RecoveredSectors  uint64
 	TotalSectors      uint64

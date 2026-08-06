@@ -450,6 +450,7 @@ func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 	}
 	lines = append(lines, "")
 	lines = append(lines, fitToWidth(fmt.Sprintf("Recovered     %s sectors", formatCount(m.Recovery.RecoveredSectors)), width))
+	lines = append(lines, fitToWidth(fmt.Sprintf("Deferred      %s sectors", formatCount(m.Recovery.DeferredSectors)), width))
 	lines = append(lines, fitToWidth(fmt.Sprintf("Unreadable    %s sectors", formatCount(m.Recovery.UnreadableSectors)), width))
 	if tier != layoutCompact && len(m.Recovery.LastIssue) > 0 {
 		lines = append(lines, "")
@@ -462,7 +463,17 @@ func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 
 func renderSummaryPage(m Model, width int, tier layoutTier) []string {
 	lines := []string{fitToWidth(m.Recovery.Status, width), ""}
-	if m.Recovery.UnreadableSectors == 0 {
+	if m.Recovery.DeferredSectors > 0 {
+		lines = append(lines,
+			fitToWidth(fmt.Sprintf("%s sectors were deferred to a later retry pass.", formatCount(m.Recovery.DeferredSectors)), width),
+			fitToWidth("The image and map are safe to finish now or retry later.", width),
+			"",
+		)
+		lines = append(lines, labeledLines("Image", firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width)...)
+		if tier != layoutCompact {
+			lines = append(lines, labeledLines("Map", firstNonEmpty(m.Summary.MapPath, replaceExtension(m.Recovery.OutputPath, ".drmap")), width)...)
+		}
+	} else if m.Recovery.UnreadableSectors == 0 {
 		lines = append(lines,
 			labeledLines("Image", firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width)...,
 		)
@@ -765,6 +776,13 @@ func fitToWidth(text string, width int) string {
 }
 
 func summaryOptions(m Model) []string {
+	if m.Recovery.DeferredSectors > 0 {
+		return []string{
+			"Retry deferred sectors",
+			"Finish for now",
+			"View details",
+		}
+	}
 	return []string{
 		"Exit",
 		"Choose another drive",
