@@ -475,17 +475,17 @@ func renderDetailsPage(m Model, width int) []string {
 }
 
 func renderPausedPage(m Model, width int) []string {
-	lines := []string{
-		fitToWidth("The current image and recovery map are safe to resume.", width),
-	}
+	lines := []string{}
 	options := []string{
 		"Continue recovery",
 		"Stop after checkpoint",
 	}
 	if m.Recovery.PausePending {
+		lines = append(lines, fitToWidth("Pause requested. Waiting for the current drive request to finish safely.", width))
 		lines = append(lines, fitToWidth("Waiting for the current drive request to finish...", width))
 		options[0] = "Waiting for pause to finish"
 	} else {
+		lines = append(lines, fitToWidth("The current image and recovery map are safe to resume.", width))
 		lines = append(lines, fitToWidth("No new drive commands will be started while paused.", width))
 	}
 	lines = append(lines, "")
