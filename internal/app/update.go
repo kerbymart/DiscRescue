@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,7 +66,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.MediaRecoverable = typed.Recoverable
 		m.MediaRecoverabilityNote = typed.RecoverabilityNote
 		if typed.SuggestedOutputPath != "" {
-			m.Setup.OutputPath = typed.SuggestedOutputPath
+			applyOutputPath(&m.Setup, typed.SuggestedOutputPath)
 			m.Setup.DefaultPath = typed.SuggestedOutputPath
 		}
 		m.Page = PageChooseAction
@@ -358,6 +359,9 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 			m.Setup.ResumeReady = false
 			m.Setup.ResumeMapPath = ""
 			m.Setup.ResumeDetail = ""
+			if strings.TrimSpace(m.Setup.OutputPath) == "" || m.Setup.OutputPath == "Not chosen yet" {
+				applyOutputPath(&m.Setup, "discrescue.iso")
+			}
 			m.PreviousPage = PageChooseAction
 			m.Page = PageChooseOutput
 			m.Cursor = 0
@@ -569,31 +573,111 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 	switch {
 	case matchesKey(key, DefaultKeys().Back):
 		return m.handleBack()
+	case key == "tab" || matchesKey(key, DefaultKeys().Down) || matchesKey(key, DefaultKeys().Up):
+		if m.Setup.ActiveOutputField == OutputFieldDirectory {
+			m.Setup.ActiveOutputField = OutputFieldFileName
+		} else {
+			m.Setup.ActiveOutputField = OutputFieldDirectory
+		}
+		return m, nil
 	case matchesKey(key, DefaultKeys().Select):
-		path := strings.TrimSpace(m.Setup.OutputPath)
-		if path == "" || path == "Not chosen yet" {
-			m.Notice = &NoticeModel{Text: "Choose an output file path before continuing.", Severity: SeverityWarning}
+		m.Setup.OutputDirectory = strings.TrimSpace(m.Setup.OutputDirectory)
+		m.Setup.OutputFileName = strings.TrimSpace(m.Setup.OutputFileName)
+		syncOutputPath(&m.Setup)
+		if m.Setup.OutputDirectory == "" {
+			m.Notice = &NoticeModel{Text: "Choose an output folder before continuing.", Severity: SeverityWarning}
 			return m, nil
 		}
-		m.Setup.OutputPath = path
+		if m.Setup.OutputFileName == "" {
+			m.Notice = &NoticeModel{Text: "Choose an output file name before continuing.", Severity: SeverityWarning}
+			return m, nil
+		}
 		requestID := m.nextRequestID()
 		m.ActiveTargetRequest = requestID
 		m.Notice = &NoticeModel{Text: "Checking the selected output path.", Severity: SeverityInfo}
-		return m, inspectTargetEffect(path, requestID)
+		return m, inspectTargetEffect(m.Setup.OutputPath, requestID)
 	case key == "backspace" || key == "ctrl+h":
-		if len(m.Setup.OutputPath) > 0 && m.Setup.OutputPath != "Not chosen yet" {
-			m.Setup.OutputPath = m.Setup.OutputPath[:len(m.Setup.OutputPath)-1]
-		}
+		trimLastOutputRune(&m.Setup)
+		syncOutputPath(&m.Setup)
+		clearResumeTargetState(&m.Setup)
 		return m, nil
 	default:
 		if msg.Text != "" {
-			if m.Setup.OutputPath == "Not chosen yet" {
-				m.Setup.OutputPath = ""
-			}
-			m.Setup.OutputPath += msg.Text
+			appendOutputText(&m.Setup, msg.Text)
+			syncOutputPath(&m.Setup)
+			clearResumeTargetState(&m.Setup)
 		}
 		return m, nil
 	}
+}
+
+func applyOutputPath(setup *JobSetupModel, fullPath string) {
+	setup.OutputDirectory, setup.OutputFileName = splitOutputPath(fullPath)
+	syncOutputPath(setup)
+}
+
+func splitOutputPath(fullPath string) (string, string) {
+	fullPath = strings.TrimSpace(fullPath)
+	if fullPath == "" || fullPath == "Not chosen yet" {
+		return ".", ""
+	}
+	directory := filepath.Dir(fullPath)
+	fileName := filepath.Base(fullPath)
+	if directory == "" {
+		directory = "."
+	}
+	if fileName == "." || fileName == string(filepath.Separator) {
+		fileName = ""
+	}
+	return directory, fileName
+}
+
+func syncOutputPath(setup *JobSetupModel) {
+	directory := strings.TrimSpace(setup.OutputDirectory)
+	fileName := strings.TrimSpace(setup.OutputFileName)
+	switch {
+	case directory == "" && fileName == "":
+		setup.OutputPath = "Not chosen yet"
+	case directory == "":
+		setup.OutputPath = fileName
+	case fileName == "":
+		setup.OutputPath = filepath.Clean(directory)
+	default:
+		setup.OutputPath = filepath.Join(directory, fileName)
+	}
+}
+
+func clearResumeTargetState(setup *JobSetupModel) {
+	setup.ResumeReady = false
+	setup.ResumeMapPath = ""
+	setup.ResumeDetail = ""
+	setup.ActionLabel = "Start a new recovery"
+}
+
+func trimLastOutputRune(setup *JobSetupModel) {
+	switch setup.ActiveOutputField {
+	case OutputFieldDirectory:
+		setup.OutputDirectory = trimLastRune(setup.OutputDirectory)
+	default:
+		setup.OutputFileName = trimLastRune(setup.OutputFileName)
+	}
+}
+
+func appendOutputText(setup *JobSetupModel, value string) {
+	switch setup.ActiveOutputField {
+	case OutputFieldDirectory:
+		setup.OutputDirectory += value
+	default:
+		setup.OutputFileName += value
+	}
+}
+
+func trimLastRune(value string) string {
+	if value == "" {
+		return value
+	}
+	runes := []rune(value)
+	return string(runes[:len(runes)-1])
 }
 
 func buildRecoveryDetails(m Model) []string {

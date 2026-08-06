@@ -158,17 +158,23 @@ func TestViewOutputWrapsLongPathInsteadOfTruncating(t *testing.T) {
 	model.Width = 60
 	model.Height = 18
 	model.Page = PageChooseOutput
-	model.Setup.OutputPath = "D:/Archives/OpticalDiscCaptures/Very-Long-Collection-Name/Archive-Disc-Volume-07.iso"
+	model.Setup.OutputDirectory = "D:/Archives/OpticalDiscCaptures/Very-Long-Collection-Name"
+	model.Setup.OutputFileName = "Archive-Disc-Volume-07.iso"
+	model.Setup.ActiveOutputField = OutputFieldFileName
+	syncOutputPath(&model.Setup)
 
 	view := model.View().Content
-	if !strings.Contains(view, "Path") {
-		t.Fatalf("expected path label, got %q", view)
+	if !strings.Contains(view, "Folder") || !strings.Contains(view, "File name") {
+		t.Fatalf("expected explicit output fields, got %q", view)
 	}
 	if !strings.Contains(view, "Archive-Disc-Volume-07.iso") {
 		t.Fatalf("expected wrapped path tail, got %q", view)
 	}
 	if !strings.Contains(view, "Choose where to save the recovery image.") {
 		t.Fatalf("expected clearer output guidance, got %q", view)
+	}
+	if !strings.Contains(view, "Full path") {
+		t.Fatalf("expected combined path preview, got %q", view)
 	}
 }
 

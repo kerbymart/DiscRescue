@@ -260,14 +260,24 @@ func renderActionList(m Model, width int, tier layoutTier) []string {
 }
 
 func renderOutputPage(m Model, width int, tier layoutTier) []string {
-	path := m.Setup.OutputPath
-	if path == "" {
-		path = " "
+	directory := m.Setup.OutputDirectory
+	if directory == "" {
+		directory = " "
 	}
-	path += "|"
-	lines := wrapText("Choose where to save the recovery image. Edit the folder or file name if you want a different target, or press Enter to use the current path.", width)
+	fileName := m.Setup.OutputFileName
+	if fileName == "" {
+		fileName = " "
+	}
+	if m.Setup.ActiveOutputField == OutputFieldDirectory {
+		directory += "|"
+	} else {
+		fileName += "|"
+	}
+	lines := wrapText("Choose where to save the recovery image. Edit the output folder or file name, then press Enter to continue with the full target below.", width)
 	lines = append(lines, "")
-	lines = append(lines, labeledLines("Path", path, width)...)
+	lines = append(lines, labeledLines("Folder", directory, width)...)
+	lines = append(lines, labeledLines("File name", fileName, width)...)
+	lines = append(lines, labeledLines("Full path", firstNonEmpty(m.Setup.OutputPath, "Not chosen yet"), width)...)
 	if m.Setup.DefaultPath != "" && m.Setup.DefaultPath != "Not chosen yet" {
 		lines = append(lines, labeledLines("Suggested", m.Setup.DefaultPath, width)...)
 	}
@@ -515,9 +525,9 @@ func renderFooter(page Page, width int, tier layoutTier) string {
 	switch page {
 	case PageChooseOutput:
 		if tier == layoutCompact {
-			footer = "type path  enter continue  esc back"
+			footer = "tab switch  type edit  enter continue"
 		} else {
-			footer = "type path  -  enter continue  -  backspace delete  -  esc back"
+			footer = "tab switch field  -  type edit  -  backspace delete  -  enter continue  -  esc back"
 		}
 	case PageRecovering:
 		if tier == layoutCompact {

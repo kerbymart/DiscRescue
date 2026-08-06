@@ -37,17 +37,27 @@ type DeviceSummary struct {
 	Status      string
 }
 
+type OutputField uint8
+
+const (
+	OutputFieldDirectory OutputField = iota
+	OutputFieldFileName
+)
+
 type JobSetupModel struct {
-	ActionLabel   string
-	OutputPath    string
-	DefaultPath   string
-	OutputFormat  string
-	FreeSpace     string
-	MethodLabel   string
-	CopyLabel     string
-	ResumeReady   bool
-	ResumeMapPath string
-	ResumeDetail  string
+	ActionLabel       string
+	OutputPath        string
+	OutputDirectory   string
+	OutputFileName    string
+	ActiveOutputField OutputField
+	DefaultPath       string
+	OutputFormat      string
+	FreeSpace         string
+	MethodLabel       string
+	CopyLabel         string
+	ResumeReady       bool
+	ResumeMapPath     string
+	ResumeDetail      string
 }
 
 type ContentIdentityViewModel struct {
@@ -177,13 +187,16 @@ func NewModel() Model {
 	return Model{
 		Page: PageDiscover,
 		Setup: JobSetupModel{
-			ActionLabel:  "Start a new recovery",
-			OutputPath:   "Not chosen yet",
-			DefaultPath:  "Not chosen yet",
-			OutputFormat: "ISO",
-			FreeSpace:    "Unknown until an output location is selected",
-			MethodLabel:  "Balanced recovery",
-			CopyLabel:    "Not set (optional)",
+			ActionLabel:       "Start a new recovery",
+			OutputPath:        "Not chosen yet",
+			OutputDirectory:   ".",
+			OutputFileName:    "",
+			ActiveOutputField: OutputFieldFileName,
+			DefaultPath:       "Not chosen yet",
+			OutputFormat:      "ISO",
+			FreeSpace:         "Unknown until an output location is selected",
+			MethodLabel:       "Balanced recovery",
+			CopyLabel:         "Not set (optional)",
 		},
 		Identity: ContentIdentityViewModel{
 			Summary: "Finding usable optical drives.",

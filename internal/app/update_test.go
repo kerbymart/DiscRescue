@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -94,6 +95,9 @@ func TestMediaIdentifiedMovesToChooseAction(t *testing.T) {
 	}
 	if !updated.MediaRecoverable {
 		t.Fatal("expected recoverable media")
+	}
+	if updated.Setup.OutputDirectory != "." || updated.Setup.OutputFileName != "disc.iso" {
+		t.Fatalf("unexpected output parts: %+v", updated.Setup)
 	}
 }
 
@@ -223,7 +227,9 @@ func TestReviewChooseAnotherDriveReturnsToDriveList(t *testing.T) {
 func TestChooseOutputEnterRequestsTargetInspection(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseOutput
-	model.Setup.OutputPath = "D:/Archives/disc.iso"
+	model.Setup.OutputDirectory = "D:/Archives"
+	model.Setup.OutputFileName = "disc.iso"
+	syncOutputPath(&model.Setup)
 
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
@@ -231,11 +237,41 @@ func TestChooseOutputEnterRequestsTargetInspection(t *testing.T) {
 		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseOutput)
 	}
 	requested := cmd().(EffectRequestedMsg)
-	if requested.Kind != EffectInspectTarget || requested.OutputPath != "D:/Archives/disc.iso" {
+	if requested.Kind != EffectInspectTarget || requested.OutputPath != filepath.Join("D:/Archives", "disc.iso") {
 		t.Fatalf("unexpected effect request: %+v", requested)
 	}
 	if updated.Notice == nil || updated.Notice.Text != "Checking the selected output path." {
 		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	}
+}
+
+func TestChooseOutputTabSwitchesActiveField(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.Setup.ActiveOutputField = OutputFieldDirectory
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	updated := next.(Model)
+	if updated.Setup.ActiveOutputField != OutputFieldFileName {
+		t.Fatalf("unexpected active field: %v", updated.Setup.ActiveOutputField)
+	}
+}
+
+func TestChooseOutputTypingEditsActiveFieldAndBuildsFullPath(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.Setup.OutputDirectory = "D:/Archives"
+	model.Setup.OutputFileName = "disc"
+	model.Setup.ActiveOutputField = OutputFieldFileName
+	syncOutputPath(&model.Setup)
+
+	next, _ := model.Update(tea.KeyPressMsg{Text: ".iso"})
+	updated := next.(Model)
+	if updated.Setup.OutputFileName != "disc.iso" {
+		t.Fatalf("unexpected file name: %q", updated.Setup.OutputFileName)
+	}
+	if updated.Setup.OutputPath != filepath.Join("D:/Archives", "disc.iso") {
+		t.Fatalf("unexpected output path: %q", updated.Setup.OutputPath)
 	}
 }
 
