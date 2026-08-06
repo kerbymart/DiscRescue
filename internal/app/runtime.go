@@ -89,11 +89,12 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			RecoverabilityNote:  media.RecoverabilityNote,
 		}
 	case EffectLookupHistory:
-		view, records, err := m.lookupPriorProcessing(request.BasePath)
+		view, records, jobs, err := m.lookupPriorProcessing(request.BasePath)
 		return PriorProcessingLookupMsg{
 			RequestID: request.RequestID,
 			View:      view,
 			Records:   records,
+			Jobs:      jobs,
 			Err:       err,
 		}
 	case EffectInspectTarget:
@@ -191,16 +192,16 @@ func (m ProgramModel) startRecoveryJob() tea.Msg {
 	}
 }
 
-func (m ProgramModel) lookupPriorProcessing(basePath string) (PriorProcessingViewModel, []PriorProcessingRecord, error) {
+func (m ProgramModel) lookupPriorProcessing(basePath string) (PriorProcessingViewModel, []PriorProcessingRecord, []ResumableJobViewModel, error) {
 	jobs, err := m.findResumableJobs(basePath)
 	if err != nil {
-		return PriorProcessingViewModel{}, nil, err
+		return PriorProcessingViewModel{}, nil, nil, err
 	}
 	if len(jobs) == 0 {
 		return PriorProcessingViewModel{
 			Kind:        PriorProcessingNone,
 			HistoryLine: "No matching contents found on this computer.",
-		}, nil, nil
+		}, nil, nil, nil
 	}
 
 	view := PriorProcessingViewModel{
@@ -209,6 +210,11 @@ func (m ProgramModel) lookupPriorProcessing(basePath string) (PriorProcessingVie
 		HistoryLine: fmt.Sprintf("Found %d resumable matching recoveries in %s.", len(jobs), strings.TrimSpace(basePath)),
 		ImagePath:   jobs[0].OutputPath,
 		Recovered:   formatCount(jobs[0].RecoveredSectors) + " sectors",
+		Options: []string{
+			"Resume the matching recovery",
+			"Start a new recovery instead",
+			"Choose another drive",
+		},
 	}
 	if jobs[0].UnreadableSectors > 0 {
 		view.UnreadableSectors = formatCount(jobs[0].UnreadableSectors) + " sectors"
@@ -224,7 +230,7 @@ func (m ProgramModel) lookupPriorProcessing(basePath string) (PriorProcessingVie
 			Detail: job.Detail,
 		})
 	}
-	return view, records, nil
+	return view, records, jobs, nil
 }
 
 func (m ProgramModel) findResumableJobs(basePath string) ([]ResumableJobViewModel, error) {

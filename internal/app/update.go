@@ -96,6 +96,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.PriorView = typed.View
 		}
 		m.PriorRecords = append([]PriorProcessingRecord(nil), typed.Records...)
+		m.ResumeJobs = append([]ResumableJobViewModel(nil), typed.Jobs...)
+		if typed.View.Kind == PriorProcessingStrongResumable && len(typed.Jobs) > 0 {
+			m.Page = PagePriorProcessing
+			m.Cursor = 0
+			m.Notice = &NoticeModel{Text: "Matching recovery work was found on this computer.", Severity: SeverityInfo}
+			return m, nil
+		}
 		return m, nil
 	case ProcessedMediaDiscoveredMsg:
 		if typed.RequestID != m.ActiveHistoryRequest {
@@ -404,6 +411,28 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		case PriorProcessingStrongCompleted, PriorProcessingStrongResumable, PriorProcessingProbable:
 			switch m.Cursor {
 			case 0:
+				if m.PriorView.Kind == PriorProcessingStrongResumable && len(m.ResumeJobs) > 0 {
+					if len(m.ResumeJobs) == 1 {
+						selected := m.ResumeJobs[0]
+						applyOutputPath(&m.Setup, selected.OutputPath)
+						m.Setup.ResumeReady = true
+						m.Setup.ResumeMapPath = selected.MapPath
+						m.Setup.ResumeDetail = selected.Detail
+						m.Setup.ActionLabel = "Resume recovery"
+						m.Page = PageReview
+						m.Cursor = 0
+						m.Notice = &NoticeModel{Text: selected.Detail, Severity: SeverityInfo}
+						return m, nil
+					}
+					m.Page = PageResumeJobs
+					m.Cursor = 0
+					m.Notice = &NoticeModel{Text: "Choose a saved recovery to resume safely.", Severity: SeverityInfo}
+					return m, nil
+				}
+				m.Page = PageChooseAction
+				m.Cursor = 0
+				return m, nil
+			case 1:
 				m.Page = PageChooseAction
 				m.Cursor = 0
 				return m, nil

@@ -142,6 +142,34 @@ func TestPriorProcessingLookupUpdatesHistoryLine(t *testing.T) {
 	}
 }
 
+func TestPriorProcessingLookupWithResumableMatchMovesToInterstitial(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseAction
+	model.ActiveLookupRequest = 5
+
+	next, _ := model.Update(PriorProcessingLookupMsg{
+		RequestID: 5,
+		View: PriorProcessingViewModel{
+			Kind:        PriorProcessingStrongResumable,
+			Title:       "Matching contents were found on this computer",
+			HistoryLine: "Found 1 resumable matching recoveries in D:/Archives.",
+			Options:     []string{"Resume the matching recovery", "Start a new recovery instead", "Choose another drive"},
+		},
+		Jobs: []ResumableJobViewModel{{
+			OutputPath: "D:/Archives/disc.iso",
+			MapPath:    "D:/Archives/disc.drmap",
+			Detail:     "Resume recovery from 120 recovered sectors and 3 unreadable sectors.",
+		}},
+	})
+	updated := next.(Model)
+	if updated.Page != PagePriorProcessing {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PagePriorProcessing)
+	}
+	if len(updated.ResumeJobs) != 1 {
+		t.Fatalf("unexpected resume jobs: %+v", updated.ResumeJobs)
+	}
+}
+
 func TestEnterAdvancesSetupFlow(t *testing.T) {
 	model := NewModel()
 	model.Page = PagePriorProcessing
@@ -156,6 +184,31 @@ func TestEnterAdvancesSetupFlow(t *testing.T) {
 	updated := next.(Model)
 	if updated.Page != PageChooseAction {
 		t.Fatalf("unexpected page after prior processing: got %v want %v", updated.Page, PageChooseAction)
+	}
+}
+
+func TestPriorProcessingResumeDefaultMovesToReview(t *testing.T) {
+	model := NewModel()
+	model.Page = PagePriorProcessing
+	model.PriorView = PriorProcessingViewModel{
+		Kind:    PriorProcessingStrongResumable,
+		Title:   "Matching contents were found on this computer",
+		Body:    []string{"Use Resume an unfinished recovery to continue from the saved map."},
+		Options: []string{"Resume the matching recovery", "Start a new recovery instead", "Choose another drive"},
+	}
+	model.ResumeJobs = []ResumableJobViewModel{{
+		OutputPath: "D:/Archives/disc.iso",
+		MapPath:    "D:/Archives/disc.drmap",
+		Detail:     "Resume recovery from 120 recovered sectors and 3 unreadable sectors.",
+	}}
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageReview {
+		t.Fatalf("unexpected page after prior processing resume: got %v want %v", updated.Page, PageReview)
+	}
+	if updated.Setup.ActionLabel != "Resume recovery" || !updated.Setup.ResumeReady {
+		t.Fatalf("unexpected setup state: %+v", updated.Setup)
 	}
 }
 

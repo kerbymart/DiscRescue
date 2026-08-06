@@ -33,6 +33,7 @@ type PriorProcessingLookupMsg struct {
 	RequestID int
 	View      PriorProcessingViewModel
 	Records   []PriorProcessingRecord
+	Jobs      []ResumableJobViewModel
 	Err       error
 }
 
