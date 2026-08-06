@@ -169,18 +169,25 @@ func (m ProgramModel) startRecoveryJob() tea.Msg {
 	m.state.activeRecovery = job
 	m.state.activeJobID = jobID
 	m.state.pendingPause = false
+	logicalSectorSize := uint64(m.MediaLogicalSectorSize)
+	if logicalSectorSize == 0 {
+		logicalSectorSize = 2048
+	}
+	snapshot := job.Snapshot()
 	phase := "Reading optical sectors"
 	status := "Reading sectors from the selected optical drive."
-	if snapshot := job.Snapshot(); snapshot.Resumed {
+	if snapshot.Resumed {
 		phase = "Resuming optical recovery"
 		status = "Resuming from the saved recovery map."
 	}
 	return JobStartedMsg{
-		JobID:        jobID,
-		OutputPath:   m.Setup.OutputPath,
-		Phase:        phase,
-		Status:       status,
-		TotalSectors: m.MediaCapacitySectors,
+		JobID:             jobID,
+		OutputPath:        m.Setup.OutputPath,
+		Phase:             phase,
+		Status:            status,
+		TotalSectors:      m.MediaCapacitySectors,
+		RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
+		UnreadableSectors: snapshot.UnreadableSectors,
 	}
 }
 

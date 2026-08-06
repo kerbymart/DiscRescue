@@ -42,11 +42,13 @@ type CatalogUpdatedMsg struct {
 }
 
 type JobStartedMsg struct {
-	JobID        string
-	OutputPath   string
-	Phase        string
-	Status       string
-	TotalSectors uint64
+	JobID             string
+	OutputPath        string
+	Phase             string
+	Status            string
+	TotalSectors      uint64
+	RecoveredSectors  uint64
+	UnreadableSectors uint64
 }
 
 type JobStartFailedMsg struct {

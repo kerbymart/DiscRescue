@@ -169,8 +169,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.OutputPath = typed.OutputPath
 		m.Recovery.Phase = typed.Phase
 		m.Recovery.TotalSectors = typed.TotalSectors
-		m.Recovery.RecoveredSectors = 0
-		m.Recovery.UnreadableSectors = 0
+		m.Recovery.RecoveredSectors = typed.RecoveredSectors
+		m.Recovery.UnreadableSectors = typed.UnreadableSectors
 		m.Recovery.PausePending = false
 		m.Details.Lines = buildRecoveryDetails(m)
 		m.Notice = nil

@@ -192,6 +192,27 @@ func TestReviewEnterRequestsStartJob(t *testing.T) {
 	}
 }
 
+func TestJobStartedPreservesResumedProgress(t *testing.T) {
+	model := NewModel()
+
+	next, _ := model.Update(JobStartedMsg{
+		JobID:             "job-1",
+		OutputPath:        "D:/Archives/archive-disc.iso",
+		Phase:             "Resuming optical recovery",
+		Status:            "Resuming from the saved recovery map.",
+		TotalSectors:      240,
+		RecoveredSectors:  120,
+		UnreadableSectors: 3,
+	})
+	updated := next.(Model)
+	if updated.Page != PageRecovering {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageRecovering)
+	}
+	if updated.Recovery.RecoveredSectors != 120 || updated.Recovery.UnreadableSectors != 3 {
+		t.Fatalf("unexpected recovery state: %+v", updated.Recovery)
+	}
+}
+
 func TestJobStartFailedKeepsReviewActionable(t *testing.T) {
 	model := NewModel()
 	model.Page = PageReview
