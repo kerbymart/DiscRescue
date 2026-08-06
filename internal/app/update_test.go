@@ -530,6 +530,24 @@ func TestSpaceDuringRecoveryMovesToPausedAndRequestsPause(t *testing.T) {
 	}
 }
 
+func TestPausedContinueWhilePausePendingWaitsForPauseCompletion(t *testing.T) {
+	model := NewModel()
+	model.Page = PagePaused
+	model.Recovery.PausePending = true
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if cmd != nil {
+		t.Fatalf("expected no resume command while pause is pending, got %#v", cmd)
+	}
+	if updated.Page != PagePaused {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PagePaused)
+	}
+	if updated.Notice == nil || updated.Notice.Text != "Waiting for the current read to finish before recovery can continue." {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	}
+}
+
 func TestJobPausedMovesToPausedState(t *testing.T) {
 	model := NewModel()
 	model.Page = PageRecovering

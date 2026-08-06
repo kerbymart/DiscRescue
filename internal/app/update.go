@@ -308,6 +308,10 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.Cursor = 0
 			return m, pauseJobEffect()
 		case PagePaused:
+			if m.Recovery.PausePending {
+				m.Notice = &NoticeModel{Text: "Waiting for the current read to finish before recovery can continue.", Severity: SeverityInfo}
+				return m, nil
+			}
 			m.Page = PageRecovering
 			m.Cursor = 0
 			return m, resumeJobEffect()
@@ -515,6 +519,10 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 	case PagePaused:
 		switch m.Cursor {
 		case 0:
+			if m.Recovery.PausePending {
+				m.Notice = &NoticeModel{Text: "Waiting for the current read to finish before recovery can continue.", Severity: SeverityInfo}
+				return m, nil
+			}
 			m.Page = PageRecovering
 			m.Cursor = 0
 			return m, resumeJobEffect()

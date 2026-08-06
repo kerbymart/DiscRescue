@@ -345,8 +345,8 @@ func TestViewPausedShowsSafeResumeLanguage(t *testing.T) {
 	if !strings.Contains(view, "Waiting for the current drive request to finish") {
 		t.Fatalf("expected outstanding-request note, got %q", view)
 	}
-	if !strings.Contains(view, "> Continue recovery") {
-		t.Fatalf("expected safe paused default, got %q", view)
+	if !strings.Contains(view, "> Waiting for pause to finish") {
+		t.Fatalf("expected pending-pause label, got %q", view)
 	}
 }
 
