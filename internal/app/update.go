@@ -58,14 +58,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.Identity = typed.Identity
+		m.MediaFileSystem = typed.FileSystem
+		m.MediaVolumeLabel = typed.VolumeLabel
+		m.MediaLogicalSectorSize = typed.LogicalSectorSize
+		m.MediaCapacitySectors = typed.CapacitySectors
+		m.MediaRecoverable = typed.Recoverable
+		m.MediaRecoverabilityNote = typed.RecoverabilityNote
+		if typed.SuggestedOutputPath != "" {
+			m.Setup.OutputPath = typed.SuggestedOutputPath
+		}
 		m.Page = PageChooseAction
 		m.Cursor = 0
-		m.PriorView = PriorProcessingViewModel{
-			Kind:        PriorProcessingNone,
-			HistoryLine: "History lookup is unavailable in this build.",
-		}
+		m.PriorView = defaultPriorProcessingView()
 		m.PriorRecords = nil
-		m.Notice = &NoticeModel{Text: "Media inspection completed. Recovery actions are not connected in this build.", Severity: SeverityWarning}
+		if typed.Recoverable {
+			m.Notice = &NoticeModel{Text: "Media inspection completed. Start a new recovery to create an image.", Severity: SeverityInfo}
+		} else {
+			m.Notice = &NoticeModel{Text: typed.RecoverabilityNote, Severity: SeverityWarning}
+		}
 		return m, nil
 	case PriorProcessingLookupMsg:
 		m.LastError = typed.Err
@@ -75,8 +85,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case JobStartedMsg:
 		m.Page = PageRecovering
-		m.Recovery.Status = fmt.Sprintf("Job %s started.", typed.JobID)
-		m.Recovery.OutputPath = m.Setup.OutputPath
+		m.Recovery.Status = typed.Status
+		m.Recovery.OutputPath = typed.OutputPath
+		m.Recovery.Phase = typed.Phase
+		m.Recovery.TotalSectors = typed.TotalSectors
+		m.Recovery.RecoveredSectors = 0
+		m.Recovery.UnreadableSectors = 0
 		m.Notice = &NoticeModel{Text: "Recovery job started.", Severity: SeverityInfo}
 		return m, nil
 	case JobStartFailedMsg:
@@ -186,9 +200,8 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case matchesKey(key, DefaultKeys().Pause):
 		switch m.Page {
 		case PageRecovering:
-			m.Page = PagePaused
-			m.Cursor = 0
-			return m, pauseJobEffect()
+			m.Notice = &NoticeModel{Text: "Pause is not implemented for the current recovery backend.", Severity: SeverityWarning}
+			return m, nil
 		case PagePaused:
 			m.Page = PageRecovering
 			m.Cursor = 0
@@ -297,10 +310,16 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		}
 	case PageChooseAction:
 		switch m.Cursor {
-		case 0, 1, 2, 3, 4:
-			m.Notice = &NoticeModel{Text: "This action is not connected in this build yet.", Severity: SeverityWarning}
+		case 0:
+			if !m.MediaRecoverable {
+				m.Notice = &NoticeModel{Text: firstNonEmpty(m.MediaRecoverabilityNote, "This disc cannot be recovered by the current build."), Severity: SeverityWarning}
+				return m, nil
+			}
+			m.Setup.ActionLabel = "Start a new recovery"
+			m.Page = PageReview
+			m.Cursor = 0
 			return m, nil
-		case 5:
+		case 1:
 			m.Page = PageChooseDrive
 			m.Cursor = 0
 			m.Notice = &NoticeModel{Text: "Choose one optical drive.", Severity: SeverityInfo}
@@ -316,18 +335,9 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		case 0:
 			return m, startJobEffect()
 		case 1:
-			m.Page = PageChooseOutput
+			m.Page = PageChooseDrive
 			m.Cursor = 0
-			return m, nil
-		case 2:
-			m.Setup.MethodLabel = nextMethodLabel(m.Setup.MethodLabel)
-			return m, nil
-		case 3:
-			m.Setup.CopyLabel = nextCopyLabel(m.Setup.CopyLabel)
-			return m, nil
-		case 4:
-			m.PreviousPage = m.Page
-			m.Page = PageAdvanced
+			m.Notice = &NoticeModel{Text: "Choose one optical drive.", Severity: SeverityInfo}
 			return m, nil
 		default:
 			return m, nil
@@ -370,9 +380,9 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 			m.Cursor = 0
 			return m, nil
 		case 1:
-			m.Setup.ActionLabel = summarySecondaryActionLabel(m)
-			m.Page = PageChooseOutput
+			m.Page = PageChooseDrive
 			m.Cursor = 0
+			m.Notice = &NoticeModel{Text: "Choose one optical drive.", Severity: SeverityInfo}
 			return m, nil
 		case 2:
 			m.PreviousPage = m.Page
@@ -406,11 +416,11 @@ func (m Model) cursorLimit() int {
 	case PageChooseDrive:
 		return len(m.Devices)
 	case PageChooseAction:
-		return 5
+		return 2
 	case PagePriorProcessing:
 		return len(m.PriorView.Options)
 	case PageReview:
-		return 5
+		return 2
 	case PagePaused:
 		return 2
 	case PageStopConfirm:

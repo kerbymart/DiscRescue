@@ -1,8 +1,10 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -12,12 +14,19 @@ import (
 type ProgramModel struct {
 	Model
 	runtime platform.Runtime
+	state   *programState
+}
+
+type programState struct {
+	activeRecovery platform.RecoveryJob
+	activeJobID    string
 }
 
 func NewProgramModel(runtime platform.Runtime) ProgramModel {
 	return ProgramModel{
 		Model:   NewModel(),
 		runtime: runtime,
+		state:   &programState{},
 	}
 }
 
@@ -28,7 +37,8 @@ func (m ProgramModel) Init() tea.Cmd {
 func (m ProgramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.Model.Update(msg)
 	model := next.(Model)
-	return ProgramModel{Model: model, runtime: m.runtime}, m.resolve(cmd)
+	nextModel := ProgramModel{Model: model, runtime: m.runtime, state: m.state}
+	return nextModel, tea.Batch(nextModel.resolve(cmd), nextModel.followUp(msg))
 }
 
 func (m ProgramModel) View() tea.View {
@@ -64,27 +74,112 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			return MediaIdentifiedMsg{RequestID: request.RequestID, Err: err}
 		}
 		return MediaIdentifiedMsg{
-			RequestID: request.RequestID,
-			Identity: ContentIdentityViewModel{
-				Summary: media.Summary,
-				Detail:  media.Detail,
-			},
+			RequestID:           request.RequestID,
+			Identity:            ContentIdentityViewModel{Summary: media.Summary, Detail: media.Detail},
+			FileSystem:          media.FileSystem,
+			VolumeLabel:         media.VolumeLabel,
+			LogicalSectorSize:   media.LogicalSectorSize,
+			CapacitySectors:     media.CapacitySectors,
+			SuggestedOutputPath: media.SuggestedOutputPath,
+			Recoverable:         media.Recoverable,
+			RecoverabilityNote:  media.RecoverabilityNote,
 		}
 	case EffectLookupHistory:
 		return PriorProcessingLookupMsg{Err: fmt.Errorf("history lookup is unavailable in this build")}
 	case EffectStartJob:
-		return JobStartFailedMsg{Err: fmt.Errorf("starting recovery is not connected to real device and image work yet")}
+		jobID := fmt.Sprintf("job-%d", time.Now().UnixNano())
+		job, err := m.runtime.Recovery.StartImageRecovery(platform.RecoveryInput{
+			DevicePath:        m.SelectedDrive.Path,
+			OutputPath:        m.Setup.OutputPath,
+			LogicalSectorSize: m.MediaLogicalSectorSize,
+			CapacitySectors:   m.MediaCapacitySectors,
+		})
+		if err != nil {
+			return JobStartFailedMsg{Err: err}
+		}
+		m.state.activeRecovery = job
+		m.state.activeJobID = jobID
+		return JobStartedMsg{
+			JobID:        jobID,
+			OutputPath:   m.Setup.OutputPath,
+			Phase:        "Reading optical sectors",
+			Status:       "Reading sectors from the selected optical drive.",
+			TotalSectors: m.MediaCapacitySectors,
+		}
 	case EffectPauseJob:
-		return StatusMsg{Text: "No active recovery job is running.", Severity: SeverityWarning}
+		return StatusMsg{Text: "Pause is not implemented for the current recovery backend.", Severity: SeverityWarning}
 	case EffectResumeJob:
-		return StatusMsg{Text: "No paused recovery job is available to resume.", Severity: SeverityWarning}
+		return StatusMsg{Text: "Resume is not implemented for the current recovery backend.", Severity: SeverityWarning}
 	case EffectStopJob:
-		return StatusMsg{Text: "No active recovery job is available to stop.", Severity: SeverityWarning}
+		if m.state.activeRecovery == nil {
+			return StatusMsg{Text: "No active recovery job is available to stop.", Severity: SeverityWarning}
+		}
+		m.state.activeRecovery.Cancel()
+		return StatusMsg{Text: "Stopping recovery after the current read completes.", Severity: SeverityWarning}
 	case EffectStopNow:
-		return StatusMsg{Text: "No active recovery job is available to stop.", Severity: SeverityWarning}
+		if m.state.activeRecovery == nil {
+			return StatusMsg{Text: "No active recovery job is available to stop.", Severity: SeverityWarning}
+		}
+		m.state.activeRecovery.Cancel()
+		return StatusMsg{Text: "Immediate stop requested.", Severity: SeverityWarning}
 	default:
 		return FatalMsg{Err: fmt.Errorf("unsupported effect: %s", request.Kind)}
 	}
+}
+
+func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
+	switch msg.(type) {
+	case JobStartedMsg, ProgressMsg, StatusMsg:
+		if m.state != nil && m.state.activeRecovery != nil {
+			return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+				snapshot := m.state.activeRecovery.Snapshot()
+				totalSectors := m.MediaCapacitySectors
+				logicalSectorSize := uint64(m.MediaLogicalSectorSize)
+				if logicalSectorSize == 0 {
+					logicalSectorSize = 2048
+				}
+				if snapshot.Done {
+					m.state.activeRecovery = nil
+					summary := JobSummary{
+						ImagePath:         m.Setup.OutputPath,
+						MapPath:           "",
+						RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
+						TotalSectors:      totalSectors,
+						UnresolvedSectors: snapshot.UnreadableSectors,
+						Duration:          time.Since(snapshot.StartedAt).Round(time.Second).String(),
+					}
+					if snapshot.Canceled {
+						summary.Outcome = "Recovery stopped"
+						summary.NextAction = "Review the partial image before trying again"
+					} else if snapshot.ErrText != "" {
+						summary.Outcome = "Recovery failed"
+						summary.NextAction = "Review the error and try again"
+						return JobStoppedMsg{Summary: summary, Err: errors.New(snapshot.ErrText)}
+					} else if snapshot.UnreadableSectors > 0 {
+						summary.Outcome = "Recovery finished with unreadable sectors"
+						summary.NextAction = "Review unreadable sectors before trying again"
+					} else {
+						summary.Outcome = "Recovery complete"
+						summary.NextAction = "Recovery image is ready"
+					}
+					return JobStoppedMsg{Summary: summary}
+				}
+				return ProgressMsg{
+					Snapshot: ProgressSnapshot{
+						Phase:             "Reading optical sectors",
+						RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
+						TotalSectors:      totalSectors,
+						UnreadableSectors: snapshot.UnreadableSectors,
+						Status:            "Reading sectors from the selected optical drive.",
+						Remaining:         fmt.Sprintf("%d bytes remaining", snapshot.TotalBytes-snapshot.CopiedBytes),
+						LastIssue:         append([]string(nil), snapshot.LastIssue...),
+						OutputPath:        m.Setup.OutputPath,
+					},
+				}
+			})
+		}
+	}
+	return nil
 }
 
 func toDeviceSummaries(drives []platform.OpticalDrive) []DeviceSummary {

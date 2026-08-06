@@ -110,7 +110,7 @@ func pageTitle(page Page) string {
 func renderPageBody(m Model, width int, tier layoutTier) []string {
 	switch m.Page {
 	case PageDiscover:
-		return wrapText("One status sentence is shown here while discovery runs.", width)
+		return wrapText("Finding usable optical drives.", width)
 	case PageNoDrives:
 		return renderNoDrivesPage(width)
 	case PageDiscoveryError:
@@ -238,11 +238,7 @@ func renderPriorProcessing(m Model, width int, tier layoutTier) []string {
 
 func renderActionList(m Model, width int, tier layoutTier) []string {
 	actions := []string{
-		"Start a new recovery (Unavailable)",
-		"Resume an unfinished recovery (Unavailable)",
-		"Verify an existing image (Unavailable)",
-		"Merge recovery captures (Unavailable)",
-		"Browse processed media (Unavailable)",
+		"Start a new recovery",
 		"Choose another drive",
 	}
 	lines := make([]string, 0, len(actions))
@@ -277,17 +273,10 @@ func renderReviewPage(m Model, width int, tier layoutTier) []string {
 	lines = append(lines, labeledLines("Drive", selectedDriveLabel(m), width)...)
 	lines = append(lines, labeledLines("Disc", discSummary(m), width)...)
 	lines = append(lines, labeledLines("Output", m.Setup.OutputPath, width)...)
-	lines = append(lines, labeledLines("Method", m.Setup.MethodLabel, width)...)
-	if tier != layoutCompact {
-		lines = append(lines, labeledLines("Copy label", m.Setup.CopyLabel, width)...)
-	}
 	lines = append(lines, "")
 	options := []string{
 		"Start recovery",
-		"Change output",
-		"Change method",
-		"Add physical-copy label",
-		"Advanced settings",
+		"Choose another drive",
 	}
 	for i, option := range options {
 		prefix := "  "
@@ -438,6 +427,9 @@ func renderAboutPage(width int) []string {
 }
 
 func selectedDriveLabel(m Model) string {
+	if strings.TrimSpace(m.SelectedDrive.DisplayName) != "" {
+		return m.SelectedDrive.DisplayName
+	}
 	if m.Cursor >= 0 && m.Cursor < len(m.Devices) {
 		return m.Devices[m.Cursor].DisplayName
 	}
@@ -592,16 +584,9 @@ func fitToWidth(text string, width int) string {
 }
 
 func summaryOptions(m Model) []string {
-	if m.Recovery.UnreadableSectors > 0 {
-		return []string{
-			"Retry unreadable sectors",
-			"Exit and resume later",
-			"View details",
-		}
-	}
 	return []string{
 		"Exit",
-		"Verify image",
+		"Choose another drive",
 		"View details",
 	}
 }

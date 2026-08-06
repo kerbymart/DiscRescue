@@ -89,6 +89,7 @@ func TestViewActionPageShowsHistoryLineAndDiscSummary(t *testing.T) {
 	model.Height = 24
 	model.Page = PageChooseAction
 	model.Identity = ContentIdentityViewModel{Detail: "DVD-ROM, 4.38 GiB"}
+	model.MediaRecoverable = true
 	model.PriorView = PriorProcessingViewModel{
 		Kind:        PriorProcessingNone,
 		HistoryLine: "History lookup is unavailable in this build.",
@@ -101,8 +102,8 @@ func TestViewActionPageShowsHistoryLineAndDiscSummary(t *testing.T) {
 	if !strings.Contains(view, "Disc: DVD-ROM, 4.38 GiB") {
 		t.Fatalf("expected disc summary, got %q", view)
 	}
-	if !strings.Contains(view, "Start a new recovery (Unavailable)") {
-		t.Fatalf("expected unavailable action labeling, got %q", view)
+	if !strings.Contains(view, "> Start a new recovery") {
+		t.Fatalf("expected start action, got %q", view)
 	}
 }
 
@@ -111,15 +112,13 @@ func TestViewReviewUsesCompactUserFacingSummary(t *testing.T) {
 	model.Width = 80
 	model.Height = 24
 	model.Page = PageReview
-	model.Devices = []DeviceSummary{{DisplayName: "/dev/sr0"}}
+	model.SelectedDrive = DeviceSummary{DisplayName: "/dev/sr0"}
 	model.Identity = ContentIdentityViewModel{Detail: "DVD-ROM, 4.38 GiB"}
 	model.Setup.OutputPath = "~/Images/archive-disc.iso"
-	model.Setup.MethodLabel = "Balanced recovery"
-	model.Setup.CopyLabel = "Not set (optional)"
 
 	view := model.View().Content
-	if !strings.Contains(view, "Method      Balanced recovery") {
-		t.Fatalf("expected user-facing method label, got %q", view)
+	if !strings.Contains(view, "Drive") || !strings.Contains(view, "/dev/sr0") {
+		t.Fatalf("expected selected drive summary, got %q", view)
 	}
 	if !strings.Contains(view, "> Start recovery") {
 		t.Fatalf("expected safe default review action, got %q", view)
@@ -276,14 +275,14 @@ func TestViewIncompleteSummaryAvoidsCleanSuccessTreatment(t *testing.T) {
 	if !strings.Contains(view, "37 sectors could not be recovered.") {
 		t.Fatalf("expected incomplete-result explanation, got %q", view)
 	}
-	if !strings.Contains(view, "> Retry unreadable sectors") {
-		t.Fatalf("expected retry-first choice, got %q", view)
+	if !strings.Contains(view, "> Exit") {
+		t.Fatalf("expected exit-first choice, got %q", view)
 	}
 	if !strings.Contains(view, "D:/Archives/archive-disc.drmap") {
 		t.Fatalf("expected explicit map path, got %q", view)
 	}
-	if strings.Contains(strings.ToLower(view), "> exit\n") {
-		t.Fatalf("unexpected clean-success primary action in incomplete summary: %q", view)
+	if !strings.Contains(view, "Choose another drive") {
+		t.Fatalf("expected real follow-up action, got %q", view)
 	}
 }
 
@@ -312,6 +311,9 @@ func TestViewCompleteSummaryShowsDuration(t *testing.T) {
 	}
 	if !strings.Contains(view, "> Exit") {
 		t.Fatalf("expected exit-first completion action, got %q", view)
+	}
+	if !strings.Contains(view, "Choose another drive") {
+		t.Fatalf("expected choose-another-drive action, got %q", view)
 	}
 }
 

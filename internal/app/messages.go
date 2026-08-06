@@ -13,9 +13,16 @@ type DevicesDiscoveredMsg struct {
 }
 
 type MediaIdentifiedMsg struct {
-	RequestID int
-	Identity  ContentIdentityViewModel
-	Err       error
+	RequestID           int
+	Identity            ContentIdentityViewModel
+	FileSystem          string
+	VolumeLabel         string
+	LogicalSectorSize   uint32
+	CapacitySectors     uint64
+	SuggestedOutputPath string
+	Recoverable         bool
+	RecoverabilityNote  string
+	Err                 error
 }
 
 type PriorProcessingLookupMsg struct {
@@ -30,7 +37,11 @@ type CatalogUpdatedMsg struct {
 }
 
 type JobStartedMsg struct {
-	JobID string
+	JobID        string
+	OutputPath   string
+	Phase        string
+	Status       string
+	TotalSectors uint64
 }
 
 type JobStartFailedMsg struct {

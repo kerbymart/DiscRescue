@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"fmt"
 	"path/filepath"
 )
 
@@ -28,4 +29,8 @@ func discoverHostOpticalDrives() ([]OpticalDrive, error) {
 		}
 	}
 	return drives, nil
+}
+
+func identifyHostOpticalMedia(path string) (OpticalMedia, error) {
+	return OpticalMedia{}, fmt.Errorf("inspect media: mounted optical media inspection is not implemented for this platform")
 }

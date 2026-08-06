@@ -42,6 +42,7 @@ type Runtime struct {
 	Process    Process
 	Terminal   Terminal
 	Optical    OpticalDiscovery
+	Recovery   RecoveryService
 }
 
 func NewRuntime() Runtime {
@@ -52,6 +53,7 @@ func NewRuntime() Runtime {
 		Terminal:   OSTerminal{},
 	}
 	runtime.Optical = OSOpticalDiscovery{Process: runtime.Process}
+	runtime.Recovery = OSRecovery{}
 	return runtime
 }
 

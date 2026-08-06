@@ -134,28 +134,34 @@ type JobSummary struct {
 }
 
 type Model struct {
-	Page                   Page
-	PreviousPage           Page
-	Width                  int
-	Height                 int
-	Devices                []DeviceSummary
-	SelectedDrive          DeviceSummary
-	Cursor                 int
-	Setup                  JobSetupModel
-	Identity               ContentIdentityViewModel
-	PriorView              PriorProcessingViewModel
-	PriorRecords           []PriorProcessingRecord
-	Recovery               RecoveryViewModel
-	Summary                JobSummary
-	Details                DetailsViewModel
-	Dialog                 *DialogModel
-	Notice                 *NoticeModel
-	LastError              error
-	Quitting               bool
-	Monochrome             bool
-	NextRequestID          int
-	ActiveDiscoveryRequest int
-	ActiveMediaRequest     int
+	Page                    Page
+	PreviousPage            Page
+	Width                   int
+	Height                  int
+	Devices                 []DeviceSummary
+	SelectedDrive           DeviceSummary
+	Cursor                  int
+	Setup                   JobSetupModel
+	Identity                ContentIdentityViewModel
+	MediaFileSystem         string
+	MediaVolumeLabel        string
+	MediaLogicalSectorSize  uint32
+	MediaCapacitySectors    uint64
+	MediaRecoverable        bool
+	MediaRecoverabilityNote string
+	PriorView               PriorProcessingViewModel
+	PriorRecords            []PriorProcessingRecord
+	Recovery                RecoveryViewModel
+	Summary                 JobSummary
+	Details                 DetailsViewModel
+	Dialog                  *DialogModel
+	Notice                  *NoticeModel
+	LastError               error
+	Quitting                bool
+	Monochrome              bool
+	NextRequestID           int
+	ActiveDiscoveryRequest  int
+	ActiveMediaRequest      int
 }
 
 func NewModel() Model {

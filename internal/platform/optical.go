@@ -21,8 +21,15 @@ type OpticalDrive struct {
 }
 
 type OpticalMedia struct {
-	Summary string
-	Detail  string
+	Summary             string
+	Detail              string
+	FileSystem          string
+	VolumeLabel         string
+	LogicalSectorSize   uint32
+	CapacitySectors     uint64
+	SuggestedOutputPath string
+	Recoverable         bool
+	RecoverabilityNote  string
 }
 
 type OpticalDiscovery interface {
@@ -51,6 +58,9 @@ func (d OSOpticalDiscovery) DiscoverOpticalDrives() ([]OpticalDrive, error) {
 }
 
 func (d OSOpticalDiscovery) IdentifyOpticalMedia(path string) (OpticalMedia, error) {
+	if media, err := identifyHostOpticalMedia(path); err == nil {
+		return media, nil
+	}
 	drives, err := d.DiscoverOpticalDrives()
 	if err != nil {
 		return OpticalMedia{}, err
@@ -77,8 +87,9 @@ func (d OSOpticalDiscovery) IdentifyOpticalMedia(path string) (OpticalMedia, err
 			}
 		}
 		return OpticalMedia{
-			Summary: "Media inspection completed.",
-			Detail:  detail,
+			Summary:            "Media inspection completed.",
+			Detail:             detail,
+			RecoverabilityNote: "The current build cannot start recovery from this media.",
 		}, nil
 	}
 	return OpticalMedia{}, fmt.Errorf("inspect media: drive %q is no longer available", path)

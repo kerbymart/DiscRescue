@@ -67,24 +67,31 @@ func TestSelectDriveRequestsIdentifyEffect(t *testing.T) {
 	}
 }
 
-func TestMediaIdentifiedMovesToPriorProcessingAndRequestsLookup(t *testing.T) {
+func TestMediaIdentifiedMovesToChooseAction(t *testing.T) {
 	model := NewModel()
 	model.ActiveMediaRequest = 1
 
 	next, cmd := model.Update(MediaIdentifiedMsg{
 		RequestID: 1,
 		Identity: ContentIdentityViewModel{
-			Summary: "Matching contents were processed before",
+			Summary: "Optical media detected.",
 			Detail:  "DVD-ROM, 4.38 GiB",
 		},
+		LogicalSectorSize:   2048,
+		CapacitySectors:     1024,
+		Recoverable:         true,
+		SuggestedOutputPath: "disc.iso",
 	})
 	updated := next.(Model)
 	if cmd != nil {
-		t.Fatalf("expected no follow-up lookup command, got %#v", cmd)
+		t.Fatalf("expected no follow-up command, got %#v", cmd)
 	}
 
 	if updated.Page != PageChooseAction {
 		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseAction)
+	}
+	if !updated.MediaRecoverable {
+		t.Fatal("expected recoverable media")
 	}
 }
 
@@ -117,15 +124,6 @@ func TestEnterAdvancesSetupFlow(t *testing.T) {
 	updated := next.(Model)
 	if updated.Page != PageChooseAction {
 		t.Fatalf("unexpected page after prior processing: got %v want %v", updated.Page, PageChooseAction)
-	}
-
-	next, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	updated = next.(Model)
-	if updated.Page != PageChooseAction {
-		t.Fatalf("unexpected page after unavailable action: got %v want %v", updated.Page, PageChooseAction)
-	}
-	if updated.Notice == nil || updated.Notice.Severity != SeverityWarning {
-		t.Fatalf("expected unavailable-action notice, got %+v", updated.Notice)
 	}
 }
 
@@ -177,61 +175,43 @@ func TestJobStartFailedKeepsReviewActionable(t *testing.T) {
 	}
 }
 
-func TestChooseActionSupportsVerifyAndMergeSetup(t *testing.T) {
+func TestChooseActionRequiresRecoverableMedia(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseAction
+	model.MediaRecoverable = false
+	model.MediaRecoverabilityNote = "No mounted data media is available."
 
-	model.Cursor = 2
 	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
 	if updated.Page != PageChooseAction {
-		t.Fatalf("unexpected verify flow page=%v", updated.Page)
+		t.Fatalf("unexpected page=%v", updated.Page)
 	}
-	if updated.Notice == nil || updated.Notice.Severity != SeverityWarning {
-		t.Fatalf("expected unavailable-action notice, got %+v", updated.Notice)
-	}
-
-	model = NewModel()
-	model.Page = PageChooseAction
-	model.Cursor = 3
-	next, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	updated = next.(Model)
-	if updated.Page != PageChooseAction {
-		t.Fatalf("unexpected merge flow page=%v", updated.Page)
+	if updated.Notice == nil || updated.Notice.Text != "No mounted data media is available." {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
 	}
 }
 
-func TestReviewChangeMethodAndLabelRemainInline(t *testing.T) {
+func TestChooseActionStartMovesToReview(t *testing.T) {
 	model := NewModel()
-	model.Page = PageReview
+	model.Page = PageChooseAction
+	model.MediaRecoverable = true
 
-	model.Cursor = 2
 	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
-	if updated.Setup.MethodLabel != "Fast recovery" {
-		t.Fatalf("unexpected method label: %q", updated.Setup.MethodLabel)
-	}
 	if updated.Page != PageReview {
-		t.Fatalf("expected review page to remain active, got %v", updated.Page)
-	}
-
-	updated.Cursor = 3
-	next, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	updated = next.(Model)
-	if updated.Setup.CopyLabel != "Shelf B · Disc 14" {
-		t.Fatalf("unexpected copy label: %q", updated.Setup.CopyLabel)
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageReview)
 	}
 }
 
-func TestReviewAdvancedSettingsStaysSeparateFromMainFlow(t *testing.T) {
+func TestReviewChooseAnotherDriveReturnsToDriveList(t *testing.T) {
 	model := NewModel()
 	model.Page = PageReview
-	model.Cursor = 4
+	model.Cursor = 1
 
 	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
-	if updated.Page != PageAdvanced || updated.PreviousPage != PageReview {
-		t.Fatalf("unexpected advanced transition: %+v", updated)
+	if updated.Page != PageChooseDrive {
+		t.Fatalf("unexpected transition: %+v", updated)
 	}
 }
 
@@ -252,28 +232,20 @@ func TestDetailsKeyOpensAndEscReturns(t *testing.T) {
 	}
 }
 
-func TestSpacePausesAndResumesRecovery(t *testing.T) {
+func TestSpaceDuringRecoveryShowsTruthfulPauseNotice(t *testing.T) {
 	model := NewModel()
 	model.Page = PageRecovering
 
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	updated := next.(Model)
-	requested := cmd().(EffectRequestedMsg)
-	if updated.Page != PagePaused {
-		t.Fatalf("unexpected paused page: got %v want %v", updated.Page, PagePaused)
+	if cmd != nil {
+		t.Fatalf("expected no pause command, got %#v", cmd)
 	}
-	if requested.Kind != EffectPauseJob {
-		t.Fatalf("unexpected pause request: %+v", requested)
-	}
-
-	next, cmd = updated.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
-	updated = next.(Model)
-	requested = cmd().(EffectRequestedMsg)
 	if updated.Page != PageRecovering {
-		t.Fatalf("unexpected resumed page: got %v want %v", updated.Page, PageRecovering)
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageRecovering)
 	}
-	if requested.Kind != EffectResumeJob {
-		t.Fatalf("unexpected resume request: %+v", requested)
+	if updated.Notice == nil || updated.Notice.Text != "Pause is not implemented for the current recovery backend." {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
 	}
 }
 
@@ -344,7 +316,7 @@ func TestJobStoppedMovesToSummaryWithPrimaryChoiceFocused(t *testing.T) {
 		Outcome:          "Recovery complete",
 		ImagePath:        "D:/Archives/archive-disc.iso",
 		MapPath:          "D:/Archives/archive-disc.drmap",
-		NextAction:       "Verify the image",
+		NextAction:       "Choose another drive to start another recovery",
 		RecoveredSectors: 2295104,
 		TotalSectors:     2295104,
 		Duration:         "31 minutes",
