@@ -40,6 +40,7 @@ type DeviceSummary struct {
 type JobSetupModel struct {
 	ActionLabel  string
 	OutputPath   string
+	DefaultPath  string
 	OutputFormat string
 	FreeSpace    string
 	MethodLabel  string
@@ -88,6 +89,7 @@ type RecoveryViewModel struct {
 	OutputPath        string
 	Remaining         string
 	ETA               string
+	Throughput        string
 	LastIssue         []string
 	PausePending      bool
 }
@@ -116,6 +118,7 @@ type ProgressSnapshot struct {
 	Status            string
 	Remaining         string
 	ETA               string
+	Throughput        string
 	LastIssue         []string
 	OutputPath        string
 	PausePending      bool
@@ -170,6 +173,7 @@ func NewModel() Model {
 		Setup: JobSetupModel{
 			ActionLabel:  "Start a new recovery",
 			OutputPath:   "Not chosen yet",
+			DefaultPath:  "Not chosen yet",
 			OutputFormat: "ISO",
 			FreeSpace:    "Unknown until an output location is selected",
 			MethodLabel:  "Balanced recovery",

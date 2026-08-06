@@ -66,6 +66,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.MediaRecoverabilityNote = typed.RecoverabilityNote
 		if typed.SuggestedOutputPath != "" {
 			m.Setup.OutputPath = typed.SuggestedOutputPath
+			m.Setup.DefaultPath = typed.SuggestedOutputPath
 		}
 		m.Page = PageChooseAction
 		m.Cursor = 0
@@ -91,11 +92,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.TotalSectors = typed.TotalSectors
 		m.Recovery.RecoveredSectors = 0
 		m.Recovery.UnreadableSectors = 0
-		m.Notice = &NoticeModel{Text: "Recovery job started.", Severity: SeverityInfo}
+		m.Details.Lines = buildRecoveryDetails(m)
+		m.Notice = nil
 		return m, nil
 	case JobStartFailedMsg:
 		m.LastError = typed.Err
-		m.Page = PageReview
+		m.Page = PageChooseOutput
 		if typed.Err != nil {
 			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
 		}
@@ -108,11 +110,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.Status = typed.Snapshot.Status
 		m.Recovery.Remaining = typed.Snapshot.Remaining
 		m.Recovery.ETA = typed.Snapshot.ETA
+		m.Recovery.Throughput = typed.Snapshot.Throughput
 		m.Recovery.LastIssue = append([]string(nil), typed.Snapshot.LastIssue...)
 		m.Recovery.PausePending = typed.Snapshot.PausePending
 		if typed.Snapshot.OutputPath != "" {
 			m.Recovery.OutputPath = typed.Snapshot.OutputPath
 		}
+		m.Details.Lines = buildRecoveryDetails(m)
+		m.Notice = nil
 		return m, nil
 	case StatusMsg:
 		m.Notice = &NoticeModel{Text: typed.Text, Severity: typed.Severity}
@@ -134,11 +139,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.RecoveredSectors = typed.Summary.RecoveredSectors
 		m.Recovery.TotalSectors = typed.Summary.TotalSectors
 		m.Recovery.UnreadableSectors = typed.Summary.UnresolvedSectors
-		m.Details.Lines = []string{
-			"Image: " + typed.Summary.ImagePath,
-			"Map: " + typed.Summary.MapPath,
-			"Next: " + typed.Summary.NextAction,
-		}
+		m.Details.Lines = buildSummaryDetails(m, typed)
 		m.Cursor = 0
 		return m, nil
 	case WorkerUnresponsiveMsg:
@@ -163,6 +164,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := strings.ToLower(msg.String())
+
+	if m.Page == PageChooseOutput {
+		return m.handleOutputPathInput(msg, key)
+	}
 
 	switch {
 	case matchesKey(key, DefaultKeys().Force):
@@ -244,9 +249,13 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 	case PageChooseAction:
 		m.Page = PageChooseDrive
 	case PageChooseOutput:
-		m.Page = PageChooseAction
+		if m.PreviousPage != 0 {
+			m.Page, m.PreviousPage = m.PreviousPage, 0
+		} else {
+			m.Page = PageChooseAction
+		}
 	case PageReview:
-		m.Page = PageChooseAction
+		m.Page = PageChooseOutput
 		m.Cursor = 0
 	case PagePriorProcessing:
 		m.Page = PageChooseDrive
@@ -316,7 +325,8 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.Setup.ActionLabel = "Start a new recovery"
-			m.Page = PageReview
+			m.PreviousPage = PageChooseAction
+			m.Page = PageChooseOutput
 			m.Cursor = 0
 			return m, nil
 		case 1:
@@ -329,12 +339,18 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		}
 	case PageChooseOutput:
 		m.Page = PageReview
+		m.PreviousPage = PageChooseOutput
 		return m, nil
 	case PageReview:
 		switch m.Cursor {
 		case 0:
 			return m, startJobEffect()
 		case 1:
+			m.PreviousPage = PageReview
+			m.Page = PageChooseOutput
+			m.Cursor = 0
+			return m, nil
+		case 2:
 			m.Page = PageChooseDrive
 			m.Cursor = 0
 			m.Notice = &NoticeModel{Text: "Choose one optical drive.", Severity: SeverityInfo}
@@ -420,7 +436,7 @@ func (m Model) cursorLimit() int {
 	case PagePriorProcessing:
 		return len(m.PriorView.Options)
 	case PageReview:
-		return 2
+		return 3
 	case PagePaused:
 		return 2
 	case PageStopConfirm:
@@ -507,6 +523,76 @@ func defaultPriorProcessingView() PriorProcessingViewModel {
 		Kind:        PriorProcessingNone,
 		HistoryLine: "History lookup is unavailable in this build.",
 	}
+}
+
+func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
+	switch {
+	case matchesKey(key, DefaultKeys().Back):
+		return m.handleBack()
+	case matchesKey(key, DefaultKeys().Select):
+		path := strings.TrimSpace(m.Setup.OutputPath)
+		if path == "" || path == "Not chosen yet" {
+			m.Notice = &NoticeModel{Text: "Choose an output file path before continuing.", Severity: SeverityWarning}
+			return m, nil
+		}
+		m.Setup.OutputPath = path
+		m.Page = PageReview
+		m.Cursor = 0
+		return m, nil
+	case key == "backspace" || key == "ctrl+h":
+		if len(m.Setup.OutputPath) > 0 && m.Setup.OutputPath != "Not chosen yet" {
+			m.Setup.OutputPath = m.Setup.OutputPath[:len(m.Setup.OutputPath)-1]
+		}
+		return m, nil
+	default:
+		if msg.Text != "" {
+			if m.Setup.OutputPath == "Not chosen yet" {
+				m.Setup.OutputPath = ""
+			}
+			m.Setup.OutputPath += msg.Text
+		}
+		return m, nil
+	}
+}
+
+func buildRecoveryDetails(m Model) []string {
+	lines := []string{
+		"Drive: " + firstNonEmpty(m.SelectedDrive.DisplayName, m.SelectedDrive.Path, "not selected"),
+		"Media: " + firstNonEmpty(m.Identity.Detail, "not identified"),
+		"Output: " + firstNonEmpty(m.Recovery.OutputPath, m.Setup.OutputPath),
+		"Phase: " + firstNonEmpty(m.Recovery.Phase, "Waiting to start"),
+		"Recovered sectors: " + formatCount(m.Recovery.RecoveredSectors),
+		"Unreadable sectors: " + formatCount(m.Recovery.UnreadableSectors),
+	}
+	if m.Recovery.Remaining != "" {
+		lines = append(lines, "Remaining: "+m.Recovery.Remaining)
+	}
+	if m.Recovery.ETA != "" {
+		lines = append(lines, "ETA: "+m.Recovery.ETA)
+	}
+	if m.Recovery.Throughput != "" {
+		lines = append(lines, "Rate: "+m.Recovery.Throughput)
+	}
+	lines = append(lines, "Status: "+firstNonEmpty(m.Recovery.Status, "Waiting to start"))
+	lines = append(lines, m.Recovery.LastIssue...)
+	return lines
+}
+
+func buildSummaryDetails(m Model, msg JobStoppedMsg) []string {
+	lines := []string{
+		"Drive: " + firstNonEmpty(m.SelectedDrive.DisplayName, m.SelectedDrive.Path, "not selected"),
+		"Media: " + firstNonEmpty(m.Identity.Detail, "not identified"),
+		"Image: " + msg.Summary.ImagePath,
+	}
+	if msg.Summary.MapPath != "" {
+		lines = append(lines, "Map: "+msg.Summary.MapPath)
+	}
+	if msg.Err != nil {
+		lines = append(lines, "Error: "+msg.Err.Error())
+	} else if msg.Summary.NextAction != "" {
+		lines = append(lines, "Next step: "+msg.Summary.NextAction)
+	}
+	return lines
 }
 
 func nextMethodLabel(current string) string {

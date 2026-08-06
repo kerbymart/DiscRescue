@@ -167,8 +167,8 @@ func TestJobStartFailedKeepsReviewActionable(t *testing.T) {
 	next, _ := model.Update(JobStartFailedMsg{Err: fmt.Errorf("starting recovery is not connected to real device and image work yet")})
 	updated := next.(Model)
 
-	if updated.Page != PageReview {
-		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageReview)
+	if updated.Page != PageChooseOutput {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseOutput)
 	}
 	if updated.Notice == nil || updated.Notice.Severity != SeverityWarning {
 		t.Fatalf("unexpected notice: %+v", updated.Notice)
@@ -198,20 +198,32 @@ func TestChooseActionStartMovesToReview(t *testing.T) {
 
 	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
-	if updated.Page != PageReview {
-		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageReview)
+	if updated.Page != PageChooseOutput {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseOutput)
 	}
 }
 
 func TestReviewChooseAnotherDriveReturnsToDriveList(t *testing.T) {
 	model := NewModel()
 	model.Page = PageReview
-	model.Cursor = 1
+	model.Cursor = 2
 
 	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
 	if updated.Page != PageChooseDrive {
 		t.Fatalf("unexpected transition: %+v", updated)
+	}
+}
+
+func TestChooseOutputEnterMovesToReview(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.Setup.OutputPath = "D:/Archives/disc.iso"
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if updated.Page != PageReview {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageReview)
 	}
 }
 

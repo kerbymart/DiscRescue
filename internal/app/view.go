@@ -260,7 +260,17 @@ func renderActionList(m Model, width int, tier layoutTier) []string {
 }
 
 func renderOutputPage(m Model, width int, tier layoutTier) []string {
-	lines := labeledLines("Path", m.Setup.OutputPath, width)
+	path := m.Setup.OutputPath
+	if path == "" {
+		path = " "
+	}
+	path += "▌"
+	lines := wrapText("Choose the output file path. Press Enter to continue with the current value, or edit it directly.", width)
+	lines = append(lines, "")
+	lines = append(lines, labeledLines("Path", path, width)...)
+	if m.Setup.DefaultPath != "" && m.Setup.DefaultPath != "Not chosen yet" {
+		lines = append(lines, labeledLines("Suggested", m.Setup.DefaultPath, width)...)
+	}
 	lines = append(lines, labeledLines("Format", m.Setup.OutputFormat, width)...)
 	if tier != layoutCompact {
 		lines = append(lines, labeledLines("Space", m.Setup.FreeSpace, width)...)
@@ -276,6 +286,7 @@ func renderReviewPage(m Model, width int, tier layoutTier) []string {
 	lines = append(lines, "")
 	options := []string{
 		"Start recovery",
+		"Edit output path",
 		"Choose another drive",
 	}
 	for i, option := range options {
@@ -302,10 +313,16 @@ func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 	if m.Recovery.Phase != "" {
 		lines = append(lines, fitToWidth(m.Recovery.Phase, width))
 	}
+	if m.Recovery.Status != "" {
+		lines = append(lines, wrapText(m.Recovery.Status, width)...)
+	}
 	if m.Recovery.Remaining != "" {
 		remaining := m.Recovery.Remaining
 		if m.Recovery.ETA != "" && tier != layoutCompact {
 			remaining += "  -  " + m.Recovery.ETA
+		}
+		if m.Recovery.Throughput != "" && tier != layoutCompact {
+			remaining += "  -  " + m.Recovery.Throughput
 		}
 		lines = append(lines, wrapText(remaining, width)...)
 	} else if m.Recovery.ETA == "" && tier == layoutFull {
@@ -478,6 +495,12 @@ func contentWidth(width int) int {
 func renderFooter(page Page, width int, tier layoutTier) string {
 	var footer string
 	switch page {
+	case PageChooseOutput:
+		if tier == layoutCompact {
+			footer = "type path  enter continue  esc back"
+		} else {
+			footer = "type path  -  enter continue  -  backspace delete  -  esc back"
+		}
 	case PageRecovering:
 		if tier == layoutCompact {
 			footer = "space pause  d details"
@@ -634,9 +657,9 @@ func progressBarFor(m Model, tier layoutTier) string {
 
 	filledGlyph := "#"
 	emptyGlyph := "."
-	if !m.Monochrome {
-		filledGlyph = "#"
-		emptyGlyph = "-"
+	if !m.Monochrome && tier != layoutCompact {
+		filledGlyph = "█"
+		emptyGlyph = "░"
 	}
 	return "[" + strings.Repeat(filledGlyph, filled) + strings.Repeat(emptyGlyph, width-filled) + "]"
 }

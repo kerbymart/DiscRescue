@@ -171,7 +171,9 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						TotalSectors:      totalSectors,
 						UnreadableSectors: snapshot.UnreadableSectors,
 						Status:            "Reading sectors from the selected optical drive.",
-						Remaining:         fmt.Sprintf("%d bytes remaining", snapshot.TotalBytes-snapshot.CopiedBytes),
+						Remaining:         humanBytes(snapshot.TotalBytes-snapshot.CopiedBytes) + " remaining",
+						ETA:               estimateETA(snapshot.StartedAt, snapshot.CopiedBytes, snapshot.TotalBytes),
+						Throughput:        throughputLabel(snapshot.StartedAt, snapshot.CopiedBytes),
 						LastIssue:         append([]string(nil), snapshot.LastIssue...),
 						OutputPath:        m.Setup.OutputPath,
 					},
@@ -180,6 +182,44 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+func throughputLabel(startedAt time.Time, copiedBytes uint64) string {
+	elapsed := time.Since(startedAt)
+	if copiedBytes == 0 || elapsed < time.Second {
+		return ""
+	}
+	bytesPerSecond := float64(copiedBytes) / elapsed.Seconds()
+	return humanBytes(uint64(bytesPerSecond)) + "/s"
+}
+
+func estimateETA(startedAt time.Time, copiedBytes, totalBytes uint64) string {
+	elapsed := time.Since(startedAt)
+	if copiedBytes == 0 || totalBytes <= copiedBytes || elapsed < 2*time.Second {
+		return ""
+	}
+	bytesPerSecond := float64(copiedBytes) / elapsed.Seconds()
+	if bytesPerSecond <= 0 {
+		return ""
+	}
+	remainingSeconds := float64(totalBytes-copiedBytes) / bytesPerSecond
+	if remainingSeconds < 1 {
+		return "less than 1 second left"
+	}
+	return "about " + (time.Duration(remainingSeconds) * time.Second).Round(time.Second).String() + " left"
+}
+
+func humanBytes(value uint64) string {
+	const unit = 1024
+	if value < unit {
+		return fmt.Sprintf("%d B", value)
+	}
+	div, exp := uint64(unit), 0
+	for n := value / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(value)/float64(div), "KMGTPE"[exp])
 }
 
 func toDeviceSummaries(drives []platform.OpticalDrive) []DeviceSummary {
