@@ -72,6 +72,29 @@ func TestViewChooseDriveShowsOneColumnList(t *testing.T) {
 	}
 }
 
+func TestViewDiscoverShowsNonInteractiveStartupCopy(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+
+	view := model.View().Content
+	if !strings.Contains(view, "Finding usable optical drives") {
+		t.Fatalf("expected discovery title, got %q", view)
+	}
+	if !strings.Contains(view, "Please wait while DiscRescue checks for usable optical drives.") {
+		t.Fatalf("expected discovery body copy, got %q", view)
+	}
+	if strings.Contains(view, "j/k move") || strings.Contains(view, "enter select") || strings.Contains(view, "esc back") {
+		t.Fatalf("expected startup view to avoid selection controls, got %q", view)
+	}
+	if strings.Contains(view, "Status: Finding usable optical drives.") {
+		t.Fatalf("expected startup view to avoid duplicated status text, got %q", view)
+	}
+	if !strings.Contains(view, "q quit") {
+		t.Fatalf("expected startup view to keep quit available, got %q", view)
+	}
+}
+
 func TestViewPriorProcessingShowsMatchingContentsLanguage(t *testing.T) {
 	model := NewModel()
 	model.Width = 80

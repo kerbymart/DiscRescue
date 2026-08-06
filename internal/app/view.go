@@ -65,7 +65,7 @@ func renderPage(m Model, tier layoutTier) string {
 	lines = append(lines, "")
 	lines = append(lines, renderPageBody(m, width, tier)...)
 
-	if m.Notice != nil && m.Notice.Text != "" && tier != layoutCompact {
+	if showStatusLine(m.Page, tier) && m.Notice != nil && m.Notice.Text != "" {
 		lines = append(lines, "")
 		lines = append(lines, wrapText("Status: "+m.Notice.Text, width)...)
 	}
@@ -136,7 +136,7 @@ func pageTitle(m Model) string {
 func renderPageBody(m Model, width int, tier layoutTier) []string {
 	switch m.Page {
 	case PageDiscover:
-		return wrapText("Finding usable optical drives.", width)
+		return wrapText("Please wait while DiscRescue checks for usable optical drives.", width)
 	case PageNoDrives:
 		return renderNoDrivesPage(width)
 	case PageDiscoveryError:
@@ -621,6 +621,8 @@ func contentWidth(width int) int {
 func renderFooter(page Page, width int, tier layoutTier) string {
 	var footer string
 	switch page {
+	case PageDiscover:
+		footer = "q quit"
 	case PageChooseOutput:
 		if tier == layoutCompact {
 			footer = "j/k move  enter edit/select"
@@ -657,6 +659,13 @@ func renderFooter(page Page, width int, tier layoutTier) string {
 		}
 	}
 	return fitToWidth(footer, width)
+}
+
+func showStatusLine(page Page, tier layoutTier) bool {
+	if tier == layoutCompact {
+		return false
+	}
+	return page != PageDiscover
 }
 
 func wrapText(text string, width int) []string {
