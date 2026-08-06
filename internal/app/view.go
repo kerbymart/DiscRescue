@@ -61,7 +61,7 @@ func (m Model) View() tea.View {
 func renderPage(m Model, tier layoutTier) string {
 	width := contentWidth(m.Width)
 	lines := []string{"DiscRescue", ""}
-	lines = append(lines, wrapText(pageTitle(m.Page), width)...)
+	lines = append(lines, wrapText(pageTitle(m), width)...)
 	lines = append(lines, "")
 	lines = append(lines, renderPageBody(m, width, tier)...)
 
@@ -79,8 +79,8 @@ func usesAltScreen(page Page) bool {
 	return page == PageRecovering || page == PagePausing || page == PageDetails
 }
 
-func pageTitle(page Page) string {
-	switch page {
+func pageTitle(m Model) string {
+	switch m.Page {
 	case PageDiscover:
 		return "Finding usable optical drives"
 	case PageNoDrives:
@@ -100,10 +100,19 @@ func pageTitle(page Page) string {
 	case PageReview:
 		return "Review and start"
 	case PageRecovering:
+		if name := recoveryOutputName(m); name != "" {
+			return "Recovering " + name
+		}
 		return "Recovery in progress"
 	case PagePausing:
+		if name := recoveryOutputName(m); name != "" {
+			return "Pausing " + name
+		}
 		return "Pausing recovery"
 	case PagePaused:
+		if name := recoveryOutputName(m); name != "" {
+			return "Recovery paused — " + name
+		}
 		return "Recovery paused"
 	case PageStopConfirm:
 		return "Stop recovery?"
@@ -419,17 +428,12 @@ func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 		lines = append(lines, wrapText(m.Recovery.Status, width)...)
 	}
 	if tier == layoutCompact {
-		if m.Recovery.Remaining != "" {
-			lines = append(lines, wrapText(m.Recovery.Remaining, width)...)
+		if summary := recoveryTimeSummary(m, tier); summary != "" {
+			lines = append(lines, wrapText(summary, width)...)
 		}
 	} else {
-		if m.Recovery.Remaining != "" {
-			lines = append(lines, labeledLines("Remaining", m.Recovery.Remaining, width)...)
-		}
-		if m.Recovery.ETA != "" {
-			lines = append(lines, labeledLines("Estimated", m.Recovery.ETA, width)...)
-		} else if tier == layoutFull {
-			lines = append(lines, labeledLines("Estimated", "Estimating time remaining...", width)...)
+		if summary := recoveryTimeSummary(m, tier); summary != "" {
+			lines = append(lines, wrapText(summary, width)...)
 		}
 		if m.Recovery.Throughput != "" {
 			lines = append(lines, labeledLines("Rate", m.Recovery.Throughput, width)...)
@@ -724,10 +728,14 @@ func wrapTextWithPrefix(prefix, value string, width int) []string {
 }
 
 func fitToWidth(text string, width int) string {
-	if width <= 0 || len(text) <= width {
+	if width <= 0 {
 		return text
 	}
-	return text[:width]
+	runes := []rune(text)
+	if len(runes) <= width {
+		return text
+	}
+	return string(runes[:width])
 }
 
 func summaryOptions(m Model) []string {
@@ -860,6 +868,45 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func recoveryOutputName(m Model) string {
+	path := firstNonEmpty(m.Recovery.OutputPath, m.Setup.OutputPath)
+	if path == "" || path == "Not chosen yet" {
+		return ""
+	}
+	path = strings.ReplaceAll(path, "\\", "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 {
+		return path
+	}
+	return parts[len(parts)-1]
+}
+
+func recoveryTimeSummary(m Model, tier layoutTier) string {
+	remaining := strings.TrimSpace(m.Recovery.Remaining)
+	eta := strings.TrimSpace(m.Recovery.ETA)
+
+	if tier == layoutCompact {
+		return remaining
+	}
+
+	if remaining == "" && eta == "" {
+		if tier == layoutFull {
+			return "Estimating time remaining..."
+		}
+		return ""
+	}
+	if remaining == "" {
+		return eta
+	}
+	if eta == "" {
+		if tier == layoutFull {
+			return remaining + " • Estimating time remaining..."
+		}
+		return remaining
+	}
+	return remaining + " • " + eta
 }
 
 func detailsLinesForView(m Model) []string {

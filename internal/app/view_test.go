@@ -256,6 +256,7 @@ func TestViewRecoveringUsesAltScreenAndNoTelemetryTable(t *testing.T) {
 	model.Page = PageRecovering
 	model.Recovery = RecoveryViewModel{
 		Phase:             "Reading healthy areas",
+		OutputPath:        "D:/Archives/archive-disc.iso",
 		RecoveredSectors:  1554208,
 		TotalSectors:      2295104,
 		UnreadableSectors: 37,
@@ -271,8 +272,14 @@ func TestViewRecoveringUsesAltScreenAndNoTelemetryTable(t *testing.T) {
 	if !view.AltScreen {
 		t.Fatal("expected recovering page to use the alternate screen")
 	}
+	if !strings.Contains(view.Content, "Recovering archive-disc.iso") {
+		t.Fatalf("expected recovery title to include output file name, got %q", view.Content)
+	}
 	if !strings.Contains(view.Content, "Reading healthy areas") || !strings.Contains(view.Content, "about 7 minutes") {
 		t.Fatalf("expected recovery summary fields, got %q", view.Content)
+	}
+	if !strings.Contains(view.Content, "1.42 GiB of 4.38 GiB remaining • about 7 minutes") {
+		t.Fatalf("expected combined remaining and ETA summary, got %q", view.Content)
 	}
 	if !strings.Contains(view.Content, "Rate") || !strings.Contains(view.Content, "Elapsed") {
 		t.Fatalf("expected richer progress details, got %q", view.Content)
@@ -289,6 +296,7 @@ func TestViewRecoveringUsesCompactLayoutAtFortyByTwelve(t *testing.T) {
 	model.Page = PageRecovering
 	model.Recovery = RecoveryViewModel{
 		Phase:             "Reading healthy areas",
+		OutputPath:        "D:/Archives/archive-disc.iso",
 		RecoveredSectors:  1554208,
 		TotalSectors:      2295104,
 		UnreadableSectors: 37,
@@ -299,6 +307,9 @@ func TestViewRecoveringUsesCompactLayoutAtFortyByTwelve(t *testing.T) {
 	}
 
 	view := model.View().Content
+	if !strings.Contains(view, "Recovering") {
+		t.Fatalf("expected recovery title, got %q", view)
+	}
 	if !strings.Contains(view, "[") || !strings.Contains(view, "]") {
 		t.Fatalf("expected compact progress bar, got %q", view)
 	}
@@ -346,6 +357,24 @@ func TestViewRecoveringUsesUnicodeProgressBarWhenAllowed(t *testing.T) {
 	}
 	if strings.Contains(view, "â–ˆ") || strings.Contains(view, "â–‘") {
 		t.Fatalf("expected valid unicode progress bar glyphs, got %q", view)
+	}
+}
+
+func TestViewRecoveringShowsEstimatingTextWhenETANotReady(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageRecovering
+	model.Recovery = RecoveryViewModel{
+		OutputPath:       "D:/Archives/archive-disc.iso",
+		RecoveredSectors: 120,
+		TotalSectors:     240,
+		Remaining:        "1.0 GiB remaining",
+	}
+
+	view := model.View().Content
+	if !strings.Contains(view, "Estimating time remaining...") {
+		t.Fatalf("expected ETA fallback copy, got %q", view)
 	}
 }
 
