@@ -307,7 +307,7 @@ func TestViewRecoveringUsesMonochromeSafeProgressBar(t *testing.T) {
 	}
 
 	view := model.View().Content
-	if !strings.Contains(view, "[########") && !strings.Contains(view, "[####") {
+	if !strings.Contains(view, "[========") && !strings.Contains(view, "[====") {
 		t.Fatalf("expected monochrome-safe progress bar, got %q", view)
 	}
 	if strings.Contains(view, "█") || strings.Contains(view, "░") {
@@ -360,8 +360,8 @@ func TestViewStopConfirmationPlacesImmediateTerminationLast(t *testing.T) {
 	if !strings.Contains(view, "> Save progress and stop") {
 		t.Fatalf("expected safe stop default, got %q", view)
 	}
-	if !strings.Contains(view, "Stop worker immediately") {
-		t.Fatalf("expected dangerous last option, got %q", view)
+	if strings.Contains(view, "Stop worker immediately") {
+		t.Fatalf("did not expect fake immediate-stop option, got %q", view)
 	}
 }
 

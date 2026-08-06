@@ -149,7 +149,7 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 		}
 		m.state.pendingPause = false
 		m.state.activeRecovery.Cancel()
-		return StatusMsg{Text: "Immediate stop requested.", Severity: SeverityWarning}
+		return StatusMsg{Text: "Stopping recovery after the current read completes.", Severity: SeverityWarning}
 	default:
 		return FatalMsg{Err: fmt.Errorf("unsupported effect: %s", request.Kind)}
 	}

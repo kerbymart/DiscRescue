@@ -506,7 +506,6 @@ func renderStopConfirmPage(m Model, width int) []string {
 	options := []string{
 		"Save progress and stop",
 		"Continue recovery",
-		"Stop worker immediately",
 	}
 	for i, option := range options {
 		prefix := "  "
@@ -753,7 +752,7 @@ func progressBarFor(m Model, tier layoutTier) string {
 		if filled > width {
 			filled = width
 		}
-		return "[" + strings.Repeat("#", filled) + strings.Repeat(".", width-filled) + "]"
+		return "[" + strings.Repeat("=", filled) + strings.Repeat(".", width-filled) + "]"
 	}
 
 	return unicodeProgressBar(width, m.Recovery.RecoveredSectors, m.Recovery.TotalSectors)

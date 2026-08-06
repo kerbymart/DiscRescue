@@ -276,7 +276,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.Cursor = 0
 			return m, nil
 		case PageStopConfirm:
-			return m, stopImmediatelyEffect()
+			return m, stopAfterCheckpointEffect()
 		default:
 			m.Quitting = true
 			return m, tea.Quit
@@ -538,8 +538,6 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 			}
 			m.Cursor = 0
 			return m, nil
-		case 2:
-			return m, stopImmediatelyEffect()
 		default:
 			return m, nil
 		}
@@ -604,7 +602,7 @@ func (m Model) cursorLimit() int {
 	case PagePaused:
 		return 2
 	case PageStopConfirm:
-		return 3
+		return 2
 	case PageSummary:
 		return 3
 	default:
