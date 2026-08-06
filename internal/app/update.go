@@ -137,6 +137,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
 			return m, nil
 		}
+		if !typed.Status.CanStartNew && !typed.Status.CanResume {
+			m.Setup.ResumeReady = false
+			m.Setup.ResumeMapPath = ""
+			m.Setup.ResumeDetail = ""
+			m.Setup.ActionLabel = "Start a new recovery"
+			m.Page = PageChooseOutput
+			if strings.TrimSpace(typed.Status.Detail) != "" {
+				m.Notice = &NoticeModel{Text: typed.Status.Detail, Severity: SeverityWarning}
+			} else {
+				m.Notice = &NoticeModel{Text: "Choose a different output path before starting recovery.", Severity: SeverityWarning}
+			}
+			return m, nil
+		}
 		m.Setup.ResumeReady = typed.Status.CanResume
 		m.Setup.ResumeMapPath = typed.Status.MapPath
 		m.Setup.ResumeDetail = typed.Status.Detail
@@ -145,7 +158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Notice = &NoticeModel{Text: firstNonEmpty(typed.Status.Detail, "A matching recovery can be resumed safely."), Severity: SeverityInfo}
 		} else {
 			m.Setup.ActionLabel = "Start a new recovery"
-			m.Notice = nil
+			m.Notice = &NoticeModel{Text: firstNonEmpty(typed.Status.Detail, "Use the suggested output target or edit it before starting recovery."), Severity: SeverityInfo}
 		}
 		m.Page = PageReview
 		m.Cursor = 0
@@ -277,7 +290,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case matchesKey(key, DefaultKeys().Force):
 		switch m.Page {
-		case PageRecovering, PagePaused:
+		case PageRecovering, PagePausing, PagePaused:
 			m.PreviousPage = m.Page
 			m.Page = PageStopConfirm
 			m.Cursor = 0
@@ -290,7 +303,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case matchesKey(key, DefaultKeys().Quit):
 		switch m.Page {
-		case PageRecovering, PagePaused:
+		case PageRecovering, PagePausing, PagePaused:
 			m.PreviousPage = m.Page
 			m.Page = PageStopConfirm
 			m.Cursor = 0
@@ -310,15 +323,12 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case matchesKey(key, DefaultKeys().Pause):
 		switch m.Page {
 		case PageRecovering:
-			m.Page = PagePaused
+			m.Page = PagePausing
 			m.Recovery.PausePending = true
 			m.Cursor = 0
+			m.Notice = &NoticeModel{Text: "Pausing recovery after the current read completes.", Severity: SeverityInfo}
 			return m, pauseJobEffect()
 		case PagePaused:
-			if m.Recovery.PausePending {
-				m.Notice = &NoticeModel{Text: "Waiting for the current read to finish before recovery can continue.", Severity: SeverityInfo}
-				return m, nil
-			}
 			m.Page = PageRecovering
 			m.Cursor = 0
 			return m, resumeJobEffect()
@@ -326,7 +336,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case matchesKey(key, DefaultKeys().Details):
-		if m.Page == PageRecovering || m.Page == PagePaused || m.Page == PageSummary {
+		if m.Page == PageRecovering || m.Page == PagePausing || m.Page == PagePaused || m.Page == PageSummary {
 			m.PreviousPage = m.Page
 			m.Page = PageDetails
 		}
@@ -351,8 +361,11 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 			m.Page, m.PreviousPage = m.PreviousPage, 0
 		}
 	case PageStopConfirm:
-		if m.PreviousPage == PagePaused {
+		if m.PreviousPage == PagePaused || m.PreviousPage == PagePausing {
 			m.Page = PagePaused
+			if m.PreviousPage == PagePausing {
+				m.Page = PagePausing
+			}
 		} else {
 			m.Page = PageRecovering
 		}
@@ -563,13 +576,18 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		default:
 			return m, nil
 		}
+	case PagePausing:
+		return m, nil
 	case PageStopConfirm:
 		switch m.Cursor {
 		case 0:
 			return m, stopAfterCheckpointEffect()
 		case 1:
-			if m.PreviousPage == PagePaused {
+			if m.PreviousPage == PagePaused || m.PreviousPage == PagePausing {
 				m.Page = PagePaused
+				if m.PreviousPage == PagePausing {
+					m.Page = PagePausing
+				}
 			} else {
 				m.Page = PageRecovering
 			}
@@ -638,6 +656,8 @@ func (m Model) cursorLimit() int {
 		return len(m.HistoryItems) + 1
 	case PagePaused:
 		return 2
+	case PagePausing:
+		return 0
 	case PageStopConfirm:
 		return 2
 	case PageSummary:
@@ -939,6 +959,9 @@ func nextCopyLabel(current string) string {
 }
 
 func recoveryDetailsStatusLine(m Model) string {
+	if m.Page == PagePausing || m.Recovery.PausePending {
+		return "Pause requested. Waiting for the current drive request to finish safely."
+	}
 	if m.Page == PageSummary && m.Summary.NextAction != "" {
 		return m.Summary.NextAction
 	}

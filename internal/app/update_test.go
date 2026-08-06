@@ -565,17 +565,20 @@ func TestDetailsKeyOpensAndEscReturns(t *testing.T) {
 	}
 }
 
-func TestSpaceDuringRecoveryMovesToPausedAndRequestsPause(t *testing.T) {
+func TestSpaceDuringRecoveryMovesToPausingAndRequestsPause(t *testing.T) {
 	model := NewModel()
 	model.Page = PageRecovering
 
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	updated := next.(Model)
-	if updated.Page != PagePaused {
-		t.Fatalf("unexpected page: got %v want %v", updated.Page, PagePaused)
+	if updated.Page != PagePausing {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PagePausing)
 	}
 	if !updated.Recovery.PausePending {
 		t.Fatalf("expected pause pending state: %+v", updated.Recovery)
+	}
+	if updated.Notice == nil || updated.Notice.Text != "Pausing recovery after the current read completes." {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
 	}
 	requested := cmd().(EffectRequestedMsg)
 	if requested.Kind != EffectPauseJob {
@@ -583,27 +586,24 @@ func TestSpaceDuringRecoveryMovesToPausedAndRequestsPause(t *testing.T) {
 	}
 }
 
-func TestPausedContinueWhilePausePendingWaitsForPauseCompletion(t *testing.T) {
+func TestPausingIgnoresSelectUntilPauseCompletes(t *testing.T) {
 	model := NewModel()
-	model.Page = PagePaused
+	model.Page = PagePausing
 	model.Recovery.PausePending = true
 
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
 	if cmd != nil {
-		t.Fatalf("expected no resume command while pause is pending, got %#v", cmd)
+		t.Fatalf("expected no command while pause is pending, got %#v", cmd)
 	}
-	if updated.Page != PagePaused {
-		t.Fatalf("unexpected page: got %v want %v", updated.Page, PagePaused)
-	}
-	if updated.Notice == nil || updated.Notice.Text != "Waiting for the current read to finish before recovery can continue." {
-		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	if updated.Page != PagePausing {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PagePausing)
 	}
 }
 
 func TestJobPausedMovesToPausedState(t *testing.T) {
 	model := NewModel()
-	model.Page = PageRecovering
+	model.Page = PagePausing
 
 	next, _ := model.Update(JobPausedMsg{
 		OutputPath:        "D:/Archives/archive-disc.iso",
@@ -705,5 +705,27 @@ func TestJobStoppedMovesToSummaryWithPrimaryChoiceFocused(t *testing.T) {
 	}
 	if updated.Summary.Duration != "31 minutes" {
 		t.Fatalf("unexpected summary payload: %+v", updated.Summary)
+	}
+}
+
+func TestRecoveryTargetInspectionKeepsChooseOutputForOccupiedTarget(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.ActiveTargetRequest = 11
+
+	next, _ := model.Update(RecoveryTargetInspectedMsg{
+		RequestID: 11,
+		Status: platform.RecoveryTargetStatus{
+			OutputPath: "D:/Archives/disc.iso",
+			MapPath:    "D:/Archives/disc.drmap",
+			Detail:     "Output image D:/Archives/disc.iso already exists without D:/Archives/disc.drmap. Choose another output path.",
+		},
+	})
+	updated := next.(Model)
+	if updated.Page != PageChooseOutput {
+		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseOutput)
+	}
+	if updated.Notice == nil || updated.Notice.Text != "Output image D:/Archives/disc.iso already exists without D:/Archives/disc.drmap. Choose another output path." {
+		t.Fatalf("unexpected notice: %+v", updated.Notice)
 	}
 }

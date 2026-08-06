@@ -27,7 +27,7 @@ func (m Model) View() tea.View {
 			"Window too small.",
 			"Resize to at least 40x12.",
 		}
-		if m.Page == PageRecovering || m.Page == PagePaused || m.Page == PageStopConfirm || m.Page == PageDetails {
+		if m.Page == PageRecovering || m.Page == PagePausing || m.Page == PagePaused || m.Page == PageStopConfirm || m.Page == PageDetails {
 			lines = append(lines, "Recovery continues while you resize the window.")
 		}
 		view := tea.NewView(strings.Join(lines, "\n") + "\n")
@@ -61,7 +61,7 @@ func renderPage(m Model, tier layoutTier) string {
 }
 
 func usesAltScreen(page Page) bool {
-	return page == PageRecovering || page == PageDetails
+	return page == PageRecovering || page == PagePausing || page == PageDetails
 }
 
 func pageTitle(page Page) string {
@@ -86,6 +86,8 @@ func pageTitle(page Page) string {
 		return "Review and start"
 	case PageRecovering:
 		return "Recovery in progress"
+	case PagePausing:
+		return "Pausing recovery"
 	case PagePaused:
 		return "Recovery paused"
 	case PageStopConfirm:
@@ -129,6 +131,8 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 		return renderReviewPage(m, width, tier)
 	case PageRecovering:
 		return renderRecoveryPage(m, width, tier)
+	case PagePausing:
+		return renderPausingPage(m, width)
 	case PagePaused:
 		return renderPausedPage(m, width)
 	case PageStopConfirm:
@@ -336,7 +340,7 @@ func renderOutputPage(m Model, width int, tier layoutTier) []string {
 	} else {
 		fileName += "|"
 	}
-	lines := wrapText("Choose where to save the recovery image. Edit the output folder or file name, then press Enter to continue with the full target below.", width)
+	lines := wrapText("Choose where to save the recovery image. Press Enter to use the suggested target below, or edit the folder or file name first.", width)
 	lines = append(lines, "")
 	lines = append(lines, labeledLines("Folder", directory, width)...)
 	lines = append(lines, labeledLines("File name", fileName, width)...)
@@ -467,9 +471,21 @@ func renderSummaryPage(m Model, width int, tier layoutTier) []string {
 }
 
 func renderDetailsPage(m Model, width int) []string {
-	lines := make([]string, 0, len(m.Details.Lines))
-	for _, line := range m.Details.Lines {
+	lines := make([]string, 0, len(detailsLinesForView(m)))
+	for _, line := range detailsLinesForView(m) {
 		lines = append(lines, wrapText(line, width)...)
+	}
+	return lines
+}
+
+func renderPausingPage(m Model, width int) []string {
+	lines := []string{
+		fitToWidth("Pause requested. Waiting for the current drive request to finish safely.", width),
+		fitToWidth("No new drive commands will be started until the recovery is fully paused.", width),
+	}
+	if m.Recovery.OutputPath != "" && m.Recovery.OutputPath != "Not chosen yet" {
+		lines = append(lines, "")
+		lines = append(lines, labeledLines("Output", m.Recovery.OutputPath, width)...)
 	}
 	return lines
 }
@@ -480,14 +496,8 @@ func renderPausedPage(m Model, width int) []string {
 		"Continue recovery",
 		"Stop after checkpoint",
 	}
-	if m.Recovery.PausePending {
-		lines = append(lines, fitToWidth("Pause requested. Waiting for the current drive request to finish safely.", width))
-		lines = append(lines, fitToWidth("Waiting for the current drive request to finish...", width))
-		options[0] = "Waiting for pause to finish"
-	} else {
-		lines = append(lines, fitToWidth("The current image and recovery map are safe to resume.", width))
-		lines = append(lines, fitToWidth("No new drive commands will be started while paused.", width))
-	}
+	lines = append(lines, fitToWidth("The current image and recovery map are safe to resume.", width))
+	lines = append(lines, fitToWidth("No new drive commands will be started while paused.", width))
 	lines = append(lines, "")
 	for i, option := range options {
 		prefix := "  "
@@ -598,6 +608,8 @@ func renderFooter(page Page, width int, tier layoutTier) string {
 		} else {
 			footer = "space pause  -  d details  -  q stop"
 		}
+	case PagePausing:
+		footer = "d details  -  q stop"
 	case PagePaused:
 		footer = "j/k select  -  enter choose  -  d details"
 	case PageStopConfirm:
@@ -799,4 +811,31 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func detailsLinesForView(m Model) []string {
+	switch m.PreviousPage {
+	case PageHistory:
+		if m.Page == PageDetails {
+			return append([]string(nil), m.Details.Lines...)
+		}
+	}
+
+	switch m.Page {
+	case PageRecovering, PagePausing, PagePaused:
+		return buildRecoveryDetails(m)
+	case PageSummary:
+		return buildSummaryDetails(m, JobStoppedMsg{Summary: m.Summary, Err: m.LastError})
+	case PageDetails:
+		switch m.PreviousPage {
+		case PageRecovering, PagePausing, PagePaused:
+			return buildRecoveryDetails(m)
+		case PageSummary:
+			return buildSummaryDetails(m, JobStoppedMsg{Summary: m.Summary, Err: m.LastError})
+		default:
+			return append([]string(nil), m.Details.Lines...)
+		}
+	default:
+		return append([]string(nil), m.Details.Lines...)
+	}
 }

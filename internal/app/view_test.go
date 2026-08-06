@@ -35,6 +35,21 @@ func TestViewTooSmallKeepsRecoveryAltScreenAndActivityNotice(t *testing.T) {
 	}
 }
 
+func TestViewTooSmallKeepsPausingAltScreenAndActivityNotice(t *testing.T) {
+	model := NewModel()
+	model.Width = 39
+	model.Height = 11
+	model.Page = PagePausing
+
+	rendered := model.View()
+	if !rendered.AltScreen {
+		t.Fatal("expected pausing view to preserve alternate-screen state while too small")
+	}
+	if !strings.Contains(rendered.Content, "Recovery continues while you resize the window.") {
+		t.Fatalf("expected recovery resize notice, got %q", rendered.Content)
+	}
+}
+
 func TestViewChooseDriveShowsOneColumnList(t *testing.T) {
 	model := NewModel()
 	model.Width = 80
@@ -331,25 +346,40 @@ func TestViewRecoveringUsesUnicodeProgressBarWhenAllowed(t *testing.T) {
 	}
 }
 
+func TestViewPausingShowsPendingPauseLanguage(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PagePausing
+	model.Recovery = RecoveryViewModel{PausePending: true}
+
+	view := model.View().Content
+	if !strings.Contains(view, "Pausing recovery") {
+		t.Fatalf("expected pausing title, got %q", view)
+	}
+	if !strings.Contains(view, "Pause requested. Waiting for the current drive request to finish safely.") {
+		t.Fatalf("expected truthful pause-pending summary, got %q", view)
+	}
+	if strings.Contains(view, "Continue recovery") {
+		t.Fatalf("did not expect resume action while pause is still pending, got %q", view)
+	}
+}
+
 func TestViewPausedShowsSafeResumeLanguage(t *testing.T) {
 	model := NewModel()
 	model.Width = 80
 	model.Height = 24
 	model.Page = PagePaused
-	model.Recovery = RecoveryViewModel{PausePending: true}
 
 	view := model.View().Content
 	if !strings.Contains(view, "Recovery paused") {
 		t.Fatalf("expected paused title, got %q", view)
 	}
-	if !strings.Contains(view, "Pause requested. Waiting for the current drive request to finish safely.") {
-		t.Fatalf("expected truthful pause-pending summary, got %q", view)
+	if !strings.Contains(view, "The current image and recovery map are safe to resume.") {
+		t.Fatalf("expected paused summary, got %q", view)
 	}
-	if !strings.Contains(view, "Waiting for the current drive request to finish") {
-		t.Fatalf("expected outstanding-request note, got %q", view)
-	}
-	if !strings.Contains(view, "> Waiting for pause to finish") {
-		t.Fatalf("expected pending-pause label, got %q", view)
+	if !strings.Contains(view, "> Continue recovery") {
+		t.Fatalf("expected resume action, got %q", view)
 	}
 }
 
@@ -473,6 +503,37 @@ func TestViewDetailsUsesAltScreen(t *testing.T) {
 	}
 	if !strings.Contains(view.Content, "Drive: D:/dev/cdrom0") {
 		t.Fatalf("unexpected details content: %q", view.Content)
+	}
+}
+
+func TestViewDetailsFromRecoveryUsesCurrentRecoveryDetails(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageDetails
+	model.PreviousPage = PageRecovering
+	model.SelectedDrive = DeviceSummary{DisplayName: "Optical drive E:", Path: "E:"}
+	model.Identity = ContentIdentityViewModel{Detail: "DVD-ROM, 4.38 GiB"}
+	model.Recovery = RecoveryViewModel{
+		Phase:             "Reading optical sectors",
+		Status:            "Reading sectors from the selected optical drive.",
+		OutputPath:        "D:/Archives/disc.iso",
+		RecoveredSectors:  120,
+		UnreadableSectors: 3,
+		Remaining:         "1.0 GiB remaining",
+	}
+	model.Summary = JobSummary{NextAction: "Fix the reported problem or choose a different output target."}
+	model.Details = DetailsViewModel{Lines: []string{"Image: stale.iso", "Next step: stale summary text"}}
+
+	view := model.View().Content
+	if !strings.Contains(view, "Drive: Optical drive E:") {
+		t.Fatalf("expected current recovery drive details, got %q", view)
+	}
+	if !strings.Contains(view, "Output: D:/Archives/disc.iso") {
+		t.Fatalf("expected current recovery output, got %q", view)
+	}
+	if strings.Contains(view, "Next step: stale summary text") {
+		t.Fatalf("did not expect stale summary details, got %q", view)
 	}
 }
 

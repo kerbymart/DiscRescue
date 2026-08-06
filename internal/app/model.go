@@ -13,6 +13,7 @@ const (
 	PageChooseOutput
 	PageReview
 	PageRecovering
+	PagePausing
 	PagePaused
 	PageStopConfirm
 	PageSummary
