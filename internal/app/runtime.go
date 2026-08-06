@@ -343,7 +343,11 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 	case JobStartedMsg, JobPausedMsg, ProgressMsg, StatusMsg:
 		if m.state != nil && m.state.activeRecovery != nil {
 			return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
-				snapshot := m.state.activeRecovery.Snapshot()
+				activeRecovery := m.state.activeRecovery
+				if activeRecovery == nil {
+					return nil
+				}
+				snapshot := activeRecovery.Snapshot()
 				totalSectors := m.MediaCapacitySectors
 				logicalSectorSize := uint64(m.MediaLogicalSectorSize)
 				if logicalSectorSize == 0 {

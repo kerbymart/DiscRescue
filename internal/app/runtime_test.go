@@ -37,6 +37,16 @@ type stubClock struct{}
 
 func (stubClock) Now() time.Time { return time.Date(2026, time.August, 6, 7, 0, 0, 0, time.UTC) }
 
+type stubRecoveryJob struct {
+	snapshot platform.RecoverySnapshot
+}
+
+func (s stubRecoveryJob) Snapshot() platform.RecoverySnapshot {
+	return s.snapshot
+}
+
+func (stubRecoveryJob) Cancel() {}
+
 func TestProgramModelStartupWorkflowLeavesDiscoveryAndSelectsDrive(t *testing.T) {
 	runtime := platform.Runtime{
 		Clock: stubClock{},
@@ -108,5 +118,32 @@ func TestProgramModelDiscoveryCanReachNoDriveState(t *testing.T) {
 	}
 	if updated.Notice == nil || updated.Notice.Text != "No usable optical drives found." {
 		t.Fatalf("unexpected notice: %+v", updated.Notice)
+	}
+}
+
+func TestFollowUpIgnoresStaleRecoveryTickAfterPauseCompletes(t *testing.T) {
+	model := NewProgramModel(platform.Runtime{})
+	model.state.activeRecovery = stubRecoveryJob{
+		snapshot: platform.RecoverySnapshot{
+			StartedAt:  time.Now(),
+			TotalBytes: 2048,
+		},
+	}
+
+	cmd := model.followUp(StatusMsg{Text: "Pausing recovery after the current read completes.", Severity: SeverityInfo})
+	if cmd == nil {
+		t.Fatal("expected follow-up tick command")
+	}
+
+	model.state.activeRecovery = nil
+
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("follow-up tick panicked after recovery was cleared: %v", recovered)
+		}
+	}()
+
+	if msg := cmd(); msg != nil {
+		t.Fatalf("expected stale tick to return no message, got %#v", msg)
 	}
 }
