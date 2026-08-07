@@ -3,3 +3,7 @@
 
 # Keep repository ignore rules trackable.
 !.gitignore
+
+# Keep GitHub configuration trackable.
+!.github/
+!.github/**

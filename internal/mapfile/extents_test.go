@@ -159,3 +159,67 @@ func TestInsertExtentCoalescesCompatibleNeighbors(t *testing.T) {
 		t.Fatalf("unexpected coalesced extent: %+v", result[0])
 	}
 }
+
+func TestApplyExtentRefinesDeferredSubrange(t *testing.T) {
+	extents := []Extent{
+		{StartLBA: 64, Sectors: 64, State: SectorStateUnknown, Confidence: ConfidenceNone, Attempts: 1},
+	}
+	candidate := Extent{
+		StartLBA:   80,
+		Sectors:    16,
+		State:      SectorStateReadUnverified,
+		Confidence: ConfidenceSingleRead,
+		Attempts:   2,
+	}
+
+	result, err := ApplyExtent(extents, candidate)
+	if err != nil {
+		t.Fatalf("apply extent: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("expected deferred tails around recovered range, got %+v", result)
+	}
+	if result[0].StartLBA != 64 || result[0].Sectors != 16 || result[0].State != SectorStateUnknown {
+		t.Fatalf("unexpected left deferred tail: %+v", result[0])
+	}
+	if result[1].StartLBA != 80 || result[1].Sectors != 16 || result[1].State != SectorStateReadUnverified {
+		t.Fatalf("unexpected recovered middle: %+v", result[1])
+	}
+	if result[2].StartLBA != 96 || result[2].Sectors != 32 || result[2].State != SectorStateUnknown {
+		t.Fatalf("unexpected right deferred tail: %+v", result[2])
+	}
+}
+
+func TestApplyExtentRejectsRecoveredDataReplacement(t *testing.T) {
+	extents := []Extent{
+		{StartLBA: 10, Sectors: 4, State: SectorStateReadUnverified, Confidence: ConfidenceSingleRead, Attempts: 1},
+	}
+	candidate := Extent{
+		StartLBA:   10,
+		Sectors:    4,
+		State:      SectorStateMissing,
+		Confidence: ConfidenceNone,
+		Attempts:   2,
+	}
+
+	if _, err := ApplyExtent(extents, candidate); err == nil {
+		t.Fatal("expected recovered data to reject transition to missing")
+	}
+}
+
+func TestApplyExtentRejectsStaleAttempt(t *testing.T) {
+	extents := []Extent{
+		{StartLBA: 20, Sectors: 4, State: SectorStateUnknown, Confidence: ConfidenceNone, Attempts: 3},
+	}
+	candidate := Extent{
+		StartLBA:   20,
+		Sectors:    4,
+		State:      SectorStateQueued,
+		Confidence: ConfidenceNone,
+		Attempts:   2,
+	}
+
+	if _, err := ApplyExtent(extents, candidate); err == nil {
+		t.Fatal("expected stale attempt to be rejected")
+	}
+}
