@@ -69,10 +69,14 @@ func parseDarwinDiskutilInfo(text string) (darwinDiskInfo, error) {
 		switch key {
 		case "Device Node":
 			info.DevicePath = value
-		case "Media Name":
+		case "Media Name", "Device / Media Name":
 			info.MediaName = value
 		case "Optical Media":
 			info.OpticalMedia = strings.EqualFold(value, "Yes")
+		case "Optical Media Type":
+			info.OpticalMedia = value != "" && !strings.EqualFold(value, "None")
+		case "Optical Drive Type":
+			info.OpticalMedia = value != "" && !strings.EqualFold(value, "None")
 		case "File System Personality":
 			info.FileSystem = value
 		case "Volume Name":
