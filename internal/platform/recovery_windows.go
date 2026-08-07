@@ -47,19 +47,26 @@ func (j *mountedRecoveryJob) Cancel() {
 	j.cancel()
 }
 
-func (j *mountedRecoveryJob) setProgress(copied uint64) {
+func (j *mountedRecoveryJob) setPassProgress(progress recoveryPassProgress, logicalSectorSize uint32) {
 	j.mu.Lock()
-	j.snapshot.CopiedBytes = copied
-	j.mu.Unlock()
-}
+	defer j.mu.Unlock()
 
-func (j *mountedRecoveryJob) addUnreadable(count uint64, lines ...string) {
-	j.mu.Lock()
-	j.snapshot.UnreadableSectors += count
-	if len(lines) > 0 {
-		j.snapshot.LastIssue = append([]string(nil), lines...)
+	j.snapshot.CopiedBytes = progress.RecoveredSectors * uint64(logicalSectorSize)
+	j.snapshot.ScannedSectors = progress.ScannedSectors
+	j.snapshot.DeferredSectors = progress.DeferredSectors
+	j.snapshot.UnreadableSectors = progress.UnreadableSectors
+	j.snapshot.Pass = progress.Pass
+	lines := []string{
+		fmt.Sprintf(
+			"Scanned %d sectors; recovered %d; deferred %d; unreadable %d.",
+			progress.ScannedSectors,
+			progress.RecoveredSectors,
+			progress.DeferredSectors,
+			progress.UnreadableSectors,
+		),
 	}
-	j.mu.Unlock()
+	lines = append(lines, progress.LastIssue...)
+	j.snapshot.LastIssue = lines
 }
 
 func (j *mountedRecoveryJob) finish(canceled bool, err error) {
@@ -95,10 +102,18 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	copiedBytes, unreadableSectors := summarizeExtents(state.extents, input.LogicalSectorSize)
+	scannedSectors, recoveredSectors, deferredSectors, unreadableSectors := summarizeRecoveryExtentStates(state.extents)
 	lastIssue := []string{}
 	if resumed {
-		lastIssue = []string{"Resuming from durable recovery state."}
+		lastIssue = []string{
+			fmt.Sprintf(
+				"Resuming durable state: scanned %d, recovered %d, deferred %d, unreadable %d sectors.",
+				scannedSectors,
+				recoveredSectors,
+				deferredSectors,
+				unreadableSectors,
+			),
+		}
 	}
 	job := &mountedRecoveryJob{
 		cancel: cancel,
@@ -106,8 +121,11 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 		snapshot: RecoverySnapshot{
 			StartedAt:         time.Now(),
 			TotalBytes:        input.CapacitySectors * uint64(input.LogicalSectorSize),
-			CopiedBytes:       copiedBytes,
+			CopiedBytes:       recoveredSectors * uint64(input.LogicalSectorSize),
+			ScannedSectors:    scannedSectors,
+			DeferredSectors:   deferredSectors,
 			UnreadableSectors: unreadableSectors,
+			Pass:              "Fast acquisition",
 			MapPath:           state.mapPath,
 			Resumed:           resumed,
 			LastIssue:         lastIssue,
@@ -152,123 +170,29 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	defer output.Close()
 
 	totalBytes := input.CapacitySectors * uint64(input.LogicalSectorSize)
-	if !j.snapshot.Resumed {
-		if err := output.Truncate(int64(totalBytes)); err != nil {
-			j.finish(false, fmt.Errorf("prepare output image %s: %w", input.OutputPath, err))
-			return
-		}
-	}
 	if err := output.Truncate(int64(totalBytes)); err != nil {
 		j.finish(false, fmt.Errorf("prepare output image %s: %w", input.OutputPath, err))
 		return
 	}
 
-	chunkSize := int(input.LogicalSectorSize) * 64
-	if chunkSize < int(input.LogicalSectorSize) {
-		chunkSize = int(input.LogicalSectorSize)
-	}
-	buffer := make([]byte, chunkSize)
-	copied := j.snapshot.CopiedBytes
-	logicalSectorSize := uint64(input.LogicalSectorSize)
-
-	for lba := uint64(0); lba < input.CapacitySectors; {
-		select {
-		case <-ctx.Done():
-			j.setProgress(copied)
+	err = runPassBasedRecovery(
+		ctx,
+		source,
+		output,
+		input.LogicalSectorSize,
+		input.CapacitySectors,
+		j.state,
+		func(progress recoveryPassProgress) {
+			j.setPassProgress(progress, input.LogicalSectorSize)
+		},
+	)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
 			j.finish(true, nil)
 			return
-		default:
 		}
-
-		if extent, _, ok := mapfile.LookupExtent(j.state.extents, lba); ok && claimsImageData(extent.State) {
-			lba = extent.EndLBA()
-			j.setProgress(copied)
-			continue
-		}
-
-		sectorsToRead := uint64(64)
-		if remaining := input.CapacitySectors - lba; remaining < sectorsToRead {
-			sectorsToRead = remaining
-		}
-		readSize := int(sectorsToRead * logicalSectorSize)
-		offset := int64(lba * logicalSectorSize)
-
-		n, err := source.ReadAt(buffer[:readSize], offset)
-		if err == nil || (err == io.EOF && n == readSize) {
-			if err := writeFullAt(output, buffer[:readSize], offset); err != nil {
-				j.setProgress(copied)
-				j.finish(false, fmt.Errorf("write output image %s at byte %d: %w", input.OutputPath, offset, err))
-				return
-			}
-			if err := j.state.appendExtent(mapfile.Extent{
-				StartLBA:   lba,
-				Sectors:    uint32(sectorsToRead),
-				State:      mapfile.SectorStateReadUnverified,
-				Confidence: mapfile.ConfidenceSingleRead,
-			}); err != nil {
-				j.setProgress(copied)
-				j.finish(false, fmt.Errorf("persist recovery map %s: %w", j.state.mapPath, err))
-				return
-			}
-			copied += uint64(readSize)
-			j.setProgress(copied)
-			lba += sectorsToRead
-			continue
-		}
-
-		singleSector := int(input.LogicalSectorSize)
-		sectorBuffer := make([]byte, singleSector)
-		clusterStart := lba
-		clusterEnd := lba + sectorsToRead
-		for lba < clusterEnd {
-			select {
-			case <-ctx.Done():
-				j.setProgress(copied)
-				j.finish(true, nil)
-				return
-			default:
-			}
-
-			sectorOffset := int64(lba * logicalSectorSize)
-			n, err := source.ReadAt(sectorBuffer, sectorOffset)
-			if err == nil || (err == io.EOF && n == singleSector) {
-				if err := writeFullAt(output, sectorBuffer[:singleSector], sectorOffset); err != nil {
-					j.setProgress(copied)
-					j.finish(false, fmt.Errorf("write output image %s at byte %d: %w", input.OutputPath, sectorOffset, err))
-					return
-				}
-				if err := j.state.appendExtent(mapfile.Extent{
-					StartLBA:   lba,
-					Sectors:    1,
-					State:      mapfile.SectorStateReadUnverified,
-					Confidence: mapfile.ConfidenceSingleRead,
-				}); err != nil {
-					j.setProgress(copied)
-					j.finish(false, fmt.Errorf("persist recovery map %s: %w", j.state.mapPath, err))
-					return
-				}
-				copied += logicalSectorSize
-				j.setProgress(copied)
-				lba++
-				continue
-			}
-
-			if err := j.state.appendExtent(mapfile.Extent{
-				StartLBA:   lba,
-				Sectors:    1,
-				State:      mapfile.SectorStateMissing,
-				Confidence: mapfile.ConfidenceNone,
-			}); err != nil {
-				j.setProgress(copied)
-				j.finish(false, fmt.Errorf("persist recovery map %s: %w", j.state.mapPath, err))
-				return
-			}
-			j.addUnreadable(1,
-				fmt.Sprintf("Unreadable sector at LBA %d.", lba),
-				fmt.Sprintf("Cluster fallback was required for LBA %d to %d.", clusterStart, clusterEnd-1),
-			)
-			lba++
-		}
+		j.finish(false, fmt.Errorf("recover image %s: %w", input.OutputPath, err))
+		return
 	}
 
 	if err := output.Sync(); err != nil {
@@ -276,21 +200,6 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 		return
 	}
 	j.finish(false, nil)
-}
-
-func writeFullAt(file *os.File, data []byte, offset int64) error {
-	written := 0
-	for written < len(data) {
-		n, err := file.WriteAt(data[written:], offset+int64(written))
-		written += n
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			return errors.New("short write")
-		}
-	}
-	return nil
 }
 
 func openRecoveryMapState(input RecoveryInput) (*recoveryMapState, bool, error) {
@@ -439,17 +348,23 @@ func inspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStatus, error) {
 		if requiredImageBytes(replayed.Extents, input.LogicalSectorSize) > uint64(outputInfo.Size()) {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: image %s is smaller than the durable recovery map", input.OutputPath)
 		}
-		recoveredSectors, unreadableSectors := summarizeExtentsToSectors(replayed.Extents)
+		_, recoveredSectors, deferredSectors, unreadableSectors := summarizeRecoveryExtentStates(replayed.Extents)
 		return RecoveryTargetStatus{
 			OutputPath:        input.OutputPath,
 			MapPath:           mapPath,
 			CanResume:         true,
 			RecoveredSectors:  recoveredSectors,
+			DeferredSectors:   deferredSectors,
 			UnreadableSectors: unreadableSectors,
 			RequiredBytes:     requiredBytes,
 			AvailableBytes:    availableBytes,
 			SpaceKnown:        spaceKnown && spaceErr == nil,
-			Detail:            fmt.Sprintf("Resume recovery from %s recovered sectors and %s unreadable sectors.", formatUint(recoveredSectors), formatUint(unreadableSectors)),
+			Detail: fmt.Sprintf(
+				"Resume recovery from %s recovered sectors, %s deferred sectors, and %s unreadable sectors.",
+				formatUint(recoveredSectors),
+				formatUint(deferredSectors),
+				formatUint(unreadableSectors),
+			),
 		}, nil
 	case outputErr == nil && errors.Is(mapErr, os.ErrNotExist):
 		return RecoveryTargetStatus{
@@ -523,7 +438,19 @@ func readRecoveryMapBytes(data []byte) (mapfile.Header, mapfile.Checkpoint, int,
 	return header, checkpoint, headerLength + checkpointLength, nil
 }
 
+func (s *recoveryMapState) Extents() []mapfile.Extent {
+	return append([]mapfile.Extent(nil), s.extents...)
+}
+
+func (s *recoveryMapState) ApplyExtent(extent mapfile.Extent) error {
+	return s.appendExtent(extent)
+}
+
 func (s *recoveryMapState) appendExtent(extent mapfile.Extent) error {
+	nextExtents, err := mapfile.ApplyExtent(s.extents, extent)
+	if err != nil {
+		return err
+	}
 	record := mapfile.JournalRecord{
 		Type:     mapfile.RecordExtentStateChanged,
 		Sequence: s.nextSequence,
@@ -537,10 +464,6 @@ func (s *recoveryMapState) appendExtent(extent mapfile.Extent) error {
 		return err
 	}
 	if err := s.journalFile.Sync(); err != nil {
-		return err
-	}
-	nextExtents, err := mapfile.InsertExtent(s.extents, extent)
-	if err != nil {
 		return err
 	}
 	s.extents = nextExtents
@@ -574,36 +497,17 @@ func (s *recoveryMapState) close(canceled bool, success bool) error {
 }
 
 func summarizeExtents(extents []mapfile.Extent, logicalSectorSize uint32) (uint64, uint64) {
-	recoveredSectors, unreadable := summarizeExtentsToSectors(extents)
+	_, recoveredSectors, _, unreadable := summarizeRecoveryExtentStates(extents)
 	return recoveredSectors * uint64(logicalSectorSize), unreadable
 }
 
 func summarizeExtentsToSectors(extents []mapfile.Extent) (uint64, uint64) {
-	var recoveredSectors uint64
-	var unreadable uint64
-	for _, extent := range extents {
-		if claimsImageData(extent.State) {
-			recoveredSectors += uint64(extent.Sectors)
-			continue
-		}
-		if extent.State == mapfile.SectorStateMissing {
-			unreadable += uint64(extent.Sectors)
-		}
-	}
+	_, recoveredSectors, _, unreadable := summarizeRecoveryExtentStates(extents)
 	return recoveredSectors, unreadable
 }
 
 func claimsImageData(state mapfile.SectorState) bool {
-	switch state {
-	case mapfile.SectorStateReadUnverified,
-		mapfile.SectorStateVerified,
-		mapfile.SectorStateChecksumError,
-		mapfile.SectorStateConflicting,
-		mapfile.SectorStateReconstructed:
-		return true
-	default:
-		return false
-	}
+	return recoveryStateHasData(state)
 }
 
 func requiredImageBytes(extents []mapfile.Extent, logicalSectorSize uint32) uint64 {

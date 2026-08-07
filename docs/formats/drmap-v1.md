@@ -129,9 +129,11 @@ Unknown record types make the file incompatible with a v1 reader.
 | 0 | `unknown` | not yet classified |
 | 1 | `queued` | transient scheduling state |
 | 2 | `recovered` | durable data exists in the image |
-| 3 | `missing` | read attempt failed or policy skipped |
+| 3 | `missing` | retry work confirmed the sector is still unreadable |
+| 9 | `skipped` | deferred for a later bounded retry pass |
 
 On replay, any persisted `queued` extent is downgraded to `unknown`.
+Later extent-state records replace any overlapping earlier range so deferred sectors can be narrowed during retry passes without rewriting healthy neighbors.
 
 ## Confidence Encoding
 
@@ -160,7 +162,8 @@ For failed data:
 1. Append the failed-attempt record.
 2. Append the resulting extent-state transition.
 3. Commit the journal.
-4. Queue a later pass only if policy allows.
+4. During a fast pass, prefer `skipped` for a deferred retry range instead of immediately promoting the whole failed block to `missing`.
+5. Queue a later pass only if policy allows.
 
 ## Replay and Crash Recovery
 

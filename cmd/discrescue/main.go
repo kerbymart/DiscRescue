@@ -37,5 +37,5 @@ func newProgram(runtime platform.Runtime, output io.Writer, opts ...tea.ProgramO
 		tea.WithOutput(output),
 	}
 	base = append(base, opts...)
-	return tea.NewProgram(app.NewProgramModel(runtime), base...)
+	return tea.NewProgram(app.NewRecoveryProgramModel(runtime), base...)
 }

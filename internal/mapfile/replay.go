@@ -39,7 +39,7 @@ func ReplayJournal(checkpoint Checkpoint, journal []byte) (Checkpoint, error) {
 		offset += consumed
 		next.LastSequence = record.Sequence
 		if record.Type == RecordExtentStateChanged && record.Extent != nil {
-			nextExtents, err := InsertExtent(next.Extents, *record.Extent)
+			nextExtents, err := ApplyExtent(next.Extents, *record.Extent)
 			if err != nil {
 				return Checkpoint{}, err
 			}

@@ -115,3 +115,34 @@ func TestReplayJournalAppliesExtentRecord(t *testing.T) {
 		t.Fatalf("unexpected replayed checkpoint: %+v", checkpoint)
 	}
 }
+
+func TestReplayJournalAppliesStateRefinement(t *testing.T) {
+	unknown := Extent{StartLBA: 64, Sectors: 16, State: SectorStateUnknown, Confidence: ConfidenceNone, Attempts: 1}
+	queued := Extent{StartLBA: 64, Sectors: 16, State: SectorStateQueued, Confidence: ConfidenceNone, Attempts: 2}
+	recovered := Extent{StartLBA: 64, Sectors: 16, State: SectorStateReadUnverified, Confidence: ConfidenceSingleRead, Attempts: 2}
+
+	journal := []byte{}
+	var err error
+	for sequence, extent := range []Extent{unknown, queued, recovered} {
+		candidate := extent
+		journal, err = AppendJournalRecord(journal, JournalRecord{
+			Type:     RecordExtentStateChanged,
+			Sequence: uint64(sequence + 1),
+			Extent:   &candidate,
+		})
+		if err != nil {
+			t.Fatalf("append journal record %d: %v", sequence+1, err)
+		}
+	}
+
+	checkpoint, err := ReplayJournal(Checkpoint{}, journal)
+	if err != nil {
+		t.Fatalf("replay journal: %v", err)
+	}
+	if checkpoint.LastSequence != 3 || len(checkpoint.Extents) != 1 {
+		t.Fatalf("unexpected replayed checkpoint: %+v", checkpoint)
+	}
+	if checkpoint.Extents[0].State != SectorStateReadUnverified || checkpoint.Extents[0].Attempts != 2 {
+		t.Fatalf("expected refined recovered extent, got %+v", checkpoint.Extents[0])
+	}
+}

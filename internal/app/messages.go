@@ -48,7 +48,9 @@ type JobStartedMsg struct {
 	Phase             string
 	Status            string
 	TotalSectors      uint64
+	ScannedSectors    uint64
 	RecoveredSectors  uint64
+	DeferredSectors   uint64
 	UnreadableSectors uint64
 }
 
@@ -90,7 +92,9 @@ type JobCheckpointedMsg struct {
 type JobPausedMsg struct {
 	OutputPath        string
 	MapPath           string
+	ScannedSectors    uint64
 	RecoveredSectors  uint64
+	DeferredSectors   uint64
 	TotalSectors      uint64
 	UnreadableSectors uint64
 }
