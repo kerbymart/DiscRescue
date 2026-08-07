@@ -113,14 +113,7 @@ func renderPassRecoveryView(m Model) tea.View {
 	}
 
 	width := contentWidth(m.Width)
-	lines := []string{"DiscRescue", ""}
-	lines = append(lines, wrapText(pageTitle(m), width)...)
-	lines = append(lines, "")
-	lines = append(lines, renderPassRecoveryBody(m, width, tier)...)
-	lines = append(lines, "")
-	lines = append(lines, renderFooter(m.Page, width, tier))
-
-	view := tea.NewView(strings.Join(lines, "\n") + "\n")
+	view := tea.NewView(renderShell(m, renderPassRecoveryBody(m, width, tier), tier))
 	view.WindowTitle = "DiscRescue"
 	view.AltScreen = usesAltScreen(m.Page)
 	return view
