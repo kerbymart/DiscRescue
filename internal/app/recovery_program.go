@@ -120,15 +120,11 @@ func renderPassRecoveryView(m Model) tea.View {
 }
 
 func renderPassRecoveryBody(m Model, width int, tier layoutTier) []string {
-	bar := scannedProgressBar(m, tier)
-	percent := uint64(0)
+	coverage := uint64(0)
 	if m.Recovery.TotalSectors > 0 {
-		percent = (m.Recovery.ScannedSectors * 100) / m.Recovery.TotalSectors
-		if percent > 100 {
-			percent = 100
-		}
+		coverage = (m.Recovery.ScannedSectors * 100) / m.Recovery.TotalSectors
 	}
-	lines := []string{fitToWidth(fmt.Sprintf("%s %d%% scanned", bar, percent), width), ""}
+	lines := []string{recoveryProgressLine(m, width, tier), fmt.Sprintf("%d%% scanned", coverage), ""}
 	if m.Recovery.Phase != "" {
 		lines = append(lines, fitToWidth(m.Recovery.Phase, width))
 	}
