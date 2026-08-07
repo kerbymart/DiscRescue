@@ -682,43 +682,6 @@ func wrapText(text string, width int) []string {
 		return []string{""}
 	}
 	return strings.Split(lipgloss.Wrap(text, width, ""), "\n")
-
-	var lines []string
-	var current strings.Builder
-
-	for _, token := range strings.Fields(text) {
-		if current.Len() == 0 {
-			appendWrappedToken(&lines, &current, token, width)
-			continue
-		}
-
-		if current.Len()+1+len(token) <= width {
-			current.WriteByte(' ')
-			current.WriteString(token)
-			continue
-		}
-
-		lines = append(lines, current.String())
-		current.Reset()
-		appendWrappedToken(&lines, &current, token, width)
-	}
-
-	if current.Len() > 0 {
-		lines = append(lines, current.String())
-	}
-	return lines
-}
-
-func appendWrappedToken(lines *[]string, current *strings.Builder, token string, width int) {
-	if len(token) <= width {
-		current.WriteString(token)
-		return
-	}
-	for len(token) > width {
-		*lines = append(*lines, token[:width])
-		token = token[width:]
-	}
-	current.WriteString(token)
 }
 
 func labeledLines(label, value string, width int) []string {
