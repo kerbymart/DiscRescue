@@ -35,9 +35,9 @@ func (d compactDelegate) Render(w io.Writer, m list.Model, index int, item list.
 	d.DefaultDelegate.Render(w, m, index, item)
 }
 
-func newCompactList(title string, items []list.Item) list.Model {
+func newCompactList(title string, items []list.Item, showDescription bool) list.Model {
 	delegate := list.NewDefaultDelegate()
-	delegate.ShowDescription = true
+	delegate.ShowDescription = showDescription
 	delegate.SetSpacing(1)
 	styles := delegate.Styles
 	styles.NormalTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#A7A3B8"))
@@ -54,6 +54,37 @@ func newCompactList(title string, items []list.Item) list.Model {
 	m.SetShowHelp(false)
 	m.DisableQuitKeybindings()
 	return m
+}
+
+func resizeCompactLists(width, availableHeight int, lists ...*list.Model) {
+	if width < 1 {
+		return
+	}
+	if availableHeight < 1 {
+		availableHeight = 1
+	}
+	for _, component := range lists {
+		if component == nil {
+			continue
+		}
+		items := len(component.Items())
+		if items == 0 {
+			component.SetSize(width, 1)
+			continue
+		}
+		// Each list owns its row spacing. Keep the component close to its
+		// content so the shell does not turn a four-choice page into a wall
+		// of empty terminal space.
+		rowHeight := 1
+		if described, ok := component.Items()[0].(interface{ Description() string }); ok && described.Description() != "" {
+			rowHeight = 2
+		}
+		height := items*rowHeight + items
+		if height > availableHeight {
+			height = availableHeight
+		}
+		component.SetSize(width, height)
+	}
 }
 
 func driveItems(devices []DeviceSummary) []list.Item {

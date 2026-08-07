@@ -23,7 +23,7 @@ func renderShell(m Model, body []string, tier layoutTier) string {
 	}
 	footer := renderFooter(m.Page, l.Width, tier)
 	if m.Width > 0 && (m.DriveList.Width() > 0 || m.ActionList.Width() > 0 || m.DetailsViewport.Width() > 1) {
-		helpView := FooterHelp(tier == layoutFull)
+		helpView := FooterHelp(false)
 		helpView.SetWidth(l.Width)
 		footer = helpView.View(pageHelp(m.Page))
 	}
