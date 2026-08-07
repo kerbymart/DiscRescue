@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
 	"discrescue/internal/platform"
@@ -33,8 +34,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.DetailsViewport.SetWidth(contentWidth(typed.Width))
 		m.DetailsViewport.SetHeight(viewportHeight)
+		listHeight := viewportHeight - 3
+		if listHeight < 1 {
+			listHeight = 1
+		}
+		if listHeight > 12 {
+			listHeight = 12
+		}
+		m.DriveList.SetSize(contentWidth(typed.Width), listHeight)
+		m.ActionList.SetSize(contentWidth(typed.Width), listHeight)
+		m.ResumeList.SetSize(contentWidth(typed.Width), listHeight)
+		m.HistoryList.SetSize(contentWidth(typed.Width), listHeight)
 		return m, nil
 	case tea.KeyPressMsg:
+		if m.Page == PageChooseDrive && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
+			var cmd tea.Cmd
+			m.DriveList, cmd = updateCompactList(m.DriveList, typed)
+			m.Cursor = m.DriveList.Index()
+			return m, cmd
+		}
+		if m.Page == PageChooseAction && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
+			var cmd tea.Cmd
+			m.ActionList, cmd = updateCompactList(m.ActionList, typed)
+			m.Cursor = m.ActionList.Index()
+			return m, cmd
+		}
+		if (m.Page == PageResumeJobs || m.Page == PageHistory) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
+			var cmd tea.Cmd
+			if m.Page == PageResumeJobs {
+				m.ResumeList, cmd = updateCompactList(m.ResumeList, typed)
+				m.Cursor = m.ResumeList.Index()
+			} else {
+				m.HistoryList, cmd = updateCompactList(m.HistoryList, typed)
+				m.Cursor = m.HistoryList.Index()
+			}
+			return m, cmd
+		}
 		if m.Page == PageDetails && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
 			var cmd tea.Cmd
 			m.DetailsViewport.SetContent(strings.Join(detailsLinesForView(m), "\n"))
@@ -42,6 +77,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m.handleKeyPress(typed)
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.LoadingSpinner, cmd = m.LoadingSpinner.Update(typed)
+		return m, cmd
 	case DevicesDiscoveredMsg:
 		if typed.RequestID != m.ActiveDiscoveryRequest {
 			return m, nil
@@ -57,6 +96,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.Devices = append([]DeviceSummary(nil), typed.Devices...)
+		m.DriveList.SetItems(driveItems(m.Devices))
 		m.Cursor = 0
 		if len(m.Devices) == 0 {
 			m.Page = PageNoDrives
@@ -116,6 +156,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.PriorRecords = append([]PriorProcessingRecord(nil), typed.Records...)
 		m.ResumeJobs = append([]ResumableJobViewModel(nil), typed.Jobs...)
+		m.ResumeList.SetItems(resumeItems(m.ResumeJobs))
 		if typed.View.Kind == PriorProcessingStrongResumable && len(typed.Jobs) > 0 {
 			m.Page = PagePriorProcessing
 			m.Cursor = 0
@@ -135,6 +176,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.HistoryItems = append([]ProcessedMediaViewModel(nil), typed.Items...)
+		m.HistoryList.SetItems(historyItems(m.HistoryItems))
 		m.Page = PageHistory
 		m.Cursor = 0
 		if len(m.HistoryItems) == 0 {
