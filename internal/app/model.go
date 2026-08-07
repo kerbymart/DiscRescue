@@ -1,6 +1,8 @@
 package app
 
 import (
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 )
@@ -220,6 +222,11 @@ type Model struct {
 	DirectoryInput          textinput.Model
 	FileNameInput           textinput.Model
 	DetailsViewport         viewport.Model
+	DriveList               list.Model
+	ActionList              list.Model
+	ResumeList              list.Model
+	HistoryList             list.Model
+	LoadingSpinner          spinner.Model
 }
 
 func NewModel() Model {
@@ -231,6 +238,12 @@ func NewModel() Model {
 	fileNameInput.Prompt = ""
 	fileNameInput.CharLimit = 255
 	detailsViewport := viewport.New()
+	driveList := newCompactList("Choose a drive", nil)
+	actionList := newCompactList("What do you want to do?", choiceItems([]string{"Start a new recovery", "Resume an unfinished recovery", "Browse processed media", "Choose another drive"}))
+	resumeList := newCompactList("Resume unfinished recovery", nil)
+	historyList := newCompactList("Browse processed media", nil)
+	loadingSpinner := spinner.New()
+	loadingSpinner.Spinner = spinner.Dot
 	return Model{
 		Page: PageDiscover,
 		Setup: JobSetupModel{
@@ -274,5 +287,10 @@ func NewModel() Model {
 		DirectoryInput:         directoryInput,
 		FileNameInput:          fileNameInput,
 		DetailsViewport:        detailsViewport,
+		DriveList:              driveList,
+		ActionList:             actionList,
+		ResumeList:             resumeList,
+		HistoryList:            historyList,
+		LoadingSpinner:         loadingSpinner,
 	}
 }

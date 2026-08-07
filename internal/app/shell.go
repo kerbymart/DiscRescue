@@ -21,8 +21,30 @@ func renderShell(m Model, body []string, tier layoutTier) string {
 		}
 		lines = append(lines, "", style.Render(marker+" "+m.Notice.Text))
 	}
-	lines = append(lines, "", theme.Key.Render(renderFooter(m.Page, l.Width, tier)))
-	return strings.Join(lines, "\n") + "\n"
+	footer := renderFooter(m.Page, l.Width, tier)
+	if m.Width > 0 && (m.DriveList.Width() > 0 || m.ActionList.Width() > 0 || m.DetailsViewport.Width() > 1) {
+		helpView := FooterHelp(tier == layoutFull)
+		helpView.SetWidth(l.Width)
+		footer = helpView.View(pageHelp(m.Page))
+	}
+	lines = append(lines, "", theme.Key.Render(footer))
+	content := strings.Join(lines, "\n")
+	if m.Width >= 60 && m.Height >= 18 && (m.DriveList.Width() > 0 || m.ActionList.Width() > 0 || m.DetailsViewport.Width() > 1) {
+		frame := lipgloss.NewStyle().
+			Width(maxInt(20, m.Width-4)).
+			Padding(1, 2).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#6D5DF5"))
+		content = frame.Render(content)
+	}
+	return content + "\n"
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func shellWidth(text string) int { return lipgloss.Width(text) }

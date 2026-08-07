@@ -28,3 +28,32 @@ func FooterHelp(full bool) help.Model {
 	h.ShowAll = full
 	return h
 }
+
+type pageHelpMap struct{ groups [][]key.Binding }
+
+func (p pageHelpMap) ShortHelp() []key.Binding {
+	var out []key.Binding
+	for _, group := range p.groups {
+		out = append(out, group...)
+	}
+	return out
+}
+
+func (p pageHelpMap) FullHelp() [][]key.Binding { return p.groups }
+
+func pageHelp(page Page) pageHelpMap {
+	k := NewKeyMapV2()
+	common := []key.Binding{k.Up, k.Down, k.Select, k.Back, k.Quit}
+	switch page {
+	case PageDiscover:
+		return pageHelpMap{groups: [][]key.Binding{{k.Quit}}}
+	case PageRecovering, PagePausing:
+		return pageHelpMap{groups: [][]key.Binding{{k.Pause, k.Details, k.Quit}}}
+	case PageDetails:
+		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Back, k.Quit}}}
+	case PageChooseOutput:
+		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, k.Back, k.Quit}}}
+	default:
+		return pageHelpMap{groups: [][]key.Binding{common}}
+	}
+}
