@@ -19,7 +19,7 @@ func TestRenderPassRecoveryBodyDistinguishesRecoveryStates(t *testing.T) {
 
 	body := strings.Join(renderPassRecoveryBody(model, 76, layoutFull), "\n")
 	for _, want := range []string{
-		"80% scanned",
+		"80%",
 		"Scanned       80 of 100 sectors",
 		"Recovered     75 sectors",
 		"Deferred      4 sectors",

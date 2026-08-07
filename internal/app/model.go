@@ -238,10 +238,10 @@ func NewModel() Model {
 	fileNameInput.Prompt = ""
 	fileNameInput.CharLimit = 255
 	detailsViewport := viewport.New()
-	driveList := newCompactList("Choose a drive", nil)
-	actionList := newCompactList("What do you want to do?", choiceItems([]string{"Start a new recovery", "Resume an unfinished recovery", "Browse processed media", "Choose another drive"}))
-	resumeList := newCompactList("Resume unfinished recovery", nil)
-	historyList := newCompactList("Browse processed media", nil)
+	driveList := newCompactList("Choose a drive", nil, true)
+	actionList := newCompactList("What do you want to do?", choiceItems([]string{"Start a new recovery", "Resume an unfinished recovery", "Browse processed media", "Choose another drive"}), false)
+	resumeList := newCompactList("Resume unfinished recovery", nil, true)
+	historyList := newCompactList("Browse processed media", nil, true)
 	loadingSpinner := spinner.New()
 	loadingSpinner.Spinner = spinner.Dot
 	return Model{

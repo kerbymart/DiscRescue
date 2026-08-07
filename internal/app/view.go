@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/progress"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 
@@ -361,15 +362,18 @@ func renderOutputPage(m Model, width int, tier layoutTier) []string {
 	if fileName == "" {
 		fileName = " "
 	}
-	if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldDirectory {
-		directory = m.DirectoryInput.View()
-	} else if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName {
-		fileName = m.FileNameInput.View()
-	}
 	lines := wrapText("Choose where to save the recovery image. Move to Folder or File name and press Enter to edit, or choose Continue with this target.", width)
 	lines = append(lines, "")
-	lines = append(lines, selectableFieldLines("Folder", directory, width, m.Cursor == 0, m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldDirectory)...)
-	lines = append(lines, selectableFieldLines("File name", fileName, width, m.Cursor == 1, m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName)...)
+	if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldDirectory {
+		lines = append(lines, outputInputLine("Folder", m.DirectoryInput, width, true)...)
+	} else {
+		lines = append(lines, selectableFieldLines("Folder", directory, width, m.Cursor == 0, false)...)
+	}
+	if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName {
+		lines = append(lines, outputInputLine("File name", m.FileNameInput, width, true)...)
+	} else {
+		lines = append(lines, selectableFieldLines("File name", fileName, width, m.Cursor == 1, false)...)
+	}
 	lines = append(lines, labeledLines("Full path", firstNonEmpty(m.Setup.OutputPath, "Not chosen yet"), width)...)
 	if m.Setup.DefaultPath != "" && m.Setup.DefaultPath != "Not chosen yet" {
 		lines = append(lines, labeledLines("Suggested", m.Setup.DefaultPath, width)...)
@@ -388,6 +392,22 @@ func renderOutputPage(m Model, width int, tier layoutTier) []string {
 	}
 	lines = append(lines, wrapText(continuePrefix+"Continue with this target", width)...)
 	return lines
+}
+
+func outputInputLine(label string, input textinput.Model, width int, selected bool) []string {
+	marker := "  "
+	if selected {
+		marker = "> "
+	}
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#67E8F9"))
+	markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#A78BFA")).Bold(true)
+	line := lipgloss.JoinHorizontal(lipgloss.Top, markerStyle.Render(marker), labelStyle.Render(label+" (editing)"), " ", input.View())
+	if width > 0 && lipgloss.Width(line) > width {
+		// textinput owns horizontal scrolling and cursor placement. Never
+		// pass its ANSI cursor rendering through the plain-text wrapper.
+		return []string{lipgloss.NewStyle().MaxWidth(width).Render(line)}
+	}
+	return []string{line}
 }
 
 func renderReviewPage(m Model, width int, tier layoutTier) []string {
