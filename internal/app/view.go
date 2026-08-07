@@ -350,9 +350,9 @@ func renderOutputPage(m Model, width int, tier layoutTier) []string {
 		fileName = " "
 	}
 	if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldDirectory {
-		directory += "|"
+		directory = m.DirectoryInput.View()
 	} else if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName {
-		fileName += "|"
+		fileName = m.FileNameInput.View()
 	}
 	lines := wrapText("Choose where to save the recovery image. Move to Folder or File name and press Enter to edit, or choose Continue with this target.", width)
 	lines = append(lines, "")
@@ -467,7 +467,13 @@ func recoveryProgressView(m Model, width int) string {
 }
 
 func renderSummaryPage(m Model, width int, tier layoutTier) []string {
-	lines := []string{fitToWidth(m.Recovery.Status, width), ""}
+	statusMarker := "✓"
+	if m.Recovery.UnreadableSectors > 0 {
+		statusMarker = "×"
+	} else if m.Recovery.DeferredSectors > 0 || strings.Contains(strings.ToLower(m.Recovery.Status), "paused") {
+		statusMarker = "△"
+	}
+	lines := []string{fitToWidth(statusMarker+" "+m.Recovery.Status, width), ""}
 	if m.Recovery.UnreadableSectors == 0 {
 		lines = append(lines,
 			labeledLines("Image", firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width)...,
@@ -475,6 +481,9 @@ func renderSummaryPage(m Model, width int, tier layoutTier) []string {
 		lines = append(lines,
 			fitToWidth(fmt.Sprintf("Recovered  %s of %s sectors", formatCount(m.Recovery.RecoveredSectors), formatCount(m.Recovery.TotalSectors)), width),
 		)
+		if m.Recovery.DeferredSectors > 0 {
+			lines = append(lines, fitToWidth(fmt.Sprintf("Deferred   %s sectors remain for a later pass", formatCount(m.Recovery.DeferredSectors)), width))
+		}
 		if tier != layoutCompact && m.Summary.Duration != "" {
 			lines = append(lines, fitToWidth("Duration   "+m.Summary.Duration, width))
 		}
@@ -502,6 +511,9 @@ func renderSummaryPage(m Model, width int, tier layoutTier) []string {
 }
 
 func renderDetailsPage(m Model, width int) []string {
+	if m.DetailsViewport.Width() > 1 && m.DetailsViewport.Height() > 1 {
+		return strings.Split(m.DetailsViewport.View(), "\n")
+	}
 	lines := make([]string, 0, len(detailsLinesForView(m)))
 	for _, line := range detailsLinesForView(m) {
 		lines = append(lines, wrapText(line, width)...)

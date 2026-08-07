@@ -1,5 +1,10 @@
 package app
 
+import (
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+)
+
 type Page uint8
 
 const (
@@ -212,9 +217,20 @@ type Model struct {
 	ActiveTargetRequest     int
 	ActiveResumeRequest     int
 	ActiveHistoryRequest    int
+	DirectoryInput          textinput.Model
+	FileNameInput           textinput.Model
+	DetailsViewport         viewport.Model
 }
 
 func NewModel() Model {
+	directoryInput := textinput.New()
+	directoryInput.Prompt = ""
+	directoryInput.CharLimit = 4096
+	directoryInput.SetValue(".")
+	fileNameInput := textinput.New()
+	fileNameInput.Prompt = ""
+	fileNameInput.CharLimit = 255
+	detailsViewport := viewport.New()
 	return Model{
 		Page: PageDiscover,
 		Setup: JobSetupModel{
@@ -255,5 +271,8 @@ func NewModel() Model {
 		},
 		NextRequestID:          2,
 		ActiveDiscoveryRequest: 1,
+		DirectoryInput:         directoryInput,
+		FileNameInput:          fileNameInput,
+		DetailsViewport:        detailsViewport,
 	}
 }
