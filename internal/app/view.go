@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/progress"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 
@@ -407,6 +408,9 @@ func renderReviewPage(m Model, width int, tier layoutTier) []string {
 
 func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 	progressBar := progressBarFor(m, tier)
+	if !m.Monochrome && (tier == layoutFull || tier == layoutMedium) {
+		progressBar = recoveryProgressView(m, width)
+	}
 	progress := "0%"
 	if m.Recovery.TotalSectors > 0 {
 		percent := (m.Recovery.RecoveredSectors * 100) / m.Recovery.TotalSectors
@@ -447,6 +451,19 @@ func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 		}
 	}
 	return lines
+}
+
+func recoveryProgressView(m Model, width int) string {
+	p := progress.New(progress.WithoutPercentage())
+	p.SetWidth(width)
+	percent := 0.0
+	if m.Recovery.TotalSectors > 0 {
+		percent = float64(m.Recovery.ScannedSectors) / float64(m.Recovery.TotalSectors)
+		if percent > 1 {
+			percent = 1
+		}
+	}
+	return p.ViewAs(percent)
 }
 
 func renderSummaryPage(m Model, width int, tier layoutTier) []string {
