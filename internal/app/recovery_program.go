@@ -23,7 +23,7 @@ func NewRecoveryProgramModel(runtime platform.Runtime) RecoveryProgramModel {
 }
 
 func (m RecoveryProgramModel) Init() tea.Cmd {
-	return m.ProgramModel.Init()
+	return tea.Batch(m.ProgramModel.Init(), m.LoadingSpinner.Tick)
 }
 
 func (m RecoveryProgramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

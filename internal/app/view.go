@@ -126,7 +126,7 @@ func pageTitle(m Model) string {
 func renderPageBody(m Model, width int, tier layoutTier) []string {
 	switch m.Page {
 	case PageDiscover:
-		return wrapText("Please wait while DiscRescue checks for usable optical drives.", width)
+		return wrapText(m.LoadingSpinner.View()+" Please wait while DiscRescue checks for usable optical drives.", width)
 	case PageNoDrives:
 		return renderNoDrivesPage(width)
 	case PageDiscoveryError:
@@ -169,6 +169,9 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 }
 
 func renderDeviceList(m Model, width int) []string {
+	if m.DriveList.Width() > 0 && len(m.DriveList.Items()) > 0 {
+		return strings.Split(m.DriveList.View(), "\n")
+	}
 	if len(m.Devices) == 0 {
 		return wrapText("No usable optical drives found.", width)
 	}
@@ -202,7 +205,7 @@ func renderDiscoveryErrorPage(m Model, width int) []string {
 }
 
 func renderInspectingMediaPage(m Model, width int) []string {
-	lines := wrapText("Inspecting the media in the selected drive.", width)
+	lines := wrapText(m.LoadingSpinner.View()+" Inspecting the media in the selected drive.", width)
 	if m.SelectedDrive.DisplayName != "" {
 		lines = append(lines, "")
 		lines = append(lines, labeledLines("Drive", m.SelectedDrive.DisplayName, width)...)
@@ -255,6 +258,9 @@ func renderPriorProcessing(m Model, width int, tier layoutTier) []string {
 }
 
 func renderActionList(m Model, width int, tier layoutTier) []string {
+	if m.ActionList.Width() > 0 {
+		return strings.Split(m.ActionList.View(), "\n")
+	}
 	actions := []string{
 		"Start a new recovery",
 		"Resume an unfinished recovery",
@@ -280,6 +286,9 @@ func renderActionList(m Model, width int, tier layoutTier) []string {
 }
 
 func renderResumeJobsPage(m Model, width int, tier layoutTier) []string {
+	if m.ResumeList.Width() > 0 && len(m.ResumeList.Items()) > 0 {
+		return strings.Split(m.ResumeList.View(), "\n")
+	}
 	if len(m.ResumeJobs) == 0 {
 		lines := wrapText("No resumable recoveries were found in the current output folder.", width)
 		lines = append(lines, "")
@@ -309,6 +318,9 @@ func renderResumeJobsPage(m Model, width int, tier layoutTier) []string {
 }
 
 func renderHistoryPage(m Model, width int, tier layoutTier) []string {
+	if m.HistoryList.Width() > 0 && len(m.HistoryList.Items()) > 0 {
+		return strings.Split(m.HistoryList.View(), "\n")
+	}
 	if len(m.HistoryItems) == 0 {
 		lines := wrapText("No processed media were found in the current output folder.", width)
 		lines = append(lines, "")
