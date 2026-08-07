@@ -38,13 +38,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if listHeight < 1 {
 			listHeight = 1
 		}
-		if listHeight > 12 {
-			listHeight = 12
+		if listHeight > 10 {
+			listHeight = 10
 		}
-		m.DriveList.SetSize(contentWidth(typed.Width), listHeight)
-		m.ActionList.SetSize(contentWidth(typed.Width), listHeight)
-		m.ResumeList.SetSize(contentWidth(typed.Width), listHeight)
-		m.HistoryList.SetSize(contentWidth(typed.Width), listHeight)
+		resizeCompactLists(contentWidth(typed.Width), listHeight, &m.DriveList, &m.ActionList, &m.ResumeList, &m.HistoryList)
 		return m, nil
 	case tea.KeyPressMsg:
 		if m.Page == PageChooseDrive && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
@@ -97,6 +94,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Devices = append([]DeviceSummary(nil), typed.Devices...)
 		m.DriveList.SetItems(driveItems(m.Devices))
+		resizeCompactLists(contentWidth(m.Width), maxInt(1, m.Height-11), &m.DriveList)
 		m.Cursor = 0
 		if len(m.Devices) == 0 {
 			m.Page = PageNoDrives
@@ -157,6 +155,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.PriorRecords = append([]PriorProcessingRecord(nil), typed.Records...)
 		m.ResumeJobs = append([]ResumableJobViewModel(nil), typed.Jobs...)
 		m.ResumeList.SetItems(resumeItems(m.ResumeJobs))
+		resizeCompactLists(contentWidth(m.Width), maxInt(1, m.Height-11), &m.ResumeList)
 		if typed.View.Kind == PriorProcessingStrongResumable && len(typed.Jobs) > 0 {
 			m.Page = PagePriorProcessing
 			m.Cursor = 0
@@ -177,6 +176,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.HistoryItems = append([]ProcessedMediaViewModel(nil), typed.Items...)
 		m.HistoryList.SetItems(historyItems(m.HistoryItems))
+		resizeCompactLists(contentWidth(m.Width), maxInt(1, m.Height-11), &m.HistoryList)
 		m.Page = PageHistory
 		m.Cursor = 0
 		if len(m.HistoryItems) == 0 {
@@ -907,8 +907,10 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 		if m.Setup.OutputEditing {
 			if m.Setup.ActiveOutputField == OutputFieldDirectory {
 				m.Cursor = 0
+				m.DirectoryInput.Focus()
 			} else {
 				m.Cursor = 1
+				m.FileNameInput.Focus()
 			}
 		}
 		return m, nil
@@ -948,17 +950,9 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 		if m.Setup.OutputEditing {
 			var cmd tea.Cmd
 			if m.Setup.ActiveOutputField == OutputFieldDirectory {
-				if msg.Text != "" {
-					m.DirectoryInput.SetValue(m.DirectoryInput.Value() + msg.Text)
-				} else {
-					m.DirectoryInput, cmd = m.DirectoryInput.Update(msg)
-				}
+				m.DirectoryInput, cmd = m.DirectoryInput.Update(msg)
 			} else {
-				if msg.Text != "" {
-					m.FileNameInput.SetValue(m.FileNameInput.Value() + msg.Text)
-				} else {
-					m.FileNameInput, cmd = m.FileNameInput.Update(msg)
-				}
+				m.FileNameInput, cmd = m.FileNameInput.Update(msg)
 			}
 			m.syncOutputValues()
 			clearResumeTargetState(&m.Setup)
