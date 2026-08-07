@@ -21,8 +21,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Width = typed.Width
 		m.Height = typed.Height
+		inputWidth := contentWidth(typed.Width) - 14
+		if inputWidth < 12 {
+			inputWidth = 12
+		}
+		m.DirectoryInput.SetWidth(inputWidth)
+		m.FileNameInput.SetWidth(inputWidth)
+		viewportHeight := typed.Height - 8
+		if viewportHeight < 1 {
+			viewportHeight = 1
+		}
+		m.DetailsViewport.SetWidth(contentWidth(typed.Width))
+		m.DetailsViewport.SetHeight(viewportHeight)
 		return m, nil
 	case tea.KeyPressMsg:
+		if m.Page == PageDetails && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
+			var cmd tea.Cmd
+			m.DetailsViewport.SetContent(strings.Join(detailsLinesForView(m), "\n"))
+			m.DetailsViewport, cmd = m.DetailsViewport.Update(typed)
+			return m, cmd
+		}
 		return m.handleKeyPress(typed)
 	case DevicesDiscoveredMsg:
 		if typed.RequestID != m.ActiveDiscoveryRequest {
@@ -67,6 +85,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.MediaRecoverabilityNote = typed.RecoverabilityNote
 		if typed.SuggestedOutputPath != "" {
 			applyOutputPath(&m.Setup, typed.SuggestedOutputPath)
+			m.syncOutputInputs()
 			m.Setup.DefaultPath = typed.SuggestedOutputPath
 		}
 		m.Page = PageChooseAction
@@ -521,12 +540,16 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		if m.Cursor == 0 {
 			m.Setup.ActiveOutputField = OutputFieldDirectory
 			m.Setup.OutputEditing = true
+			m.syncOutputInputs()
+			m.DirectoryInput.Focus()
 			m.Notice = &NoticeModel{Text: "Editing the output folder.", Severity: SeverityInfo}
 			return m, nil
 		}
 		if m.Cursor == 1 {
 			m.Setup.ActiveOutputField = OutputFieldFileName
 			m.Setup.OutputEditing = true
+			m.syncOutputInputs()
+			m.FileNameInput.Focus()
 			m.Notice = &NoticeModel{Text: "Editing the output file name.", Severity: SeverityInfo}
 			return m, nil
 		}
@@ -810,15 +833,30 @@ func buildProcessedMediaDetails(item ProcessedMediaViewModel) []string {
 }
 
 func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
+	if m.Setup.OutputEditing {
+		if (m.DirectoryInput.Value() == "" || m.DirectoryInput.Value() == ".") && m.Setup.OutputDirectory != "" && m.Setup.OutputDirectory != "." {
+			m.DirectoryInput.SetValue(m.Setup.OutputDirectory)
+		}
+		if m.FileNameInput.Value() == "" && m.Setup.OutputFileName != "" {
+			m.FileNameInput.SetValue(m.Setup.OutputFileName)
+		}
+		if m.Setup.ActiveOutputField == OutputFieldDirectory {
+			m.DirectoryInput.Focus()
+		} else {
+			m.FileNameInput.Focus()
+		}
+	}
 	switch {
 	case matchesKey(key, DefaultKeys().Back):
 		if m.Setup.OutputEditing {
 			m.Setup.OutputEditing = false
+			m.blurOutputInputs()
 			m.Notice = &NoticeModel{Text: "Stopped editing the output target.", Severity: SeverityInfo}
 			return m, nil
 		}
 		return m.handleBack()
 	case key == "tab":
+		m.blurOutputInputs()
 		if m.Setup.ActiveOutputField == OutputFieldDirectory {
 			m.Setup.ActiveOutputField = OutputFieldFileName
 		} else {
@@ -848,6 +886,7 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 		if !m.Setup.OutputEditing {
 			return m.handleSelect()
 		}
+		m.syncOutputValues()
 		m.Setup.OutputDirectory = strings.TrimSpace(m.Setup.OutputDirectory)
 		m.Setup.OutputFileName = strings.TrimSpace(m.Setup.OutputFileName)
 		syncOutputPath(&m.Setup)
@@ -860,24 +899,47 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 			return m, nil
 		}
 		m.Setup.OutputEditing = false
+		m.blurOutputInputs()
 		m.Notice = &NoticeModel{Text: "Finished editing the output target.", Severity: SeverityInfo}
 		return m, nil
-	case key == "backspace" || key == "ctrl+h":
-		if !m.Setup.OutputEditing {
-			return m, nil
-		}
-		trimLastOutputRune(&m.Setup)
-		syncOutputPath(&m.Setup)
-		clearResumeTargetState(&m.Setup)
-		return m, nil
 	default:
-		if m.Setup.OutputEditing && msg.Text != "" {
-			appendOutputText(&m.Setup, msg.Text)
-			syncOutputPath(&m.Setup)
+		if m.Setup.OutputEditing {
+			var cmd tea.Cmd
+			if m.Setup.ActiveOutputField == OutputFieldDirectory {
+				if msg.Text != "" {
+					m.DirectoryInput.SetValue(m.DirectoryInput.Value() + msg.Text)
+				} else {
+					m.DirectoryInput, cmd = m.DirectoryInput.Update(msg)
+				}
+			} else {
+				if msg.Text != "" {
+					m.FileNameInput.SetValue(m.FileNameInput.Value() + msg.Text)
+				} else {
+					m.FileNameInput, cmd = m.FileNameInput.Update(msg)
+				}
+			}
+			m.syncOutputValues()
 			clearResumeTargetState(&m.Setup)
+			return m, cmd
 		}
 		return m, nil
 	}
+}
+
+func (m *Model) syncOutputInputs() {
+	m.DirectoryInput.SetValue(m.Setup.OutputDirectory)
+	m.FileNameInput.SetValue(m.Setup.OutputFileName)
+}
+
+func (m *Model) syncOutputValues() {
+	m.Setup.OutputDirectory = m.DirectoryInput.Value()
+	m.Setup.OutputFileName = m.FileNameInput.Value()
+	syncOutputPath(&m.Setup)
+}
+
+func (m *Model) blurOutputInputs() {
+	m.DirectoryInput.Blur()
+	m.FileNameInput.Blur()
 }
 
 func applyOutputPath(setup *JobSetupModel, fullPath string) {

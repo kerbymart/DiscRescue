@@ -7,6 +7,7 @@ require charm.land/bubbletea/v2 v2.0.8
 require (
 	charm.land/bubbles/v2 v2.1.1 // indirect
 	charm.land/lipgloss/v2 v2.0.5 // indirect
+	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/harmonica v0.2.0 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260703014108-f5a850f9c2b7 // indirect
