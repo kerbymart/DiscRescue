@@ -2,6 +2,8 @@
 
 DiscRescue is a Go 1.25+ optical-disc recovery application with a Bubble Tea v2 terminal UI and a single `discrescue` executable. The current repository focuses on a simulator-first, Windows-validated startup workflow and Linux-first production device access.
 
+macOS optical-drive access uses the system `diskutil` command for discovery and media geometry, then opens the corresponding `/dev/rdiskN` device read-only for recovery. macOS may require additional permissions for raw-device access; DiscRescue reports that failure and does not unmount or eject media automatically. See [macOS development and hardware validation](docs/architecture/macos-development.md) for the manual USB-drive check.
+
 ## Requirements
 
 - Go 1.25 or newer
