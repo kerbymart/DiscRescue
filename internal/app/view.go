@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
 
 	"discrescue/internal/buildinfo"
 )
@@ -60,19 +61,7 @@ func (m Model) View() tea.View {
 
 func renderPage(m Model, tier layoutTier) string {
 	width := contentWidth(m.Width)
-	lines := []string{"DiscRescue", ""}
-	lines = append(lines, wrapText(pageTitle(m), width)...)
-	lines = append(lines, "")
-	lines = append(lines, renderPageBody(m, width, tier)...)
-
-	if showStatusLine(m.Page, tier) && m.Notice != nil && m.Notice.Text != "" {
-		lines = append(lines, "")
-		lines = append(lines, wrapText("Status: "+m.Notice.Text, width)...)
-	}
-
-	lines = append(lines, "")
-	lines = append(lines, renderFooter(m.Page, width, tier))
-	return strings.Join(lines, "\n") + "\n"
+	return renderShell(m, renderPageBody(m, width, tier), tier)
 }
 
 func usesAltScreen(page Page) bool {
@@ -557,8 +546,8 @@ func renderAboutPage(width int) []string {
 	lines := []string{
 		"DiscRescue is a guided optical-disc recovery tool.",
 		"",
-		"Version    " + buildinfo.Version,
-		"Commit     " + buildinfo.Commit,
+		"Version " + buildinfo.Version,
+		"Commit " + buildinfo.Commit,
 		"Build date " + buildinfo.BuildDate,
 	}
 
@@ -675,6 +664,7 @@ func wrapText(text string, width int) []string {
 	if text == "" {
 		return []string{""}
 	}
+	return strings.Split(lipgloss.Wrap(text, width, ""), "\n")
 
 	var lines []string
 	var current strings.Builder
