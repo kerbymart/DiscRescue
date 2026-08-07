@@ -401,47 +401,6 @@ func TestViewRecoveringShowsEstimatingTextWhenETANotReady(t *testing.T) {
 	}
 }
 
-func TestViewRecoveringUsesPassCoverageProgress(t *testing.T) {
-	model := NewModel()
-	model.Width = 80
-	model.Height = 24
-	model.Page = PageRecovering
-	model.Recovery = RecoveryViewModel{
-		Phase:              "Fast acquisition pass",
-		Status:             "Reading readable sectors and deferring damaged ranges.",
-		RecoveredSectors:   120,
-		TotalSectors:       400,
-		PassCoveredSectors: 300,
-		PassTargetSectors:  400,
-		Remaining:          "200.0 MiB of this pass remaining",
-	}
-
-	view := model.View().Content
-	if !strings.Contains(view, "75%") {
-		t.Fatalf("expected pass coverage percent, got %q", view)
-	}
-	if !strings.Contains(view, "Disc coverage this pass: 300 of 400 sectors") {
-		t.Fatalf("expected pass coverage summary, got %q", view)
-	}
-}
-
-func TestViewAdvancedShowsRecoveryModePolicy(t *testing.T) {
-	model := NewModel()
-	model.Width = 80
-	model.Height = 24
-	model.Page = PageAdvanced
-	model.Setup.MethodLabel = "Fast recovery"
-	model.Setup.MethodDetail = "Skip damaged ranges for now and stop after the fast pass."
-
-	view := model.View().Content
-	if !strings.Contains(view, "> Recovery mode: Fast recovery") {
-		t.Fatalf("expected recovery mode option, got %q", view)
-	}
-	if !strings.Contains(view, "Skip damaged ranges for now and stop after the fast pass.") {
-		t.Fatalf("expected recovery mode detail, got %q", view)
-	}
-}
-
 func TestViewPausingShowsPendingPauseLanguage(t *testing.T) {
 	model := NewModel()
 	model.Width = 80
@@ -524,36 +483,6 @@ func TestViewIncompleteSummaryAvoidsCleanSuccessTreatment(t *testing.T) {
 	}
 	if !strings.Contains(view, "Choose another drive") {
 		t.Fatalf("expected real follow-up action, got %q", view)
-	}
-}
-
-func TestViewDeferredSummaryOffersRetryChoice(t *testing.T) {
-	model := NewModel()
-	model.Width = 80
-	model.Height = 24
-	model.Page = PageSummary
-	model.Summary = JobSummary{
-		ImagePath:       "D:/Archives/archive-disc.iso",
-		MapPath:         "D:/Archives/archive-disc.drmap",
-		DeferredSectors: 64,
-	}
-	model.Recovery = RecoveryViewModel{
-		Status:           "Fast pass finished with deferred sectors",
-		OutputPath:       "D:/Archives/archive-disc.iso",
-		RecoveredSectors: 2295040,
-		TotalSectors:     2295104,
-		DeferredSectors:  64,
-	}
-
-	view := model.View().Content
-	if !strings.Contains(view, "64 sectors were deferred to a later retry pass.") {
-		t.Fatalf("expected deferred summary explanation, got %q", view)
-	}
-	if !strings.Contains(view, "> Retry deferred sectors") {
-		t.Fatalf("expected retry-first choice, got %q", view)
-	}
-	if !strings.Contains(view, "Finish for now") {
-		t.Fatalf("expected finish-later option, got %q", view)
 	}
 }
 

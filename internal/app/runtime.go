@@ -163,7 +163,6 @@ func (m ProgramModel) startRecoveryJob() tea.Msg {
 		OutputPath:        m.Setup.OutputPath,
 		LogicalSectorSize: m.MediaLogicalSectorSize,
 		CapacitySectors:   m.MediaCapacitySectors,
-		Policy:            selectedRecoveryPolicy(m.Setup.MethodLabel),
 	})
 	if err != nil {
 		return JobStartFailedMsg{Err: err}
@@ -183,16 +182,13 @@ func (m ProgramModel) startRecoveryJob() tea.Msg {
 		status = "Resuming from the saved recovery map."
 	}
 	return JobStartedMsg{
-		JobID:              jobID,
-		OutputPath:         m.Setup.OutputPath,
-		Phase:              firstNonEmpty(snapshot.Phase, phase),
-		Status:             firstNonEmpty(snapshot.Status, status),
-		TotalSectors:       m.MediaCapacitySectors,
-		RecoveredSectors:   snapshot.CopiedBytes / logicalSectorSize,
-		PassCoveredSectors: snapshot.PassCoveredSectors,
-		PassTargetSectors:  snapshot.PassTargetSectors,
-		DeferredSectors:    snapshot.DeferredSectors,
-		UnreadableSectors:  snapshot.UnreadableSectors,
+		JobID:             jobID,
+		OutputPath:        m.Setup.OutputPath,
+		Phase:             phase,
+		Status:            status,
+		TotalSectors:      m.MediaCapacitySectors,
+		RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
+		UnreadableSectors: snapshot.UnreadableSectors,
 	}
 }
 
@@ -269,7 +265,6 @@ func (m ProgramModel) findResumableJobs(basePath string) ([]ResumableJobViewMode
 			OutputPath:        outputPath,
 			MapPath:           status.MapPath,
 			RecoveredSectors:  status.RecoveredSectors,
-			DeferredSectors:   status.DeferredSectors,
 			UnreadableSectors: status.UnreadableSectors,
 			Detail:            status.Detail,
 		})
@@ -363,14 +358,11 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 					if m.state.pendingPause {
 						m.state.pendingPause = false
 						return JobPausedMsg{
-							OutputPath:         m.Setup.OutputPath,
-							MapPath:            snapshot.MapPath,
-							RecoveredSectors:   snapshot.CopiedBytes / logicalSectorSize,
-							TotalSectors:       totalSectors,
-							PassCoveredSectors: snapshot.PassCoveredSectors,
-							PassTargetSectors:  snapshot.PassTargetSectors,
-							DeferredSectors:    snapshot.DeferredSectors,
-							UnreadableSectors:  snapshot.UnreadableSectors,
+							OutputPath:        m.Setup.OutputPath,
+							MapPath:           snapshot.MapPath,
+							RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
+							TotalSectors:      totalSectors,
+							UnreadableSectors: snapshot.UnreadableSectors,
 						}
 					}
 					summary := JobSummary{
@@ -378,7 +370,6 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						MapPath:           snapshot.MapPath,
 						RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
 						TotalSectors:      totalSectors,
-						DeferredSectors:   snapshot.DeferredSectors,
 						UnresolvedSectors: snapshot.UnreadableSectors,
 						Duration:          time.Since(snapshot.StartedAt).Round(time.Second).String(),
 					}
@@ -389,9 +380,6 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						summary.Outcome = "Recovery failed"
 						summary.NextAction = "Fix the reported problem or choose a different output target."
 						return JobStoppedMsg{Summary: summary, Err: errors.New(snapshot.ErrText)}
-					} else if snapshot.DeferredSectors > 0 {
-						summary.Outcome = "Fast pass finished with deferred sectors"
-						summary.NextAction = "Retry the deferred sectors now, or stop and resume them later."
 					} else if snapshot.UnreadableSectors > 0 {
 						summary.Outcome = "Recovery finished with unreadable sectors"
 						summary.NextAction = "Review unreadable sectors before deciding whether to retry."
@@ -401,23 +389,26 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 					}
 					return JobStoppedMsg{Summary: summary}
 				}
+				phase := "Reading optical sectors"
+				status := "Reading sectors from the selected optical drive."
+				if snapshot.Resumed {
+					phase = "Resuming optical recovery"
+					status = "Continuing from the saved recovery map."
+				}
 				return ProgressMsg{
 					Snapshot: ProgressSnapshot{
-						Phase:              firstNonEmpty(snapshot.Phase, "Reading optical sectors"),
-						RecoveredSectors:   snapshot.CopiedBytes / logicalSectorSize,
-						TotalSectors:       totalSectors,
-						PassCoveredSectors: snapshot.PassCoveredSectors,
-						PassTargetSectors:  snapshot.PassTargetSectors,
-						DeferredSectors:    snapshot.DeferredSectors,
-						UnreadableSectors:  snapshot.UnreadableSectors,
-						Status:             firstNonEmpty(snapshot.Status, "Reading sectors from the selected optical drive."),
-						Elapsed:            elapsedLabel(snapshot.StartedAt),
-						Remaining:          passRemainingLabel(snapshot.PassCoveredSectors, snapshot.PassTargetSectors, logicalSectorSize),
-						ETA:                estimatePassETA(snapshot.PassStartedAt, snapshot.PassCoveredSectors, snapshot.PassTargetSectors),
-						Throughput:         throughputLabel(snapshot.StartedAt, snapshot.CopiedBytes),
-						LastIssue:          append([]string(nil), snapshot.LastIssue...),
-						OutputPath:         m.Setup.OutputPath,
-						PausePending:       m.state.pendingPause,
+						Phase:             phase,
+						RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
+						TotalSectors:      totalSectors,
+						UnreadableSectors: snapshot.UnreadableSectors,
+						Status:            status,
+						Elapsed:           elapsedLabel(snapshot.StartedAt),
+						Remaining:         humanBytes(snapshot.TotalBytes-snapshot.CopiedBytes) + " remaining",
+						ETA:               estimateETA(snapshot.StartedAt, snapshot.CopiedBytes, snapshot.TotalBytes),
+						Throughput:        throughputLabel(snapshot.StartedAt, snapshot.CopiedBytes),
+						LastIssue:         append([]string(nil), snapshot.LastIssue...),
+						OutputPath:        m.Setup.OutputPath,
+						PausePending:      m.state.pendingPause,
 					},
 				}
 			})
@@ -457,37 +448,6 @@ func estimateETA(startedAt time.Time, copiedBytes, totalBytes uint64) string {
 		return "less than 1 second left"
 	}
 	return "about " + (time.Duration(remainingSeconds) * time.Second).Round(time.Second).String() + " left"
-}
-
-func estimatePassETA(startedAt time.Time, coveredSectors, targetSectors uint64) string {
-	elapsed := time.Since(startedAt)
-	if coveredSectors == 0 || targetSectors <= coveredSectors || elapsed < 2*time.Second {
-		return ""
-	}
-	sectorsPerSecond := float64(coveredSectors) / elapsed.Seconds()
-	if sectorsPerSecond <= 0 {
-		return ""
-	}
-	remainingSeconds := float64(targetSectors-coveredSectors) / sectorsPerSecond
-	if remainingSeconds < 1 {
-		return "less than 1 second left"
-	}
-	return "about " + (time.Duration(remainingSeconds) * time.Second).Round(time.Second).String() + " left"
-}
-
-func passRemainingLabel(coveredSectors, targetSectors, logicalSectorSize uint64) string {
-	if targetSectors == 0 || coveredSectors >= targetSectors {
-		return ""
-	}
-	remainingBytes := (targetSectors - coveredSectors) * logicalSectorSize
-	return humanBytes(remainingBytes) + " of this pass remaining"
-}
-
-func selectedRecoveryPolicy(label string) platform.RecoveryPolicy {
-	if label == "Continue through retry pass" {
-		return platform.RecoveryPolicyContinueRetry
-	}
-	return platform.RecoveryPolicyFast
 }
 
 func humanBytes(value uint64) string {

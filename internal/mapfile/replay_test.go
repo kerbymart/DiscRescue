@@ -116,31 +116,33 @@ func TestReplayJournalAppliesExtentRecord(t *testing.T) {
 	}
 }
 
-func TestReplayJournalReplacesOverlappingExtentRecord(t *testing.T) {
-	base := Checkpoint{
-		LastSequence: 1,
-		Extents: []Extent{
-			{StartLBA: 0, Sectors: 8, State: SectorStateSkipped, Confidence: ConfidenceNone},
-		},
-	}
-	extent := Extent{StartLBA: 3, Sectors: 2, State: SectorStateMissing, Confidence: ConfidenceNone}
-	journal, err := AppendJournalRecord(nil, JournalRecord{
-		Type:     RecordExtentStateChanged,
-		Sequence: 2,
-		Extent:   &extent,
-	})
-	if err != nil {
-		t.Fatalf("append journal record: %v", err)
+func TestReplayJournalAppliesStateRefinement(t *testing.T) {
+	unknown := Extent{StartLBA: 64, Sectors: 16, State: SectorStateUnknown, Confidence: ConfidenceNone, Attempts: 1}
+	queued := Extent{StartLBA: 64, Sectors: 16, State: SectorStateQueued, Confidence: ConfidenceNone, Attempts: 2}
+	recovered := Extent{StartLBA: 64, Sectors: 16, State: SectorStateReadUnverified, Confidence: ConfidenceSingleRead, Attempts: 2}
+
+	journal := []byte{}
+	var err error
+	for sequence, extent := range []Extent{unknown, queued, recovered} {
+		candidate := extent
+		journal, err = AppendJournalRecord(journal, JournalRecord{
+			Type:     RecordExtentStateChanged,
+			Sequence: uint64(sequence + 1),
+			Extent:   &candidate,
+		})
+		if err != nil {
+			t.Fatalf("append journal record %d: %v", sequence+1, err)
+		}
 	}
 
-	checkpoint, err := ReplayJournal(base, journal)
+	checkpoint, err := ReplayJournal(Checkpoint{}, journal)
 	if err != nil {
 		t.Fatalf("replay journal: %v", err)
 	}
-	if len(checkpoint.Extents) != 3 {
-		t.Fatalf("expected replacement extents, got %+v", checkpoint.Extents)
+	if checkpoint.LastSequence != 3 || len(checkpoint.Extents) != 1 {
+		t.Fatalf("unexpected replayed checkpoint: %+v", checkpoint)
 	}
-	if checkpoint.Extents[1].StartLBA != 3 || checkpoint.Extents[1].Sectors != 2 || checkpoint.Extents[1].State != SectorStateMissing {
-		t.Fatalf("unexpected replacement extent: %+v", checkpoint.Extents[1])
+	if checkpoint.Extents[0].State != SectorStateReadUnverified || checkpoint.Extents[0].Attempts != 2 {
+		t.Fatalf("expected refined recovered extent, got %+v", checkpoint.Extents[0])
 	}
 }

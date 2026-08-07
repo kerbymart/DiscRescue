@@ -57,6 +57,9 @@ func ValidateTransition(currentState SectorState, currentConfidence Confidence, 
 	if nextState == currentState && nextConfidence < currentConfidence {
 		return fmt.Errorf("validate transition: cannot reduce confidence in-place from %s to %s", currentConfidence, nextConfidence)
 	}
+	if stateClaimsImageData(currentState) && !stateClaimsImageData(nextState) {
+		return fmt.Errorf("validate transition: cannot replace recovered data state %s with non-data state %s", currentState, nextState)
+	}
 
 	switch currentState {
 	case SectorStateVerified:
@@ -74,4 +77,17 @@ func ValidateTransition(currentState SectorState, currentConfidence Confidence, 
 	}
 
 	return nil
+}
+
+func stateClaimsImageData(state SectorState) bool {
+	switch state {
+	case SectorStateReadUnverified,
+		SectorStateVerified,
+		SectorStateChecksumError,
+		SectorStateConflicting,
+		SectorStateReconstructed:
+		return true
+	default:
+		return false
+	}
 }

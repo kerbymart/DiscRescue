@@ -56,7 +56,6 @@ type JobSetupModel struct {
 	OutputFormat      string
 	FreeSpace         string
 	MethodLabel       string
-	MethodDetail      string
 	CopyLabel         string
 	ResumeReady       bool
 	ResumeMapPath     string
@@ -111,25 +110,25 @@ type PriorProcessingViewModel struct {
 	CopyLabel         string
 	LastSaved         string
 	Recovered         string
+	DeferredSectors   string
 	UnreadableSectors string
 }
 
 type RecoveryViewModel struct {
-	Phase              string
-	RecoveredSectors   uint64
-	TotalSectors       uint64
-	PassCoveredSectors uint64
-	PassTargetSectors  uint64
-	DeferredSectors    uint64
-	UnreadableSectors  uint64
-	Status             string
-	OutputPath         string
-	Elapsed            string
-	Remaining          string
-	ETA                string
-	Throughput         string
-	LastIssue          []string
-	PausePending       bool
+	Phase             string
+	ScannedSectors    uint64
+	RecoveredSectors  uint64
+	DeferredSectors   uint64
+	TotalSectors      uint64
+	UnreadableSectors uint64
+	Status            string
+	OutputPath        string
+	Elapsed           string
+	Remaining         string
+	ETA               string
+	Throughput        string
+	LastIssue         []string
+	PausePending      bool
 }
 
 type DetailsViewModel struct {
@@ -149,21 +148,20 @@ type NoticeModel struct {
 }
 
 type ProgressSnapshot struct {
-	Phase              string
-	RecoveredSectors   uint64
-	TotalSectors       uint64
-	PassCoveredSectors uint64
-	PassTargetSectors  uint64
-	DeferredSectors    uint64
-	UnreadableSectors  uint64
-	Status             string
-	Elapsed            string
-	Remaining          string
-	ETA                string
-	Throughput         string
-	LastIssue          []string
-	OutputPath         string
-	PausePending       bool
+	Phase             string
+	ScannedSectors    uint64
+	RecoveredSectors  uint64
+	DeferredSectors   uint64
+	TotalSectors      uint64
+	UnreadableSectors uint64
+	Status            string
+	Elapsed           string
+	Remaining         string
+	ETA               string
+	Throughput        string
+	LastIssue         []string
+	OutputPath        string
+	PausePending      bool
 }
 
 type JobSummary struct {
@@ -171,8 +169,8 @@ type JobSummary struct {
 	ImagePath         string
 	MapPath           string
 	NextAction        string
-	DeferredSectors   uint64
 	UnresolvedSectors uint64
+	DeferredSectors   uint64
 	RecoveredSectors  uint64
 	TotalSectors      uint64
 	Duration          string
@@ -228,8 +226,7 @@ func NewModel() Model {
 			DefaultPath:       "Not chosen yet",
 			OutputFormat:      "ISO",
 			FreeSpace:         "Unknown until an output location is selected",
-			MethodLabel:       "Fast recovery",
-			MethodDetail:      "Skip damaged ranges for now and stop after the fast pass.",
+			MethodLabel:       "Balanced recovery",
 			CopyLabel:         "Not set (optional)",
 		},
 		Identity: ContentIdentityViewModel{

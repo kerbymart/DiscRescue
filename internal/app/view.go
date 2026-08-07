@@ -170,7 +170,7 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 	case PageDetails:
 		return renderDetailsPage(m, width)
 	case PageAdvanced:
-		return renderAdvancedPage(m, width)
+		return wrapText("Advanced settings stay separate from the normal setup flow.", width)
 	case PageAbout:
 		return renderAboutPage(width)
 	default:
@@ -373,7 +373,6 @@ func renderOutputPage(m Model, width int, tier layoutTier) []string {
 		lines = append(lines, labeledLines("Suggested", m.Setup.DefaultPath, width)...)
 	}
 	lines = append(lines, labeledLines("Format", m.Setup.OutputFormat, width)...)
-	lines = append(lines, labeledLines("Recovery mode", firstNonEmpty(m.Setup.MethodLabel, "Fast recovery"), width)...)
 	if m.Setup.ResumeReady {
 		lines = append(lines, labeledLines("Resume", firstNonEmpty(m.Setup.ResumeDetail, "This target can resume a previous recovery."), width)...)
 	}
@@ -394,12 +393,8 @@ func renderReviewPage(m Model, width int, tier layoutTier) []string {
 	lines = append(lines, labeledLines("Drive", selectedDriveLabel(m), width)...)
 	lines = append(lines, labeledLines("Disc", discSummary(m), width)...)
 	lines = append(lines, labeledLines("Output", m.Setup.OutputPath, width)...)
-	lines = append(lines, labeledLines("Recovery mode", firstNonEmpty(m.Setup.MethodLabel, "Fast recovery"), width)...)
 	if m.Setup.ResumeReady {
 		lines = append(lines, labeledLines("Map", m.Setup.ResumeMapPath, width)...)
-	}
-	if m.Setup.MethodDetail != "" {
-		lines = append(lines, labeledLines("Policy", m.Setup.MethodDetail, width)...)
 	}
 	if m.Setup.ResumeDetail != "" {
 		lines = append(lines, "")
@@ -424,9 +419,8 @@ func renderReviewPage(m Model, width int, tier layoutTier) []string {
 func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 	progressBar := progressBarFor(m, tier)
 	progress := "0%"
-	passCovered, passTarget := recoveryPassProgress(m)
-	if passTarget > 0 {
-		percent := (passCovered * 100) / passTarget
+	if m.Recovery.TotalSectors > 0 {
+		percent := (m.Recovery.RecoveredSectors * 100) / m.Recovery.TotalSectors
 		progress = fmt.Sprintf("%d%%", percent)
 	}
 	lines := []string{
@@ -438,9 +432,6 @@ func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 	}
 	if m.Recovery.Status != "" {
 		lines = append(lines, wrapText(m.Recovery.Status, width)...)
-	}
-	if coverage := recoveryCoverageSummary(m); coverage != "" {
-		lines = append(lines, wrapText(coverage, width)...)
 	}
 	if tier == layoutCompact {
 		if summary := recoveryTimeSummary(m, tier); summary != "" {
@@ -459,7 +450,6 @@ func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 	}
 	lines = append(lines, "")
 	lines = append(lines, fitToWidth(fmt.Sprintf("Recovered     %s sectors", formatCount(m.Recovery.RecoveredSectors)), width))
-	lines = append(lines, fitToWidth(fmt.Sprintf("Deferred      %s sectors", formatCount(m.Recovery.DeferredSectors)), width))
 	lines = append(lines, fitToWidth(fmt.Sprintf("Unreadable    %s sectors", formatCount(m.Recovery.UnreadableSectors)), width))
 	if tier != layoutCompact && len(m.Recovery.LastIssue) > 0 {
 		lines = append(lines, "")
@@ -472,17 +462,7 @@ func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 
 func renderSummaryPage(m Model, width int, tier layoutTier) []string {
 	lines := []string{fitToWidth(m.Recovery.Status, width), ""}
-	if m.Recovery.DeferredSectors > 0 {
-		lines = append(lines,
-			fitToWidth(fmt.Sprintf("%s sectors were deferred to a later retry pass.", formatCount(m.Recovery.DeferredSectors)), width),
-			fitToWidth("The image and map are safe to finish now or retry later.", width),
-			"",
-		)
-		lines = append(lines, labeledLines("Image", firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width)...)
-		if tier != layoutCompact {
-			lines = append(lines, labeledLines("Map", firstNonEmpty(m.Summary.MapPath, replaceExtension(m.Recovery.OutputPath, ".drmap")), width)...)
-		}
-	} else if m.Recovery.UnreadableSectors == 0 {
+	if m.Recovery.UnreadableSectors == 0 {
 		lines = append(lines,
 			labeledLines("Image", firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width)...,
 		)
@@ -587,28 +567,6 @@ func renderAboutPage(width int) []string {
 		out = append(out, wrapText(line, width)...)
 	}
 	return out
-}
-
-func renderAdvancedPage(m Model, width int) []string {
-	lines := wrapText("Choose how DiscRescue should behave after the fast pass reaches damaged ranges.", width)
-	lines = append(lines, "")
-
-	options := []string{
-		"Recovery mode: " + firstNonEmpty(m.Setup.MethodLabel, "Fast recovery"),
-		"Back",
-	}
-	for i, option := range options {
-		prefix := "  "
-		if i == m.Cursor {
-			prefix = "> "
-		}
-		lines = append(lines, wrapText(prefix+option, width)...)
-	}
-	if m.Setup.MethodDetail != "" {
-		lines = append(lines, "")
-		lines = append(lines, wrapText(m.Setup.MethodDetail, width)...)
-	}
-	return lines
 }
 
 func selectedDriveLabel(m Model) string {
@@ -807,13 +765,6 @@ func fitToWidth(text string, width int) string {
 }
 
 func summaryOptions(m Model) []string {
-	if m.Recovery.DeferredSectors > 0 {
-		return []string{
-			"Retry deferred sectors",
-			"Finish for now",
-			"View details",
-		}
-	}
 	return []string{
 		"Exit",
 		"Choose another drive",
@@ -854,20 +805,19 @@ func progressBarFor(m Model, tier layoutTier) string {
 		width = 8
 	}
 
-	covered, total := recoveryPassProgress(m)
-	if total == 0 {
+	if m.Recovery.TotalSectors == 0 {
 		return "[" + strings.Repeat(".", width) + "]"
 	}
 
 	if m.Monochrome || tier == layoutCompact {
-		filled := int((covered * uint64(width)) / total)
+		filled := int((m.Recovery.RecoveredSectors * uint64(width)) / m.Recovery.TotalSectors)
 		if filled > width {
 			filled = width
 		}
 		return "[" + strings.Repeat("=", filled) + strings.Repeat(".", width-filled) + "]"
 	}
 
-	return renderUnicodeProgressBar(width, covered, total)
+	return renderUnicodeProgressBar(width, m.Recovery.RecoveredSectors, m.Recovery.TotalSectors)
 }
 
 func renderUnicodeProgressBar(width int, recovered, total uint64) string {
@@ -983,21 +933,6 @@ func recoveryTimeSummary(m Model, tier layoutTier) string {
 		return remaining
 	}
 	return remaining + " • " + eta
-}
-
-func recoveryPassProgress(m Model) (uint64, uint64) {
-	if m.Recovery.PassTargetSectors > 0 {
-		return m.Recovery.PassCoveredSectors, m.Recovery.PassTargetSectors
-	}
-	return m.Recovery.RecoveredSectors, m.Recovery.TotalSectors
-}
-
-func recoveryCoverageSummary(m Model) string {
-	covered, total := recoveryPassProgress(m)
-	if total == 0 {
-		return ""
-	}
-	return fmt.Sprintf("Disc coverage this pass: %s of %s sectors", formatCount(covered), formatCount(total))
 }
 
 func detailsLinesForView(m Model) []string {

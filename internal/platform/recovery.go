@@ -7,15 +7,7 @@ type RecoveryInput struct {
 	OutputPath        string
 	LogicalSectorSize uint32
 	CapacitySectors   uint64
-	Policy            RecoveryPolicy
 }
-
-type RecoveryPolicy string
-
-const (
-	RecoveryPolicyFast          RecoveryPolicy = "fast"
-	RecoveryPolicyContinueRetry RecoveryPolicy = "continue_retry"
-)
 
 type RecoveryTargetStatus struct {
 	OutputPath        string
@@ -32,22 +24,19 @@ type RecoveryTargetStatus struct {
 }
 
 type RecoverySnapshot struct {
-	StartedAt          time.Time
-	PassStartedAt      time.Time
-	TotalBytes         uint64
-	CopiedBytes        uint64
-	DeferredSectors    uint64
-	UnreadableSectors  uint64
-	PassCoveredSectors uint64
-	PassTargetSectors  uint64
-	MapPath            string
-	Resumed            bool
-	Phase              string
-	Status             string
-	LastIssue          []string
-	Done               bool
-	Canceled           bool
-	ErrText            string
+	StartedAt         time.Time
+	TotalBytes        uint64
+	CopiedBytes       uint64
+	ScannedSectors    uint64
+	DeferredSectors   uint64
+	UnreadableSectors uint64
+	Pass              string
+	MapPath           string
+	Resumed           bool
+	LastIssue         []string
+	Done              bool
+	Canceled          bool
+	ErrText           string
 }
 
 type RecoveryJob interface {
