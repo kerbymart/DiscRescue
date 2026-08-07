@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,23 @@ import (
 type stubOptical struct {
 	drives []platform.OpticalDrive
 	err    error
+}
+
+type synchronizedBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.Write(p)
+}
+
+func (b *synchronizedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.String()
 }
 
 func (s stubOptical) DiscoverOpticalDrives() ([]platform.OpticalDrive, error) {
@@ -57,7 +75,7 @@ func TestProgramModelStartupWorkflowLeavesDiscoveryAndSelectsDrive(t *testing.T)
 	}
 
 	inputReader, inputWriter := io.Pipe()
-	var output bytes.Buffer
+	var output synchronizedBuffer
 
 	program := tea.NewProgram(
 		NewProgramModel(runtime),
