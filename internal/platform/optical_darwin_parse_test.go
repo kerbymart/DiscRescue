@@ -32,11 +32,18 @@ func TestParseDarwinDiskutilList(t *testing.T) {
 }
 
 func TestParseDarwinDiskutilInfo(t *testing.T) {
-	got, err := parseDarwinDiskutilInfo("Device Node: /dev/disk2\nMedia Name: CD-ROM\nFile System Personality: ISO 9660\nVolume Name: SAMPLE\nDevice Block Size: 2048 Bytes\nDisk Size: 700.0 MB (734003200 Bytes)\n")
+	got, err := parseDarwinDiskutilInfo("Device Node: /dev/disk2\nOptical Media: Yes\nMedia Name: CD-ROM\nFile System Personality: ISO 9660\nVolume Name: SAMPLE\nDevice Block Size: 2048 Bytes\nDisk Size: 700.0 MB (734003200 Bytes)\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DevicePath != "/dev/disk2" || got.LogicalSectorSize != 2048 || got.CapacityBytes != 734003200 || got.VolumeName != "SAMPLE" {
+	if got.DevicePath != "/dev/disk2" || !got.OpticalMedia || got.LogicalSectorSize != 2048 || got.CapacityBytes != 734003200 || got.VolumeName != "SAMPLE" {
 		t.Fatalf("unexpected info: %+v", got)
+	}
+}
+
+func TestDarwinDriveDisplayNameUsesLabelAndTechnicalPath(t *testing.T) {
+	got := darwinDriveDisplayName(darwinDiskInfo{VolumeName: "ARCHIVE"}, "/dev/disk4")
+	if got != "ARCHIVE (/dev/disk4)" {
+		t.Fatalf("unexpected display name: %q", got)
 	}
 }
