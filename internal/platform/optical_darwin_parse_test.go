@@ -41,6 +41,16 @@ func TestParseDarwinDiskutilInfo(t *testing.T) {
 	}
 }
 
+func TestParseDarwinDiskutilInfoRecognizesOpticalMediaType(t *testing.T) {
+	got, err := parseDarwinDiskutilInfo("Device Node: /dev/disk7\nDevice / Media Name: USB DVD Writer\nVolume Name: TEST-VOLUME\nFile System Personality: ISO Joliet\nDisk Size: 4.6 GB (4649582592 Bytes)\nDevice Block Size: 2048 Bytes\nOptical Drive Type: CD-ROM, DVD-ROM\nOptical Media Type: DVD-R\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.OpticalMedia || got.VolumeName != "TEST-VOLUME" || got.CapacityBytes != 4649582592 {
+		t.Fatalf("unexpected optical media info: %+v", got)
+	}
+}
+
 func TestDarwinDriveDisplayNameUsesLabelAndTechnicalPath(t *testing.T) {
 	got := darwinDriveDisplayName(darwinDiskInfo{VolumeName: "ARCHIVE"}, "/dev/disk4")
 	if got != "ARCHIVE (/dev/disk4)" {
