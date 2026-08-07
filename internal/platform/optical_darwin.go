@@ -32,7 +32,21 @@ func discoverHostOpticalDrives() ([]OpticalDrive, error) {
 	if err != nil {
 		return nil, fmt.Errorf("discover macOS optical drives: %w", err)
 	}
-	return parseDarwinDiskutilList(string(output)), nil
+	candidates := parseDarwinDiskutilList(string(output))
+	drives := make([]OpticalDrive, 0, len(candidates))
+	for _, candidate := range candidates {
+		infoOutput, infoErr := runDarwinDiskutil(context.Background(), "info", strings.TrimPrefix(candidate.Path, "/dev/"))
+		if infoErr != nil {
+			continue
+		}
+		info, infoErr := parseDarwinDiskutilInfo(string(infoOutput))
+		if infoErr != nil || !info.OpticalMedia {
+			continue
+		}
+		candidate.DisplayName = darwinDriveDisplayName(info, candidate.Path)
+		drives = append(drives, candidate)
+	}
+	return drives, nil
 }
 
 func identifyHostOpticalMedia(path string) (OpticalMedia, error) {

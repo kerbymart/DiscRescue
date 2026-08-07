@@ -51,6 +51,7 @@ func parseDarwinDiskutilList(text string) []OpticalDrive {
 type darwinDiskInfo struct {
 	DevicePath        string
 	MediaName         string
+	OpticalMedia      bool
 	FileSystem        string
 	VolumeName        string
 	LogicalSectorSize uint32
@@ -70,6 +71,8 @@ func parseDarwinDiskutilInfo(text string) (darwinDiskInfo, error) {
 			info.DevicePath = value
 		case "Media Name":
 			info.MediaName = value
+		case "Optical Media":
+			info.OpticalMedia = strings.EqualFold(value, "Yes")
 		case "File System Personality":
 			info.FileSystem = value
 		case "Volume Name":
@@ -94,6 +97,17 @@ func parseDarwinDiskutilInfo(text string) (darwinDiskInfo, error) {
 		return darwinDiskInfo{}, fmt.Errorf("diskutil did not report usable media geometry")
 	}
 	return info, nil
+}
+
+func darwinDriveDisplayName(info darwinDiskInfo, path string) string {
+	label := strings.TrimSpace(info.VolumeName)
+	if label == "" {
+		label = strings.TrimSpace(info.MediaName)
+	}
+	if label == "" {
+		label = "Optical media"
+	}
+	return fmt.Sprintf("%s (%s)", label, path)
 }
 
 func firstDecimal(text string) (uint64, bool) {
