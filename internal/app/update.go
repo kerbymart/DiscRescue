@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
 	"discrescue/internal/platform"
@@ -21,9 +22,66 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Width = typed.Width
 		m.Height = typed.Height
+		componentWidth := interactiveWidth(typed.Width)
+		inputWidth := componentWidth - 4
+		if inputWidth < 12 {
+			inputWidth = 12
+		}
+		m.DirectoryInput.SetWidth(inputWidth)
+		m.FileNameInput.SetWidth(inputWidth)
+		viewportHeight := layoutFor(typed.Width, typed.Height).Height - 4
+		if viewportHeight < 1 {
+			viewportHeight = 1
+		}
+		m.DetailsViewport.SetWidth(componentWidth)
+		m.DetailsViewport.SetHeight(viewportHeight)
+		listHeight := viewportHeight - 3
+		if listHeight < 1 {
+			listHeight = 1
+		}
+		if listHeight > 12 {
+			listHeight = 12
+		}
+		resizeCompactLists(componentWidth, listHeight, &m.DriveList, &m.ActionList, &m.ResumeList, &m.HistoryList)
 		return m, nil
 	case tea.KeyPressMsg:
+		if m.Page == PageChooseDrive && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
+			var cmd tea.Cmd
+			m.DriveList, cmd = updateCompactList(m.DriveList, typed)
+			m.Cursor = m.DriveList.Index()
+			return m, cmd
+		}
+		if m.Page == PageChooseAction && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
+			var cmd tea.Cmd
+			m.ActionList, cmd = updateCompactList(m.ActionList, typed)
+			m.Cursor = m.ActionList.Index()
+			return m, cmd
+		}
+		if (m.Page == PageResumeJobs || m.Page == PageHistory) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
+			var cmd tea.Cmd
+			if m.Page == PageResumeJobs {
+				m.ResumeList, cmd = updateCompactList(m.ResumeList, typed)
+				m.Cursor = m.ResumeList.Index()
+			} else {
+				m.HistoryList, cmd = updateCompactList(m.HistoryList, typed)
+				m.Cursor = m.HistoryList.Index()
+			}
+			return m, cmd
+		}
+		if m.Page == PageDetails && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
+			var cmd tea.Cmd
+			m.DetailsViewport.SetContent(strings.Join(detailsLinesForView(m), "\n"))
+			m.DetailsViewport, cmd = m.DetailsViewport.Update(typed)
+			return m, cmd
+		}
 		return m.handleKeyPress(typed)
+	case spinner.TickMsg:
+		if !isLoadingPage(m.Page) {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.LoadingSpinner, cmd = m.LoadingSpinner.Update(typed)
+		return m, cmd
 	case DevicesDiscoveredMsg:
 		if typed.RequestID != m.ActiveDiscoveryRequest {
 			return m, nil
@@ -39,6 +97,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.Devices = append([]DeviceSummary(nil), typed.Devices...)
+		m.DriveList.SetItems(driveItems(m.Devices))
+		resizeCompactLists(interactiveWidth(m.Width), maxInt(1, m.Height-11), &m.DriveList)
 		m.Cursor = 0
 		if len(m.Devices) == 0 {
 			m.Page = PageNoDrives
@@ -67,6 +127,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.MediaRecoverabilityNote = typed.RecoverabilityNote
 		if typed.SuggestedOutputPath != "" {
 			applyOutputPath(&m.Setup, typed.SuggestedOutputPath)
+			m.syncOutputInputs()
 			m.Setup.DefaultPath = typed.SuggestedOutputPath
 		}
 		m.Page = PageChooseAction
@@ -97,6 +158,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.PriorRecords = append([]PriorProcessingRecord(nil), typed.Records...)
 		m.ResumeJobs = append([]ResumableJobViewModel(nil), typed.Jobs...)
+		m.ResumeList.SetItems(resumeItems(m.ResumeJobs))
+		resizeCompactLists(interactiveWidth(m.Width), maxInt(1, m.Height-11), &m.ResumeList)
 		if typed.View.Kind == PriorProcessingStrongResumable && len(typed.Jobs) > 0 {
 			m.Page = PagePriorProcessing
 			m.Cursor = 0
@@ -116,6 +179,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.HistoryItems = append([]ProcessedMediaViewModel(nil), typed.Items...)
+		m.HistoryList.SetItems(historyItems(m.HistoryItems))
+		resizeCompactLists(interactiveWidth(m.Width), maxInt(1, m.Height-11), &m.HistoryList)
 		m.Page = PageHistory
 		m.Cursor = 0
 		if len(m.HistoryItems) == 0 {
@@ -282,6 +347,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func isLoadingPage(page Page) bool {
+	switch page {
+	case PageDiscover, PageInspectingMedia, PagePausing:
+		return true
+	default:
+		return false
+	}
+}
+
 func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := strings.ToLower(msg.String())
 
@@ -341,6 +415,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.Page == PageRecovering || m.Page == PagePausing || m.Page == PagePaused || m.Page == PageSummary {
 			m.PreviousPage = m.Page
 			m.Page = PageDetails
+			m.syncDetailsViewport()
 		}
 		return m, nil
 	case matchesKey(key, DefaultKeys().Advanced):
@@ -521,12 +596,16 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		if m.Cursor == 0 {
 			m.Setup.ActiveOutputField = OutputFieldDirectory
 			m.Setup.OutputEditing = true
+			m.syncOutputInputs()
+			m.DirectoryInput.Focus()
 			m.Notice = &NoticeModel{Text: "Editing the output folder.", Severity: SeverityInfo}
 			return m, nil
 		}
 		if m.Cursor == 1 {
 			m.Setup.ActiveOutputField = OutputFieldFileName
 			m.Setup.OutputEditing = true
+			m.syncOutputInputs()
+			m.FileNameInput.Focus()
 			m.Notice = &NoticeModel{Text: "Editing the output file name.", Severity: SeverityInfo}
 			return m, nil
 		}
@@ -579,6 +658,7 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		m.PreviousPage = PageHistory
 		m.Details.Lines = buildProcessedMediaDetails(selected)
 		m.Page = PageDetails
+		m.syncDetailsViewport()
 		return m, nil
 	case PagePaused:
 		switch m.Cursor {
@@ -632,6 +712,7 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		case 2:
 			m.PreviousPage = m.Page
 			m.Page = PageDetails
+			m.syncDetailsViewport()
 			return m, nil
 		default:
 			return m, nil
@@ -639,6 +720,11 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
+}
+
+func (m *Model) syncDetailsViewport() {
+	m.DetailsViewport.SetContent(strings.Join(detailsLinesForView(*m), "\n"))
+	m.DetailsViewport.GotoTop()
 }
 
 func (m *Model) moveCursor(delta int) {
@@ -810,15 +896,30 @@ func buildProcessedMediaDetails(item ProcessedMediaViewModel) []string {
 }
 
 func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model, tea.Cmd) {
+	if m.Setup.OutputEditing {
+		if (m.DirectoryInput.Value() == "" || m.DirectoryInput.Value() == ".") && m.Setup.OutputDirectory != "" && m.Setup.OutputDirectory != "." {
+			m.DirectoryInput.SetValue(m.Setup.OutputDirectory)
+		}
+		if m.FileNameInput.Value() == "" && m.Setup.OutputFileName != "" {
+			m.FileNameInput.SetValue(m.Setup.OutputFileName)
+		}
+		if m.Setup.ActiveOutputField == OutputFieldDirectory {
+			m.DirectoryInput.Focus()
+		} else {
+			m.FileNameInput.Focus()
+		}
+	}
 	switch {
 	case matchesKey(key, DefaultKeys().Back):
 		if m.Setup.OutputEditing {
 			m.Setup.OutputEditing = false
+			m.blurOutputInputs()
 			m.Notice = &NoticeModel{Text: "Stopped editing the output target.", Severity: SeverityInfo}
 			return m, nil
 		}
 		return m.handleBack()
 	case key == "tab":
+		m.blurOutputInputs()
 		if m.Setup.ActiveOutputField == OutputFieldDirectory {
 			m.Setup.ActiveOutputField = OutputFieldFileName
 		} else {
@@ -827,8 +928,10 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 		if m.Setup.OutputEditing {
 			if m.Setup.ActiveOutputField == OutputFieldDirectory {
 				m.Cursor = 0
+				m.DirectoryInput.Focus()
 			} else {
 				m.Cursor = 1
+				m.FileNameInput.Focus()
 			}
 		}
 		return m, nil
@@ -848,6 +951,7 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 		if !m.Setup.OutputEditing {
 			return m.handleSelect()
 		}
+		m.syncOutputValues()
 		m.Setup.OutputDirectory = strings.TrimSpace(m.Setup.OutputDirectory)
 		m.Setup.OutputFileName = strings.TrimSpace(m.Setup.OutputFileName)
 		syncOutputPath(&m.Setup)
@@ -860,24 +964,39 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 			return m, nil
 		}
 		m.Setup.OutputEditing = false
+		m.blurOutputInputs()
 		m.Notice = &NoticeModel{Text: "Finished editing the output target.", Severity: SeverityInfo}
 		return m, nil
-	case key == "backspace" || key == "ctrl+h":
-		if !m.Setup.OutputEditing {
-			return m, nil
-		}
-		trimLastOutputRune(&m.Setup)
-		syncOutputPath(&m.Setup)
-		clearResumeTargetState(&m.Setup)
-		return m, nil
 	default:
-		if m.Setup.OutputEditing && msg.Text != "" {
-			appendOutputText(&m.Setup, msg.Text)
-			syncOutputPath(&m.Setup)
+		if m.Setup.OutputEditing {
+			var cmd tea.Cmd
+			if m.Setup.ActiveOutputField == OutputFieldDirectory {
+				m.DirectoryInput, cmd = m.DirectoryInput.Update(msg)
+			} else {
+				m.FileNameInput, cmd = m.FileNameInput.Update(msg)
+			}
+			m.syncOutputValues()
 			clearResumeTargetState(&m.Setup)
+			return m, cmd
 		}
 		return m, nil
 	}
+}
+
+func (m *Model) syncOutputInputs() {
+	m.DirectoryInput.SetValue(m.Setup.OutputDirectory)
+	m.FileNameInput.SetValue(m.Setup.OutputFileName)
+}
+
+func (m *Model) syncOutputValues() {
+	m.Setup.OutputDirectory = m.DirectoryInput.Value()
+	m.Setup.OutputFileName = m.FileNameInput.Value()
+	syncOutputPath(&m.Setup)
+}
+
+func (m *Model) blurOutputInputs() {
+	m.DirectoryInput.Blur()
+	m.FileNameInput.Blur()
 }
 
 func applyOutputPath(setup *JobSetupModel, fullPath string) {
