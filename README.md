@@ -42,6 +42,15 @@ Run the built executable:
 .\discrescue.exe
 ```
 
+### Optional demo workflow
+
+The production executable does not require Gum. On Unix-like systems, install
+Gum optionally and run `scripts/demo.sh` to choose a controlled synthetic-drive
+scenario, build, launch, and optionally inspect or clean up demo artifacts.
+Without Gum, run `go run ./cmd/discrescue` directly. The companion
+`scripts/inspect-log.sh` command reads logs from a file and never writes into
+the active Bubble Tea renderer.
+
 ## Recovery behavior
 
 DiscRescue now defaults to `Fast recovery`.

@@ -418,6 +418,27 @@ func TestChooseOutputTypingEditsActiveFieldAndBuildsFullPath(t *testing.T) {
 	}
 }
 
+func TestChooseOutputTypingUsesTheInputCursorPosition(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseOutput
+	model.Setup.OutputDirectory = "D:/Archives"
+	model.Setup.OutputFileName = "disc.iso"
+	model.Setup.ActiveOutputField = OutputFieldFileName
+	model.Setup.OutputEditing = true
+	syncOutputPath(&model.Setup)
+
+	next, _ := model.handleOutputPathInput(tea.KeyPressMsg{Code: tea.KeyLeft}, "left")
+	model = next.(Model)
+	next, _ = model.handleOutputPathInput(tea.KeyPressMsg{Text: "X"}, "x")
+	model = next.(Model)
+	if got := model.FileNameInput.Value(); got != "disc.isXo" {
+		t.Fatalf("input text was not inserted at the cursor: got %q", got)
+	}
+	if got := model.Setup.OutputFileName; got != "disc.isXo" {
+		t.Fatalf("setup value did not follow the input: got %q", got)
+	}
+}
+
 func TestChooseOutputEnterOnFolderStartsEditing(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseOutput
