@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/progress"
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"discrescue/internal/buildinfo"
 )
@@ -125,11 +125,23 @@ func pageTitle(m Model) string {
 }
 
 func renderPageBody(m Model, width int, tier layoutTier) []string {
+	if body, ok := renderTightPageBody(m, width, tier); ok {
+		for i := range body {
+			body[i] = fitToWidth(body[i], width)
+		}
+		return body
+	}
 	switch m.Page {
 	case PageDiscover:
-		return wrapText(m.LoadingSpinner.View()+" Please wait while DiscRescue checks for usable optical drives.", width)
+		theme := newTheme(m.Monochrome, m.DarkBackground)
+		return cardLines(theme, "Drive discovery", []string{
+			theme.Accent.Render(m.LoadingSpinner.View() + " Looking for optical drives"),
+			"",
+			theme.Muted.Render("Checking the devices available to this computer."),
+			theme.Muted.Render("This usually takes only a moment."),
+		}, width, true)
 	case PageNoDrives:
-		return renderNoDrivesPage(width)
+		return renderNoDrivesPage(m, width)
 	case PageDiscoveryError:
 		return renderDiscoveryErrorPage(m, width)
 	case PageChooseDrive:
@@ -161,134 +173,258 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 	case PageDetails:
 		return renderDetailsPage(m, width)
 	case PageAdvanced:
-		return wrapText("Advanced settings stay separate from the normal setup flow.", width)
+		theme := newTheme(m.Monochrome, m.DarkBackground)
+		return cardLines(theme, "Advanced recovery", []string{"Advanced settings stay separate from the normal setup flow.", "", theme.Muted.Render("The guided defaults protect resumability and media safety.")}, width, false)
 	case PageAbout:
-		return renderAboutPage(width)
+		return renderAboutPage(m, width)
 	default:
 		return nil
 	}
 }
 
+// renderTightPageBody keeps the primary state and action visible when the
+// terminal has only six to nine body rows. Component-rich layouts resume as
+// soon as there is enough vertical space for their borders and descriptions.
+func renderTightPageBody(m Model, width int, tier layoutTier) ([]string, bool) {
+	if tier != layoutCompact && m.Height >= 20 {
+		return nil, false
+	}
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	switch m.Page {
+	case PageDiscover:
+		return []string{theme.Accent.Render(m.LoadingSpinner.View() + " Looking for optical drives"), "Checking the devices available to this computer."}, true
+	case PageNoDrives:
+		return []string{theme.Warning.Render("△ No readable optical drive is available."), "Insert a CD or DVD, then press Enter to retry."}, true
+	case PageDiscoveryError:
+		message := "Drive discovery failed."
+		if m.Notice != nil && m.Notice.Text != "" {
+			message = m.Notice.Text
+		}
+		return []string{fitToWidth(theme.Danger.Render("× "+message), width), "> Retry discovery"}, true
+	case PageInspectingMedia:
+		return []string{
+			theme.Accent.Render(m.LoadingSpinner.View() + " Reading disc information"),
+			fitToWidth("Drive  "+selectedDriveLabel(m), width),
+			"Checking capacity, layout, and matching work.",
+		}, true
+	case PagePriorProcessing:
+		lines := []string{fitToWidth(theme.Accent.Render(firstNonEmpty(m.PriorView.Title, "Matching contents")), width)}
+		if len(m.PriorView.Body) > 0 {
+			lines = append(lines, fitToWidth(m.PriorView.Body[0], width))
+		}
+		if len(m.PriorView.Options) > 0 {
+			lines = append(lines, choiceMenu(theme, []string{m.PriorView.Options[clampIndex(m.Cursor, len(m.PriorView.Options))]}, 0, width)...)
+			lines = append(lines, fmt.Sprintf("↑/↓ choose from %d actions", len(m.PriorView.Options)))
+		}
+		return lines, true
+	case PageChooseAction:
+		return choiceMenu(theme, []string{"Start a new recovery", "Resume an unfinished recovery", "Browse processed media", "Choose another drive"}, m.Cursor, width), true
+	case PageReview:
+		lines := []string{fitToWidth("Drive   "+selectedDriveLabel(m), width), fitToWidth("Output  "+m.Setup.OutputPath, width)}
+		return append(lines, choiceMenu(theme, []string{firstNonEmpty(m.Setup.ActionLabel, "Start a new recovery"), "Edit output path", "Choose another drive"}, m.Cursor, width)...), true
+	case PagePausing:
+		return []string{theme.Warning.Render(m.LoadingSpinner.View() + " Pause requested"), "Finishing the current drive request safely.", "No new drive command will be started."}, true
+	case PagePaused:
+		lines := []string{theme.Success.Render("✓ Paused at a durable checkpoint.")}
+		return append(lines, choiceMenu(theme, []string{"Continue recovery", "Stop after checkpoint"}, m.Cursor, width)...), true
+	case PageStopConfirm:
+		lines := []string{theme.Warning.Render("△ Save progress before stopping?"), "The recovery can be resumed later."}
+		return append(lines, choiceMenu(theme, []string{"Save progress and stop", "Continue recovery"}, m.Cursor, width)...), true
+	case PageAdvanced:
+		return []string{"Advanced recovery settings stay separate.", "Guided defaults protect resumability and media safety."}, true
+	case PageAbout:
+		return []string{theme.Accent.Render("◉ DiscRescue"), "Guided optical-disc recovery.", "Version " + buildinfo.Version, "Commit " + buildinfo.Commit}, true
+	default:
+		return nil, false
+	}
+}
+
+func clampIndex(index, length int) int {
+	if length <= 0 || index < 0 {
+		return 0
+	}
+	if index >= length {
+		return length - 1
+	}
+	return index
+}
+
+func cardLines(theme Theme, title string, content []string, width int, focused bool) []string {
+	inner := maxInt(12, width-4)
+	style := theme.Card
+	if focused {
+		style = theme.CardFocus
+	}
+	body := strings.Join(content, "\n")
+	if title != "" {
+		body = theme.Label.Render(strings.ToUpper(title)) + "\n" + body
+	}
+	return strings.Split(style.Width(inner).Render(body), "\n")
+}
+
+func choiceMenu(theme Theme, options []string, selected, width int) []string {
+	lines := make([]string, 0, len(options))
+	for i, option := range options {
+		marker := "  "
+		style := theme.Text.Padding(0, 1)
+		if i == selected {
+			marker = "> "
+			style = theme.Focus.Padding(0, 1).Width(maxInt(8, width-2))
+		}
+		lines = append(lines, style.Render(fitToWidth(marker+option, maxInt(8, width-4))))
+	}
+	return lines
+}
+
+func metricStrip(theme Theme, metrics [][2]string, width int) []string {
+	if len(metrics) == 0 {
+		return nil
+	}
+	gap := len(metrics) - 1
+	cellWidth := (width - gap) / len(metrics)
+	if cellWidth < 14 {
+		lines := make([]string, 0, len(metrics))
+		for _, metric := range metrics {
+			lines = append(lines, theme.Label.Render(metric[0])+"  "+theme.Text.Render(metric[1]))
+		}
+		return lines
+	}
+	cards := make([]string, 0, len(metrics))
+	for _, metric := range metrics {
+		cards = append(cards, theme.Card.Width(cellWidth).Render(theme.Label.Render(strings.ToUpper(metric[0]))+"\n"+theme.Text.Render(metric[1])))
+	}
+	return strings.Split(lipgloss.JoinHorizontal(lipgloss.Top, intersperse(cards, " ")...), "\n")
+}
+
+func intersperse(values []string, separator string) []string {
+	if len(values) < 2 {
+		return values
+	}
+	out := make([]string, 0, len(values)*2-1)
+	for i, value := range values {
+		if i > 0 {
+			out = append(out, separator)
+		}
+		out = append(out, value)
+	}
+	return out
+}
+
 func renderDeviceList(m Model, width int) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	if m.DriveList.Width() > 0 && len(m.DriveList.Items()) > 0 {
-		return strings.Split(m.DriveList.View(), "\n")
+		return cardLines(theme, "Available drives", strings.Split(m.DriveList.View(), "\n"), width, true)
 	}
 	if len(m.Devices) == 0 {
-		return wrapText("No usable optical drives found.", width)
+		return cardLines(theme, "Available drives", []string{"No usable optical drives found."}, width, true)
 	}
-	lines := make([]string, 0, len(m.Devices))
+	lines := make([]string, 0, len(m.Devices)*2)
 	for i, device := range m.Devices {
 		prefix := "  "
 		if i == m.Cursor {
 			prefix = "> "
 		}
-		lines = append(lines, wrapText(prefix+device.DisplayName+" - "+device.Status, width)...)
+		lines = append(lines, prefix+device.DisplayName, "  "+device.Path+" · "+device.Status)
 	}
-	return lines
+	return cardLines(theme, "Available drives", lines, width, true)
 }
 
-func renderNoDrivesPage(width int) []string {
-	lines := wrapText("No optical drives are currently available to DiscRescue.", width)
-	lines = append(lines, "")
-	lines = append(lines, wrapText("Press Enter to retry discovery or q to quit.", width)...)
-	return lines
+func renderNoDrivesPage(m Model, width int) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	return cardLines(theme, "No drives found", []string{
+		theme.Warning.Render("△ No readable optical drive is available."),
+		"",
+		"Insert a CD or DVD, then retry discovery.",
+		theme.Muted.Render("Press Enter to retry or q to quit."),
+	}, width, false)
 }
 
 func renderDiscoveryErrorPage(m Model, width int) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	text := "Drive discovery failed."
 	if m.Notice != nil && m.Notice.Text != "" {
 		text = m.Notice.Text
 	}
-	lines := wrapText(text, width)
-	lines = append(lines, "")
-	lines = append(lines, wrapText("Press Enter to retry discovery or q to quit.", width)...)
-	return lines
+	return cardLines(theme, "Discovery needs attention", []string{
+		theme.Danger.Render("× " + text),
+		"",
+		"Press Enter to retry discovery or q to quit.",
+	}, width, false)
 }
 
 func renderInspectingMediaPage(m Model, width int) []string {
-	lines := wrapText(m.LoadingSpinner.View()+" Inspecting the media in the selected drive.", width)
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	lines := []string{theme.Accent.Render(m.LoadingSpinner.View() + " Reading the disc layout and identity")}
 	if m.SelectedDrive.DisplayName != "" {
 		lines = append(lines, "")
-		lines = append(lines, labeledLines("Drive", m.SelectedDrive.DisplayName, width)...)
+		lines = append(lines, theme.Label.Render("DRIVE")+"  "+m.SelectedDrive.DisplayName)
 	}
 	if m.SelectedDrive.Path != "" {
-		lines = append(lines, labeledLines("Path", m.SelectedDrive.Path, width)...)
+		lines = append(lines, theme.Label.Render("PATH")+"   "+m.SelectedDrive.Path)
 	}
 	lines = append(lines, "")
-	lines = append(lines, wrapText("Press Enter to retry or Esc to return to the drive list.", width)...)
-	return lines
+	lines = append(lines, theme.Muted.Render("DiscRescue is checking capacity, layout, and matching local work."))
+	return cardLines(theme, "Media inspection", lines, width, true)
 }
 
 func renderPriorProcessing(m Model, width int, tier layoutTier) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	if m.PriorView.Kind == PriorProcessingNone || m.PriorView.Kind == PriorProcessingIndeterminate {
-		return wrapText(m.PriorView.HistoryLine, width)
+		return cardLines(theme, "Matching contents", wrapText(m.PriorView.HistoryLine, width-4), width, false)
 	}
 
-	lines := append([]string{}, wrapText(m.PriorView.Title, width)...)
-	for _, line := range m.PriorView.Body {
-		lines = append(lines, "")
-		lines = append(lines, wrapText(line, width)...)
-	}
+	result := append([]string{theme.Accent.Render(m.PriorView.Title)}, wrapText(strings.Join(m.PriorView.Body, " "), width-4)...)
 	if m.PriorView.ImagePath != "" {
-		lines = append(lines, "")
-		lines = append(lines, labeledLines("Image", m.PriorView.ImagePath, width)...)
+		result = append(result, "", theme.Label.Render("IMAGE")+"  "+m.PriorView.ImagePath)
 	}
 	if tier != layoutCompact && m.PriorView.CopyLabel != "" {
-		lines = append(lines, labeledLines("Copy", m.PriorView.CopyLabel, width)...)
+		result = append(result, theme.Label.Render("COPY")+"   "+m.PriorView.CopyLabel)
 	}
 	if tier == layoutFull && m.PriorView.LastSaved != "" {
-		lines = append(lines, labeledLines("Last saved", m.PriorView.LastSaved, width)...)
+		result = append(result, theme.Label.Render("SAVED")+"  "+m.PriorView.LastSaved)
 	}
 	if tier == layoutFull && m.PriorView.Recovered != "" {
-		lines = append(lines, labeledLines("Recovered", m.PriorView.Recovered, width)...)
+		result = append(result, theme.Success.Render("RECOVERED")+"  "+m.PriorView.Recovered)
 	}
 	if tier == layoutFull && m.PriorView.UnreadableSectors != "" {
-		lines = append(lines, labeledLines("Unreadable", m.PriorView.UnreadableSectors, width)...)
+		result = append(result, theme.Danger.Render("UNREADABLE")+"  "+m.PriorView.UnreadableSectors)
 	}
+	lines := cardLines(theme, "Matching contents", result, width, false)
 	if len(m.PriorView.Options) > 0 {
 		lines = append(lines, "")
-		for i, option := range m.PriorView.Options {
-			prefix := "  "
-			if i == m.Cursor {
-				prefix = "> "
-			}
-			lines = append(lines, wrapText(prefix+option, width)...)
-		}
+		lines = append(lines, cardLines(theme, "Next action", choiceMenu(theme, m.PriorView.Options, m.Cursor, width-4), width, true)...)
 	}
 	return lines
 }
 
 func renderActionList(m Model, width int, tier layoutTier) []string {
-	if m.ActionList.Width() > 0 {
-		return strings.Split(m.ActionList.View(), "\n")
-	}
-	actions := []string{
-		"Start a new recovery",
-		"Resume an unfinished recovery",
-		"Browse processed media",
-		"Choose another drive",
-	}
-	lines := make([]string, 0, len(actions))
-	for i, action := range actions {
-		prefix := "  "
-		if i == m.Cursor {
-			prefix = "> "
-		}
-		lines = append(lines, wrapText(prefix+action, width)...)
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	lines := []string{}
+	if m.ActionList.Width() > 0 && m.Height >= 24 {
+		lines = append(lines, cardLines(theme, "Recovery actions", strings.Split(m.ActionList.View(), "\n"), width, true)...)
+	} else {
+		actions := []string{"Start a new recovery", "Resume an unfinished recovery", "Browse processed media", "Choose another drive"}
+		lines = append(lines, cardLines(theme, "Recovery actions", choiceMenu(theme, actions, m.Cursor, width-4), width, true)...)
 	}
 	if tier != layoutCompact {
 		lines = append(lines, "")
-		lines = append(lines, wrapText(m.PriorView.HistoryLine, width)...)
+		context := []string{theme.Muted.Render(firstNonEmpty(m.PriorView.HistoryLine, "Checking this computer for matching saved work."))}
 		if m.Identity.Detail != "" {
-			lines = append(lines, wrapText("Disc: "+m.Identity.Detail, width)...)
+			context = append(context, "Disc: "+m.Identity.Detail)
+		}
+		if m.Height >= 30 {
+			lines = append(lines, cardLines(theme, "Current media", context, width, false)...)
+		} else {
+			lines = append(lines, context...)
 		}
 	}
 	return lines
 }
 
 func renderResumeJobsPage(m Model, width int, tier layoutTier) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	if m.ResumeList.Width() > 0 && len(m.ResumeList.Items()) > 0 {
-		return strings.Split(m.ResumeList.View(), "\n")
+		return cardLines(theme, "Saved recoveries", strings.Split(m.ResumeList.View(), "\n"), width, true)
 	}
 	if len(m.ResumeJobs) == 0 {
 		lines := wrapText("No resumable recoveries were found in the current output folder.", width)
@@ -319,8 +455,9 @@ func renderResumeJobsPage(m Model, width int, tier layoutTier) []string {
 }
 
 func renderHistoryPage(m Model, width int, tier layoutTier) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	if m.HistoryList.Width() > 0 && len(m.HistoryList.Items()) > 0 {
-		return strings.Split(m.HistoryList.View(), "\n")
+		return cardLines(theme, "Processed media", strings.Split(m.HistoryList.View(), "\n"), width, true)
 	}
 	if len(m.HistoryItems) == 0 {
 		lines := wrapText("No processed media were found in the current output folder.", width)
@@ -354,6 +491,7 @@ func renderHistoryPage(m Model, width int, tier layoutTier) []string {
 }
 
 func renderOutputPage(m Model, width int, tier layoutTier) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	directory := m.Setup.OutputDirectory
 	if directory == "" {
 		directory = " "
@@ -362,114 +500,197 @@ func renderOutputPage(m Model, width int, tier layoutTier) []string {
 	if fileName == "" {
 		fileName = " "
 	}
-	lines := wrapText("Choose where to save the recovery image. Move to Folder or File name and press Enter to edit, or choose Continue with this target.", width)
+	if tier == layoutCompact || m.Height < 28 {
+		if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldDirectory {
+			directory = m.DirectoryInput.View()
+		}
+		if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName {
+			fileName = m.FileNameInput.View()
+		}
+		lines := []string{
+			compactFieldLine(theme, "Folder", directory, width, m.Cursor == 0),
+			compactFieldLine(theme, "File name", fileName, width, m.Cursor == 1),
+			fitToWidth("Full path  "+firstNonEmpty(m.Setup.OutputPath, "Not chosen yet"), width),
+		}
+		if tier != layoutCompact {
+			lines = append(lines, fitToWidth("Space      "+m.Setup.FreeSpace, width))
+		}
+		lines = append(lines, choiceMenu(theme, []string{"Continue with this target"}, boolIndex(m.Cursor == 2), width)...)
+		return lines
+	}
+	lines := []string{theme.Muted.Render("Use Enter to edit a field. Tab moves focus while editing.")}
 	lines = append(lines, "")
 	if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldDirectory {
-		lines = append(lines, outputInputLine("Folder", m.DirectoryInput, width, true)...)
+		lines = append(lines, outputFieldLines(theme, "Folder", m.DirectoryInput.View(), width, true, true)...)
 	} else {
-		lines = append(lines, selectableFieldLines("Folder", directory, width, m.Cursor == 0, false)...)
-	}
-	if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName {
-		lines = append(lines, outputInputLine("File name", m.FileNameInput, width, true)...)
-	} else {
-		lines = append(lines, selectableFieldLines("File name", fileName, width, m.Cursor == 1, false)...)
-	}
-	lines = append(lines, labeledLines("Full path", firstNonEmpty(m.Setup.OutputPath, "Not chosen yet"), width)...)
-	if m.Setup.DefaultPath != "" && m.Setup.DefaultPath != "Not chosen yet" {
-		lines = append(lines, labeledLines("Suggested", m.Setup.DefaultPath, width)...)
-	}
-	lines = append(lines, labeledLines("Format", m.Setup.OutputFormat, width)...)
-	if m.Setup.ResumeReady {
-		lines = append(lines, labeledLines("Resume", firstNonEmpty(m.Setup.ResumeDetail, "This target can resume a previous recovery."), width)...)
-	}
-	if tier != layoutCompact {
-		lines = append(lines, labeledLines("Space", m.Setup.FreeSpace, width)...)
+		lines = append(lines, outputFieldLines(theme, "Folder", directory, width, m.Cursor == 0, false)...)
 	}
 	lines = append(lines, "")
-	continuePrefix := "  "
-	if m.Cursor == 2 {
-		continuePrefix = "> "
+	if m.Setup.OutputEditing && m.Setup.ActiveOutputField == OutputFieldFileName {
+		lines = append(lines, outputFieldLines(theme, "File name", m.FileNameInput.View(), width, true, true)...)
+	} else {
+		lines = append(lines, outputFieldLines(theme, "File name", fileName, width, m.Cursor == 1, false)...)
 	}
-	lines = append(lines, wrapText(continuePrefix+"Continue with this target", width)...)
+	metadata := []string{
+		theme.Label.Render("FULL PATH") + "  " + firstNonEmpty(m.Setup.OutputPath, "Not chosen yet"),
+		theme.Label.Render("FORMAT") + "     " + m.Setup.OutputFormat,
+	}
+	if m.Setup.DefaultPath != "" && m.Setup.DefaultPath != "Not chosen yet" {
+		metadata = append(metadata, theme.Label.Render("SUGGESTED")+"  "+m.Setup.DefaultPath)
+	}
+	if m.Setup.ResumeReady {
+		metadata = append(metadata, theme.Success.Render("RESUME")+"     "+firstNonEmpty(m.Setup.ResumeDetail, "This target can resume a previous recovery."))
+	}
+	if tier != layoutCompact {
+		metadata = append(metadata, theme.Label.Render("SPACE")+"      "+m.Setup.FreeSpace)
+	}
+	lines = append(lines, "")
+	lines = append(lines, cardLines(theme, "Target", metadata, width, false)...)
+	lines = append(lines, "")
+	lines = append(lines, choiceMenu(theme, []string{"Continue with this target"}, boolIndex(m.Cursor == 2), width)...)
 	return lines
 }
 
-func outputInputLine(label string, input textinput.Model, width int, selected bool) []string {
-	marker := "  "
+func compactFieldLine(theme Theme, label, value string, width int, selected bool) string {
+	line := fmt.Sprintf("%-10s %s", label, value)
 	if selected {
-		marker = "> "
+		return theme.Focus.Width(width).Render("> " + fitToWidth(line, maxInt(8, width-2)))
 	}
-	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#67E8F9"))
-	markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#A78BFA")).Bold(true)
-	line := lipgloss.JoinHorizontal(lipgloss.Top, markerStyle.Render(marker), labelStyle.Render(label+" (editing)"), " ", input.View())
-	if width > 0 && lipgloss.Width(line) > width {
-		// textinput owns horizontal scrolling and cursor placement. Never
-		// pass its ANSI cursor rendering through the plain-text wrapper.
-		return []string{lipgloss.NewStyle().MaxWidth(width).Render(line)}
+	return theme.Text.Render("  " + fitToWidth(line, maxInt(8, width-2)))
+}
+
+func boolIndex(selected bool) int {
+	if selected {
+		return 0
 	}
-	return []string{line}
+	return -1
+}
+
+func outputFieldLines(theme Theme, label, value string, width int, selected, editing bool) []string {
+	caption := theme.Label.Render(strings.ToUpper(label))
+	if editing {
+		caption += "  " + theme.Badge.Render("EDITING")
+	}
+	style := theme.Card
+	if selected {
+		style = theme.CardFocus
+	}
+	inner := maxInt(12, width-4)
+	field := style.Width(inner).Render(value)
+	return append([]string{caption}, strings.Split(field, "\n")...)
 }
 
 func renderReviewPage(m Model, width int, tier layoutTier) []string {
-	lines := []string{}
-	lines = append(lines, labeledLines("Drive", selectedDriveLabel(m), width)...)
-	lines = append(lines, labeledLines("Disc", discSummary(m), width)...)
-	lines = append(lines, labeledLines("Output", m.Setup.OutputPath, width)...)
-	if m.Setup.ResumeReady {
-		lines = append(lines, labeledLines("Map", m.Setup.ResumeMapPath, width)...)
-	}
-	if m.Setup.ResumeDetail != "" {
-		lines = append(lines, "")
-		lines = append(lines, wrapText(m.Setup.ResumeDetail, width)...)
-	}
-	lines = append(lines, "")
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	options := []string{
 		firstNonEmpty(m.Setup.ActionLabel, "Start a new recovery"),
 		"Edit output path",
 		"Choose another drive",
 	}
-	for i, option := range options {
-		prefix := "  "
-		if i == m.Cursor {
-			prefix = "> "
+	if tier == layoutCompact || m.Height < 28 {
+		lines := []string{
+			"Drive   " + selectedDriveLabel(m),
+			"Disc    " + discSummary(m),
+			"Output  " + m.Setup.OutputPath,
+			"Mode    " + firstNonEmpty(m.Setup.MethodLabel, "Balanced recovery"),
 		}
-		lines = append(lines, wrapText(prefix+option, width)...)
+		if m.Setup.ResumeReady {
+			lines = append(lines, "Map     "+m.Setup.ResumeMapPath)
+			if m.Setup.ResumeDetail != "" && tier != layoutCompact {
+				lines = append(lines, wrapText(m.Setup.ResumeDetail, width)...)
+			}
+		}
+		lines = append(lines, "")
+		lines = append(lines, choiceMenu(theme, options, m.Cursor, width)...)
+		return lines
 	}
+	context := []string{theme.Label.Render("DRIVE") + "  " + selectedDriveLabel(m), theme.Label.Render("DISC") + "   " + discSummary(m)}
+	target := []string{theme.Label.Render("IMAGE") + "  " + m.Setup.OutputPath, theme.Label.Render("MODE") + "   " + firstNonEmpty(m.Setup.MethodLabel, "Balanced recovery")}
+	if m.Setup.ResumeReady {
+		target = append(target, theme.Success.Render("MAP")+"    "+m.Setup.ResumeMapPath)
+	}
+	lines := cardLines(theme, "Disc", context, width, false)
+	lines = append(lines, "")
+	lines = append(lines, cardLines(theme, "Output", target, width, false)...)
+	if m.Setup.ResumeDetail != "" {
+		lines = append(lines, "")
+		lines = append(lines, theme.Muted.Render(m.Setup.ResumeDetail))
+	}
+	lines = append(lines, "")
+	lines = append(lines, cardLines(theme, "Ready", choiceMenu(theme, options, m.Cursor, width-4), width, true)...)
 	return lines
 }
 
 func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
-	progressLine := recoveryProgressLine(m, width, tier)
-	lines := []string{progressLine, ""}
-	if m.Recovery.Phase != "" {
-		lines = append(lines, fitToWidth(m.Recovery.Phase, width))
-	}
-	if m.Recovery.Status != "" {
-		lines = append(lines, wrapText(m.Recovery.Status, width)...)
-	}
-	if tier == layoutCompact {
+	return renderRecoveryDashboard(m, width, tier)
+}
+
+func renderRecoveryDashboard(m Model, width int, tier layoutTier) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	phase := firstNonEmpty(m.Recovery.Phase, "Preparing recovery")
+	status := firstNonEmpty(m.Recovery.Status, "Reading sectors from the selected optical drive.")
+	if tier == layoutCompact || m.Height < 28 {
+		if tier == layoutCompact {
+			lines := []string{theme.Accent.Render(phase), recoveryProgressLine(m, width, tier)}
+			lines = append(lines,
+				fmt.Sprintf("Recovered  %s sectors", formatCount(m.Recovery.RecoveredSectors)),
+				fitToWidth(fmt.Sprintf("Deferred %s  •  Unreadable %s", formatCount(m.Recovery.DeferredSectors), formatCount(m.Recovery.UnreadableSectors)), width),
+			)
+			if summary := recoveryTimeSummary(m, tier); summary != "" {
+				lines = append(lines, summary)
+			}
+			return lines
+		}
+		lines := []string{theme.Accent.Render(phase), fitToWidth(theme.Muted.Render(status), width), recoveryProgressLine(m, width, tier)}
+		if m.Recovery.TotalSectors > 0 {
+			lines = append(lines, fmt.Sprintf("Scanned      %s of %s sectors", formatCount(m.Recovery.ScannedSectors), formatCount(m.Recovery.TotalSectors)))
+		}
+		lines = append(lines,
+			fmt.Sprintf("Recovered    %s sectors", formatCount(m.Recovery.RecoveredSectors)),
+			fmt.Sprintf("Deferred     %s sectors", formatCount(m.Recovery.DeferredSectors)),
+			fmt.Sprintf("Unreadable   %s sectors", formatCount(m.Recovery.UnreadableSectors)),
+		)
 		if summary := recoveryTimeSummary(m, tier); summary != "" {
-			lines = append(lines, wrapText(summary, width)...)
+			lines = append(lines, summary)
 		}
-	} else {
-		if summary := recoveryTimeSummary(m, tier); summary != "" {
-			lines = append(lines, wrapText(summary, width)...)
+		if tier != layoutCompact && (m.Recovery.Throughput != "" || m.Recovery.Elapsed != "") {
+			lines = append(lines, "Rate  "+firstNonEmpty(m.Recovery.Throughput, "—")+"  •  Elapsed  "+firstNonEmpty(m.Recovery.Elapsed, "—"))
 		}
-		if m.Recovery.Throughput != "" {
-			lines = append(lines, labeledLines("Rate", m.Recovery.Throughput, width)...)
+		if tier != layoutCompact && m.Height >= 24 && len(m.Recovery.LastIssue) > 0 {
+			lines = append(lines, "Last issue  "+m.Recovery.LastIssue[0])
 		}
-		if m.Recovery.Elapsed != "" {
-			lines = append(lines, labeledLines("Elapsed", m.Recovery.Elapsed, width)...)
-		}
+		return lines
+	}
+
+	lines := []string{theme.Badge.Render(phase), theme.Muted.Render(status), "", recoveryProgressLine(m, width, tier)}
+	if m.Recovery.TotalSectors > 0 {
+		lines = append(lines, theme.Muted.Render(fmt.Sprintf("%s / %s sectors covered", formatCount(m.Recovery.ScannedSectors), formatCount(m.Recovery.TotalSectors))))
 	}
 	lines = append(lines, "")
-	lines = append(lines, fitToWidth(fmt.Sprintf("Recovered     %s sectors", formatCount(m.Recovery.RecoveredSectors)), width))
-	lines = append(lines, fitToWidth(fmt.Sprintf("Unreadable    %s sectors", formatCount(m.Recovery.UnreadableSectors)), width))
-	if tier != layoutCompact && len(m.Recovery.LastIssue) > 0 {
+	metrics := [][2]string{
+		{"Recovered", formatCount(m.Recovery.RecoveredSectors) + " sectors"},
+		{"Deferred", formatCount(m.Recovery.DeferredSectors) + " sectors"},
+		{"Unreadable", formatCount(m.Recovery.UnreadableSectors) + " sectors"},
+	}
+	lines = append(lines, metricStrip(theme, metrics, width)...)
+	timing := make([]string, 0, 3)
+	if summary := recoveryTimeSummary(m, tier); summary != "" {
+		timing = append(timing, summary)
+	}
+	if m.Recovery.Throughput != "" || m.Recovery.Elapsed != "" {
+		timing = append(timing, "Rate  "+firstNonEmpty(m.Recovery.Throughput, "—")+"    Elapsed  "+firstNonEmpty(m.Recovery.Elapsed, "—"))
+	}
+	if len(timing) > 0 {
 		lines = append(lines, "")
+		lines = append(lines, cardLines(theme, "Timing", timing, width, false)...)
+	}
+	if len(m.Recovery.LastIssue) > 0 {
+		issue := make([]string, 0, len(m.Recovery.LastIssue))
 		for _, line := range m.Recovery.LastIssue {
-			lines = append(lines, wrapText(line, width)...)
+			issue = append(issue, wrapText(line, width-4)...)
 		}
+		lines = append(lines, "")
+		lines = append(lines, cardLines(theme, "Last issue", issue, width, false)...)
 	}
 	return lines
 }
@@ -509,7 +730,11 @@ func recoveryProgressLine(m Model, width int, tier layoutTier) string {
 		bar := progressBarFor(m, tier)
 		percent := 0
 		if m.Recovery.TotalSectors > 0 {
-			percent = int((m.Recovery.ScannedSectors * 100) / m.Recovery.TotalSectors)
+			covered := m.Recovery.ScannedSectors
+			if covered == 0 {
+				covered = m.Recovery.RecoveredSectors
+			}
+			percent = int((covered * 100) / m.Recovery.TotalSectors)
 		}
 		return fitToWidth(fmt.Sprintf("%s %d%%", bar, percent), width)
 	}
@@ -525,113 +750,130 @@ func recoveryProgressLine(m Model, width int, tier layoutTier) string {
 }
 
 func renderSummaryPage(m Model, width int, tier layoutTier) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	statusMarker := "✓"
+	statusStyle := theme.Success
 	if m.Recovery.UnreadableSectors > 0 {
 		statusMarker = "×"
+		statusStyle = theme.Danger
 	} else if m.Recovery.DeferredSectors > 0 || strings.Contains(strings.ToLower(m.Recovery.Status), "paused") {
 		statusMarker = "△"
+		statusStyle = theme.Warning
 	}
-	lines := []string{fitToWidth(statusMarker+" "+m.Recovery.Status, width), ""}
-	if m.Recovery.UnreadableSectors == 0 {
+	if tier == layoutCompact {
+		lines := []string{
+			fitToWidth(statusStyle.Render(statusMarker+" "+m.Recovery.Status), width),
+			fitToWidth("Image      "+firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width),
+			fmt.Sprintf("Recovered  %s / %s", formatCount(m.Recovery.RecoveredSectors), formatCount(m.Recovery.TotalSectors)),
+		}
+		lines = append(lines, choiceMenu(theme, summaryOptions(m), m.Cursor, width)...)
+		return lines
+	}
+	if m.Height < 28 {
+		lines := []string{fitToWidth(statusStyle.Render(statusMarker+" "+m.Recovery.Status), width)}
+		if m.Recovery.UnreadableSectors > 0 {
+			lines = append(lines, fitToWidth(fmt.Sprintf("%s sectors could not be recovered.", formatCount(m.Recovery.UnreadableSectors)), width))
+		}
 		lines = append(lines,
-			labeledLines("Image", firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width)...,
+			fitToWidth("Image      "+firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width),
+			fitToWidth("Map        "+firstNonEmpty(m.Summary.MapPath, replaceExtension(m.Recovery.OutputPath, ".drmap")), width),
+			fmt.Sprintf("Recovered  %s / %s", formatCount(m.Recovery.RecoveredSectors), formatCount(m.Recovery.TotalSectors)),
 		)
-		lines = append(lines,
+		if m.Summary.Duration != "" {
+			lines = append(lines, fitToWidth("Duration   "+m.Summary.Duration, width))
+		}
+		lines = append(lines, choiceMenu(theme, summaryOptions(m), m.Cursor, width)...)
+		return lines
+	}
+	result := []string{statusStyle.Render(statusMarker + " " + m.Recovery.Status), ""}
+	if m.Recovery.UnreadableSectors == 0 {
+		result = append(result, "Image      "+firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath))
+		result = append(result,
 			fitToWidth(fmt.Sprintf("Recovered  %s of %s sectors", formatCount(m.Recovery.RecoveredSectors), formatCount(m.Recovery.TotalSectors)), width),
 		)
 		if m.Recovery.DeferredSectors > 0 {
-			lines = append(lines, fitToWidth(fmt.Sprintf("Deferred   %s sectors remain for a later pass", formatCount(m.Recovery.DeferredSectors)), width))
+			result = append(result, fitToWidth(fmt.Sprintf("Deferred   %s sectors remain for a later pass", formatCount(m.Recovery.DeferredSectors)), width))
 		}
 		if tier != layoutCompact && m.Summary.Duration != "" {
-			lines = append(lines, fitToWidth("Duration   "+m.Summary.Duration, width))
+			result = append(result, fitToWidth("Duration   "+m.Summary.Duration, width))
 		}
 	} else {
-		lines = append(lines,
+		result = append(result,
 			fitToWidth(fmt.Sprintf("%s sectors could not be recovered.", formatCount(m.Recovery.UnreadableSectors)), width),
 			fitToWidth("The image and map are complete enough to inspect or retry later.", width),
 			"",
 		)
-		lines = append(lines, labeledLines("Image", firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath), width)...)
+		result = append(result, "Image      "+firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath))
 		if tier != layoutCompact {
-			lines = append(lines, labeledLines("Map", firstNonEmpty(m.Summary.MapPath, replaceExtension(m.Recovery.OutputPath, ".drmap")), width)...)
-			lines = append(lines, labeledLines("History", firstNonEmpty(m.Summary.CatalogStatus, "Recorded in local processed-media catalog"), width)...)
+			result = append(result, "Map        "+firstNonEmpty(m.Summary.MapPath, replaceExtension(m.Recovery.OutputPath, ".drmap")))
+			result = append(result, "History    "+firstNonEmpty(m.Summary.CatalogStatus, "Recorded in local processed-media catalog"))
 		}
 	}
+	lines := cardLines(theme, "Result", result, width, false)
 	lines = append(lines, "")
-	for i, option := range summaryOptions(m) {
-		prefix := "  "
-		if i == m.Cursor {
-			prefix = "> "
-		}
-		lines = append(lines, wrapText(prefix+option, width)...)
-	}
+	lines = append(lines, cardLines(theme, "Next action", choiceMenu(theme, summaryOptions(m), m.Cursor, width-4), width, true)...)
 	return lines
 }
 
 func renderDetailsPage(m Model, width int) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	if m.DetailsViewport.Width() > 1 && m.DetailsViewport.Height() > 1 {
-		return strings.Split(m.DetailsViewport.View(), "\n")
+		return cardLines(theme, "Recovery details", strings.Split(m.DetailsViewport.View(), "\n"), width, true)
 	}
 	lines := make([]string, 0, len(detailsLinesForView(m)))
 	for _, line := range detailsLinesForView(m) {
 		lines = append(lines, wrapText(line, width)...)
 	}
-	return lines
+	return cardLines(theme, "Recovery details", lines, width, true)
 }
 
 func renderPausingPage(m Model, width int) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	lines := []string{
-		fitToWidth("Pause requested. Waiting for the current drive request to finish safely.", width),
-		fitToWidth("No new drive commands will be started until the recovery is fully paused.", width),
+		theme.Warning.Render(m.LoadingSpinner.View() + " Pause requested"),
+		"",
 	}
+	lines = append(lines, wrapText("Pause requested. Waiting for the current drive request to finish safely.", width-4)...)
+	lines = append(lines, wrapText("No new drive commands will be started until the recovery is fully paused.", width-4)...)
 	if m.Recovery.OutputPath != "" && m.Recovery.OutputPath != "Not chosen yet" {
 		lines = append(lines, "")
 		lines = append(lines, labeledLines("Output", m.Recovery.OutputPath, width)...)
 	}
-	return lines
+	return cardLines(theme, "Saving a safe checkpoint", lines, width, true)
 }
 
 func renderPausedPage(m Model, width int) []string {
-	lines := []string{}
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	options := []string{
 		"Continue recovery",
 		"Stop after checkpoint",
 	}
-	lines = append(lines, fitToWidth("The current image and recovery map are safe to resume.", width))
-	lines = append(lines, fitToWidth("No new drive commands will be started while paused.", width))
+	lines := cardLines(theme, "Paused safely", []string{
+		theme.Success.Render("✓ Recovery is paused at a durable checkpoint."),
+		"The current image and recovery map are safe to resume.",
+		"No new drive commands will be started while paused.",
+	}, width, false)
 	lines = append(lines, "")
-	for i, option := range options {
-		prefix := "  "
-		if i == m.Cursor {
-			prefix = "> "
-		}
-		lines = append(lines, wrapText(prefix+option, width)...)
-	}
+	lines = append(lines, cardLines(theme, "Next action", choiceMenu(theme, options, m.Cursor, width-4), width, true)...)
 	return lines
 }
 
 func renderStopConfirmPage(m Model, width int) []string {
-	lines := []string{
-		fitToWidth("The image can be resumed later.", width),
-		"",
-	}
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	options := []string{
 		"Save progress and stop",
 		"Continue recovery",
 	}
-	for i, option := range options {
-		prefix := "  "
-		if i == m.Cursor {
-			prefix = "> "
-		}
-		lines = append(lines, wrapText(prefix+option, width)...)
-	}
-	return lines
+	lines := []string{theme.Warning.Render("△ Stop after a durable checkpoint?"), "", "The image can be resumed later.", "Saving progress is the recommended choice.", ""}
+	lines = append(lines, choiceMenu(theme, options, m.Cursor, width-4)...)
+	return cardLines(theme, "Confirm stop", lines, width, true)
 }
 
-func renderAboutPage(width int) []string {
+func renderAboutPage(m Model, width int) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
 	lines := []string{
-		"DiscRescue is a guided optical-disc recovery tool.",
+		theme.Accent.Render("◉ DiscRescue"),
+		"A guided optical-disc recovery tool.",
 		"",
 		"Version " + buildinfo.Version,
 		"Commit " + buildinfo.Commit,
@@ -642,7 +884,7 @@ func renderAboutPage(width int) []string {
 	for _, line := range lines {
 		out = append(out, wrapText(line, width)...)
 	}
-	return out
+	return cardLines(theme, "About", out, width, false)
 }
 
 func selectedDriveLabel(m Model) string {
@@ -682,14 +924,17 @@ func layoutTierFor(width, height int) layoutTier {
 
 func contentWidth(width int) int {
 	if width <= 0 {
-		return 76
+		return 74
 	}
-	value := width - 4
+	value := shellOuterWidth(width) - 6
+	if width < 60 {
+		value = width - 4
+	}
 	if value < 24 {
 		value = 24
 	}
-	if value > 76 {
-		value = 76
+	if value > 104 {
+		value = 104
 	}
 	return value
 }
@@ -762,17 +1007,6 @@ func labeledLines(label, value string, width int) []string {
 	return wrapTextWithPrefix(prefix, value, width)
 }
 
-func selectableFieldLines(label, value string, width int, selected bool, editing bool) []string {
-	prefix := "  "
-	if selected {
-		prefix = "> "
-	}
-	if editing {
-		label += " (editing)"
-	}
-	return wrapTextWithPrefix(prefix+label, value, width)
-}
-
 func wrapTextWithPrefix(prefix, value string, width int) []string {
 	if width <= len(prefix)+1 {
 		return append([]string{prefix}, wrapText(value, width)...)
@@ -797,11 +1031,10 @@ func fitToWidth(text string, width int) string {
 	if width <= 0 {
 		return text
 	}
-	runes := []rune(text)
-	if len(runes) <= width {
+	if lipgloss.Width(text) <= width {
 		return text
 	}
-	return string(runes[:width])
+	return ansi.Truncate(text, width, "…")
 }
 
 func summaryOptions(m Model) []string {

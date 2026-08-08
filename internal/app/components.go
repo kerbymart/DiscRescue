@@ -3,8 +3,10 @@ package app
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -17,11 +19,11 @@ func (i driveListItem) Description() string {
 }
 func (i driveListItem) FilterValue() string { return i.device.DisplayName + " " + i.device.Path }
 
-type choiceListItem string
+type choiceListItem struct{ title, detail string }
 
-func (i choiceListItem) Title() string       { return string(i) }
-func (i choiceListItem) Description() string { return "" }
-func (i choiceListItem) FilterValue() string { return string(i) }
+func (i choiceListItem) Title() string       { return i.title }
+func (i choiceListItem) Description() string { return i.detail }
+func (i choiceListItem) FilterValue() string { return i.title + " " + i.detail }
 
 type detailListItem struct{ title, detail string }
 
@@ -29,22 +31,49 @@ func (i detailListItem) Title() string       { return i.title }
 func (i detailListItem) Description() string { return i.detail }
 func (i detailListItem) FilterValue() string { return i.title + " " + i.detail }
 
-type compactDelegate struct{ list.DefaultDelegate }
+type compactDelegate struct{ showDescription bool }
 
 func (d compactDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
-	d.DefaultDelegate.Render(w, m, index, item)
+	row, ok := item.(interface {
+		Title() string
+		Description() string
+	})
+	if !ok {
+		return
+	}
+
+	selected := index == m.Index()
+	marker := "  "
+	if selected {
+		marker = "> "
+	}
+	width := maxInt(12, m.Width())
+	title := fitToWidth(marker+row.Title(), width-2)
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#B9B4C9")).Padding(0, 1)
+	detailStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#716B82")).Padding(0, 1)
+	if selected {
+		titleStyle = titleStyle.Foreground(lipgloss.Color("#FFF8FF")).Background(lipgloss.Color("#6D28D9")).Bold(true).Width(width - 2)
+		detailStyle = detailStyle.Foreground(lipgloss.Color("#E9D5FF")).Background(lipgloss.Color("#6D28D9")).Width(width - 2)
+	}
+	_, _ = io.WriteString(w, titleStyle.Render(title))
+	if d.showDescription && strings.TrimSpace(row.Description()) != "" {
+		detail := fitToWidth("  "+row.Description(), width-2)
+		_, _ = io.WriteString(w, "\n"+detailStyle.Render(detail))
+	}
 }
 
+func (d compactDelegate) Height() int {
+	if d.showDescription {
+		return 2
+	}
+	return 1
+}
+
+func (compactDelegate) Spacing() int                        { return 0 }
+func (compactDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
+
 func newCompactList(title string, items []list.Item, showDescription bool) list.Model {
-	delegate := list.NewDefaultDelegate()
-	delegate.ShowDescription = showDescription
-	delegate.SetSpacing(1)
-	styles := delegate.Styles
-	styles.NormalTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#A7A3B8"))
-	styles.NormalDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("#686477"))
-	styles.SelectedTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFDF5")).Background(lipgloss.Color("#6D28D9")).Padding(0, 1)
-	styles.SelectedDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("#E9D5FF")).Background(lipgloss.Color("#6D28D9")).Padding(0, 1)
-	delegate.Styles = styles
+	delegate := compactDelegate{showDescription: showDescription}
 	m := list.New(items, delegate, 0, 0)
 	m.Title = title
 	m.SetShowTitle(false)
@@ -79,7 +108,7 @@ func resizeCompactLists(width, availableHeight int, lists ...*list.Model) {
 		if described, ok := component.Items()[0].(interface{ Description() string }); ok && described.Description() != "" {
 			rowHeight = 2
 		}
-		height := items*rowHeight + items
+		height := items * rowHeight
 		if height > availableHeight {
 			height = availableHeight
 		}
@@ -95,12 +124,13 @@ func driveItems(devices []DeviceSummary) []list.Item {
 	return items
 }
 
-func choiceItems(values []string) []list.Item {
-	items := make([]list.Item, len(values))
-	for i, value := range values {
-		items[i] = choiceListItem(value)
+func recoveryActionItems() []list.Item {
+	return []list.Item{
+		choiceListItem{title: "Start a new recovery", detail: "Create a new image and durable recovery map."},
+		choiceListItem{title: "Resume an unfinished recovery", detail: "Continue safely from matching saved work."},
+		choiceListItem{title: "Browse processed media", detail: "Inspect images and maps in the output folder."},
+		choiceListItem{title: "Choose another drive", detail: "Return to the optical-drive list."},
 	}
-	return items
 }
 
 func resumeItems(jobs []ResumableJobViewModel) []list.Item {
@@ -108,7 +138,7 @@ func resumeItems(jobs []ResumableJobViewModel) []list.Item {
 	for _, job := range jobs {
 		items = append(items, detailListItem{title: job.OutputPath, detail: job.Detail})
 	}
-	return append(items, choiceListItem("Back"))
+	return append(items, choiceListItem{title: "Back"})
 }
 
 func historyItems(items []ProcessedMediaViewModel) []list.Item {
@@ -116,7 +146,17 @@ func historyItems(items []ProcessedMediaViewModel) []list.Item {
 	for _, item := range items {
 		listItems = append(listItems, detailListItem{title: item.Title, detail: item.Status})
 	}
-	return append(listItems, choiceListItem("Back"))
+	return append(listItems, choiceListItem{title: "Back"})
 }
 
 func updateCompactList(m list.Model, msg tea.Msg) (list.Model, tea.Cmd) { return m.Update(msg) }
+
+func stylePathInput(input *textinput.Model) {
+	styles := input.Styles()
+	styles.Focused.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFF8FF"))
+	styles.Focused.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("#716B82"))
+	styles.Blurred.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("#B9B4C9"))
+	styles.Blurred.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("#716B82"))
+	styles.Cursor.Color = lipgloss.Color("#67E8F9")
+	input.SetStyles(styles)
+}

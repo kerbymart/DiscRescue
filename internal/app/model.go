@@ -212,6 +212,7 @@ type Model struct {
 	LastError               error
 	Quitting                bool
 	Monochrome              bool
+	DarkBackground          bool
 	NextRequestID           int
 	ActiveDiscoveryRequest  int
 	ActiveMediaRequest      int
@@ -234,12 +235,14 @@ func NewModel() Model {
 	directoryInput.Prompt = ""
 	directoryInput.CharLimit = 4096
 	directoryInput.SetValue(".")
+	stylePathInput(&directoryInput)
 	fileNameInput := textinput.New()
 	fileNameInput.Prompt = ""
 	fileNameInput.CharLimit = 255
+	stylePathInput(&fileNameInput)
 	detailsViewport := viewport.New()
 	driveList := newCompactList("Choose a drive", nil, true)
-	actionList := newCompactList("What do you want to do?", choiceItems([]string{"Start a new recovery", "Resume an unfinished recovery", "Browse processed media", "Choose another drive"}), false)
+	actionList := newCompactList("What do you want to do?", recoveryActionItems(), true)
 	resumeList := newCompactList("Resume unfinished recovery", nil, true)
 	historyList := newCompactList("Browse processed media", nil, true)
 	loadingSpinner := spinner.New()
@@ -284,6 +287,7 @@ func NewModel() Model {
 		},
 		NextRequestID:          2,
 		ActiveDiscoveryRequest: 1,
+		DarkBackground:         true,
 		DirectoryInput:         directoryInput,
 		FileNameInput:          fileNameInput,
 		DetailsViewport:        detailsViewport,

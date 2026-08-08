@@ -3,7 +3,65 @@ package app
 import (
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
+
+func TestEveryPageFitsSupportedTerminalSizes(t *testing.T) {
+	pages := []Page{
+		PageDiscover, PageNoDrives, PageDiscoveryError, PageChooseDrive,
+		PageInspectingMedia, PagePriorProcessing, PageChooseAction, PageChooseOutput,
+		PageReview, PageRecovering, PagePausing, PagePaused, PageStopConfirm,
+		PageSummary, PageResumeJobs, PageHistory, PageDetails, PageAdvanced, PageAbout,
+	}
+	sizes := []struct{ width, height int }{{120, 36}, {80, 24}, {60, 18}, {40, 12}}
+	for _, size := range sizes {
+		for _, page := range pages {
+			model := representativeViewModel(page)
+			updated, _ := model.Update(tea.WindowSizeMsg{Width: size.width, Height: size.height})
+			content := strings.TrimSuffix(updated.View().Content, "\n")
+			if got := lipgloss.Width(content); got > size.width {
+				t.Errorf("page %d at %dx%d is %d columns wide", page, size.width, size.height, got)
+			}
+			if got := lipgloss.Height(content); got > size.height {
+				t.Errorf("page %d at %dx%d is %d rows tall", page, size.width, size.height, got)
+			}
+		}
+	}
+}
+
+func representativeViewModel(page Page) Model {
+	model := NewModel()
+	model.Page = page
+	model.Devices = []DeviceSummary{{DisplayName: "Optical drive", Path: "/dev/sr0", Status: "disc present"}}
+	model.SelectedDrive = model.Devices[0]
+	model.Identity = ContentIdentityViewModel{Summary: "DVD-ROM", Detail: "DVD-ROM · 4.38 GiB · UDF"}
+	model.MediaRecoverable = true
+	model.PriorView = PriorProcessingViewModel{
+		Kind: PriorProcessingStrongResumable, Title: "Matching contents have unfinished work",
+		Body: []string{"A durable recovery map is available."}, Options: []string{"Resume recovery", "Start another capture", "Back"},
+	}
+	model.Setup.OutputDirectory = "/archive"
+	model.Setup.OutputFileName = "family-movies.iso"
+	model.Setup.OutputPath = "/archive/family-movies.iso"
+	model.Setup.FreeSpace = "128 GiB available · 4.38 GiB required"
+	model.DirectoryInput.SetValue(model.Setup.OutputDirectory)
+	model.FileNameInput.SetValue(model.Setup.OutputFileName)
+	model.Recovery = RecoveryViewModel{
+		Phase: "Fast acquisition", Status: "Scanning forward; difficult ranges are deferred.",
+		ScannedSectors: 1526100, RecoveredSectors: 1518124, DeferredSectors: 7904,
+		UnreadableSectors: 72, TotalSectors: 2289072, OutputPath: model.Setup.OutputPath,
+		Elapsed: "18m 42s", Remaining: "1.5 GiB remaining", ETA: "about 12m left", Throughput: "6.8 MiB/s",
+		LastIssue: []string{"Read difficulty near sector 1,498,112; saved for a later pass."},
+	}
+	model.Summary = JobSummary{ImagePath: model.Setup.OutputPath, MapPath: "/archive/family-movies.drmap", Duration: "31m 04s"}
+	model.ResumeJobs = []ResumableJobViewModel{{OutputPath: model.Setup.OutputPath, MapPath: model.Summary.MapPath, Detail: "Safe to resume."}}
+	model.HistoryItems = []ProcessedMediaViewModel{{Title: "Family movies", ImagePath: model.Setup.OutputPath, Status: "Incomplete"}}
+	model.Details = DetailsViewModel{Lines: []string{"Drive: /dev/sr0", "Worker: active", "Map: durable"}}
+	return model
+}
 
 func TestViewTooSmall(t *testing.T) {
 	model := NewModel()
@@ -60,15 +118,15 @@ func TestViewChooseDriveShowsOneColumnList(t *testing.T) {
 		{Path: "D:/dev/cdrom1", DisplayName: "Blu-ray Drive", Status: "busy"},
 	}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Choose a drive") {
 		t.Fatalf("expected choose-drive title, got %q", view)
 	}
 	if !strings.Contains(view, "> DVD Drive") {
 		t.Fatalf("expected focused device row, got %q", view)
 	}
-	if strings.Contains(view, "│") || strings.Contains(view, "┌") {
-		t.Fatalf("expected plain one-column layout without panels, got %q", view)
+	if !strings.Contains(view, "AVAILABLE DRIVES") || !strings.Contains(view, "╭") {
+		t.Fatalf("expected a focused drive card, got %q", view)
 	}
 }
 
@@ -77,11 +135,11 @@ func TestViewDiscoverShowsNonInteractiveStartupCopy(t *testing.T) {
 	model.Width = 80
 	model.Height = 24
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Finding usable optical drives") {
 		t.Fatalf("expected discovery title, got %q", view)
 	}
-	if !strings.Contains(view, "Please wait while DiscRescue checks for usable optical drives.") {
+	if !strings.Contains(view, "Looking for optical drives") || !strings.Contains(view, "This usually takes only a moment.") {
 		t.Fatalf("expected discovery body copy, got %q", view)
 	}
 	if strings.Contains(view, "j/k move") || strings.Contains(view, "enter select") || strings.Contains(view, "esc back") {
@@ -109,7 +167,7 @@ func TestViewPriorProcessingShowsMatchingContentsLanguage(t *testing.T) {
 		Options:   []string{"Verify the previous archive", "Start another capture", "View previous job", "Edit physical-copy label", "Back"},
 	}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Matching disc contents were processed before") {
 		t.Fatalf("expected matching-contents wording, got %q", view)
 	}
@@ -133,7 +191,7 @@ func TestViewActionPageShowsHistoryLineAndDiscSummary(t *testing.T) {
 		HistoryLine: "Checking this computer for matching saved work.",
 	}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Checking this computer for matching saved work.") {
 		t.Fatalf("expected history line, got %q", view)
 	}
@@ -160,7 +218,7 @@ func TestViewReviewUsesCompactUserFacingSummary(t *testing.T) {
 	model.Identity = ContentIdentityViewModel{Detail: "DVD-ROM, 4.38 GiB"}
 	model.Setup.OutputPath = "~/Images/archive-disc.iso"
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Drive") || !strings.Contains(view, "/dev/sr0") {
 		t.Fatalf("expected selected drive summary, got %q", view)
 	}
@@ -185,7 +243,7 @@ func TestViewReviewShowsResumeTargetWhenAvailable(t *testing.T) {
 	model.Setup.ResumeMapPath = "D:/Archives/archive-disc.drmap"
 	model.Setup.ResumeDetail = "Resume recovery from 120 recovered sectors and 3 unreadable sectors."
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Map") || !strings.Contains(view, "archive-disc.drmap") {
 		t.Fatalf("expected resume map details, got %q", view)
 	}
@@ -208,15 +266,15 @@ func TestViewResumeJobsShowsSavedRecoveries(t *testing.T) {
 		Detail:     "Resume recovery from 120 recovered sectors and 3 unreadable sectors.",
 	}}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Resume unfinished recovery") {
 		t.Fatalf("expected resume page title, got %q", view)
 	}
 	if !strings.Contains(view, "> D:/Archives/archive-disc.iso") {
 		t.Fatalf("expected resumable job row, got %q", view)
 	}
-	if !strings.Contains(view, "Resume recovery from 120 recovered sectors and 3 unreadable") ||
-		!strings.Contains(view, "sectors.") {
+	if !strings.Contains(view, "Resume recovery from 120 recovered sectors and 3") ||
+		!strings.Contains(view, "unreadable sectors.") {
 		t.Fatalf("expected resume details, got %q", view)
 	}
 }
@@ -235,7 +293,7 @@ func TestViewHistoryShowsProcessedMediaList(t *testing.T) {
 		Detail:     "Resume recovery from 120 recovered sectors and 3 unreadable sectors.",
 	}}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Browse processed media") {
 		t.Fatalf("expected history page title, got %q", view)
 	}
@@ -257,15 +315,15 @@ func TestViewOutputWrapsLongPathInsteadOfTruncating(t *testing.T) {
 	model.Setup.ActiveOutputField = OutputFieldFileName
 	syncOutputPath(&model.Setup)
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Folder") || !strings.Contains(view, "File name") {
 		t.Fatalf("expected explicit output fields, got %q", view)
 	}
 	if !strings.Contains(view, "Archive-Disc-Volume-07.iso") {
 		t.Fatalf("expected wrapped path tail, got %q", view)
 	}
-	if !strings.Contains(view, "Choose where to save the recovery image.") {
-		t.Fatalf("expected clearer output guidance, got %q", view)
+	if !strings.Contains(view, "Continue with this target") {
+		t.Fatalf("expected a clear primary output action, got %q", view)
 	}
 	if !strings.Contains(view, "Full path") {
 		t.Fatalf("expected combined path preview, got %q", view)
@@ -329,7 +387,7 @@ func TestViewRecoveringUsesCompactLayoutAtFortyByTwelve(t *testing.T) {
 		LastIssue:         []string{"Last issue: sector 1,891,840 could not be read.", "It will be tried again during the recovery pass."},
 	}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Recovering") {
 		t.Fatalf("expected recovery title, got %q", view)
 	}
@@ -355,7 +413,7 @@ func TestViewRecoveringUsesMonochromeSafeProgressBar(t *testing.T) {
 		TotalSectors:     240,
 	}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "[========") && !strings.Contains(view, "[====") {
 		t.Fatalf("expected monochrome-safe progress bar, got %q", view)
 	}
@@ -374,7 +432,7 @@ func TestViewRecoveringUsesUnicodeProgressBarWhenAllowed(t *testing.T) {
 		TotalSectors:     240,
 	}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "█") && !strings.Contains(view, "░") {
 		t.Fatalf("expected unicode progress bar, got %q", view)
 	}
@@ -395,7 +453,7 @@ func TestViewRecoveringShowsEstimatingTextWhenETANotReady(t *testing.T) {
 		Remaining:        "1.0 GiB remaining",
 	}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Estimating time remaining...") {
 		t.Fatalf("expected ETA fallback copy, got %q", view)
 	}
@@ -408,11 +466,11 @@ func TestViewPausingShowsPendingPauseLanguage(t *testing.T) {
 	model.Page = PagePausing
 	model.Recovery = RecoveryViewModel{PausePending: true}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Pausing recovery") {
 		t.Fatalf("expected pausing title, got %q", view)
 	}
-	if !strings.Contains(view, "Pause requested. Waiting for the current drive request to finish safely.") {
+	if !strings.Contains(view, "Pause requested. Waiting for the current drive request to") || !strings.Contains(view, "safely.") {
 		t.Fatalf("expected truthful pause-pending summary, got %q", view)
 	}
 	if strings.Contains(view, "Continue recovery") {
@@ -426,7 +484,7 @@ func TestViewPausedShowsSafeResumeLanguage(t *testing.T) {
 	model.Height = 24
 	model.Page = PagePaused
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Recovery paused") {
 		t.Fatalf("expected paused title, got %q", view)
 	}
@@ -444,7 +502,7 @@ func TestViewStopConfirmationPlacesImmediateTerminationLast(t *testing.T) {
 	model.Height = 24
 	model.Page = PageStopConfirm
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "> Save progress and stop") {
 		t.Fatalf("expected safe stop default, got %q", view)
 	}
@@ -471,7 +529,7 @@ func TestViewIncompleteSummaryAvoidsCleanSuccessTreatment(t *testing.T) {
 		UnreadableSectors: 37,
 	}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "37 sectors could not be recovered.") {
 		t.Fatalf("expected incomplete-result explanation, got %q", view)
 	}
@@ -505,7 +563,7 @@ func TestViewCompleteSummaryShowsDuration(t *testing.T) {
 		TotalSectors:     2295104,
 	}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Duration   31 minutes") {
 		t.Fatalf("expected duration in completion summary, got %q", view)
 	}
@@ -536,7 +594,7 @@ func TestViewCompactSummaryKeepsEssentialFieldsOnly(t *testing.T) {
 		TotalSectors:     2295104,
 	}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Image") {
 		t.Fatalf("expected essential summary fields, got %q", view)
 	}
@@ -580,7 +638,7 @@ func TestViewDetailsFromRecoveryUsesCurrentRecoveryDetails(t *testing.T) {
 	model.Summary = JobSummary{NextAction: "Fix the reported problem or choose a different output target."}
 	model.Details = DetailsViewModel{Lines: []string{"Image: stale.iso", "Next step: stale summary text"}}
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Drive: Optical drive E:") {
 		t.Fatalf("expected current recovery drive details, got %q", view)
 	}
@@ -598,7 +656,7 @@ func TestViewAboutShowsBuildMetadata(t *testing.T) {
 	model.Height = 24
 	model.Page = PageAbout
 
-	view := model.View().Content
+	view := ansi.Strip(model.View().Content)
 	if !strings.Contains(view, "Version dev") {
 		t.Fatalf("expected default build version, got %q", view)
 	}
