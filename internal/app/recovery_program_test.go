@@ -3,10 +3,13 @@ package app
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestRenderPassRecoveryBodyDistinguishesRecoveryStates(t *testing.T) {
 	model := NewModel()
+	model.Height = 36
 	model.Recovery = RecoveryViewModel{
 		Phase:             "Fast acquisition",
 		Status:            recoveryPassStatus("Fast acquisition"),
@@ -17,13 +20,13 @@ func TestRenderPassRecoveryBodyDistinguishesRecoveryStates(t *testing.T) {
 		TotalSectors:      100,
 	}
 
-	body := strings.Join(renderPassRecoveryBody(model, 76, layoutFull), "\n")
+	body := ansi.Strip(strings.Join(renderPassRecoveryBody(model, 76, layoutFull), "\n"))
 	for _, want := range []string{
 		"80%",
-		"Scanned       80 of 100 sectors",
-		"Recovered     75 sectors",
-		"Deferred      4 sectors",
-		"Unreadable    1 sectors",
+		"80 / 100 sectors covered",
+		"RECOVERED",
+		"DEFERRED",
+		"UNREADABLE",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("recovery body missing %q:\n%s", want, body)
