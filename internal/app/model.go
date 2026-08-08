@@ -1,5 +1,12 @@
 package app
 
+import (
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+)
+
 type Page uint8
 
 const (
@@ -205,6 +212,7 @@ type Model struct {
 	LastError               error
 	Quitting                bool
 	Monochrome              bool
+	DarkBackground          bool
 	NextRequestID           int
 	ActiveDiscoveryRequest  int
 	ActiveMediaRequest      int
@@ -212,9 +220,33 @@ type Model struct {
 	ActiveTargetRequest     int
 	ActiveResumeRequest     int
 	ActiveHistoryRequest    int
+	DirectoryInput          textinput.Model
+	FileNameInput           textinput.Model
+	DetailsViewport         viewport.Model
+	DriveList               list.Model
+	ActionList              list.Model
+	ResumeList              list.Model
+	HistoryList             list.Model
+	LoadingSpinner          spinner.Model
 }
 
 func NewModel() Model {
+	directoryInput := textinput.New()
+	directoryInput.Prompt = ""
+	directoryInput.CharLimit = 4096
+	directoryInput.SetValue(".")
+	stylePathInput(&directoryInput)
+	fileNameInput := textinput.New()
+	fileNameInput.Prompt = ""
+	fileNameInput.CharLimit = 255
+	stylePathInput(&fileNameInput)
+	detailsViewport := viewport.New()
+	driveList := newCompactList("Choose a drive", nil, true)
+	actionList := newCompactList("What do you want to do?", recoveryActionItems(), true)
+	resumeList := newCompactList("Resume unfinished recovery", nil, true)
+	historyList := newCompactList("Browse processed media", nil, true)
+	loadingSpinner := spinner.New()
+	loadingSpinner.Spinner = spinner.Dot
 	return Model{
 		Page: PageDiscover,
 		Setup: JobSetupModel{
@@ -255,5 +287,14 @@ func NewModel() Model {
 		},
 		NextRequestID:          2,
 		ActiveDiscoveryRequest: 1,
+		DarkBackground:         true,
+		DirectoryInput:         directoryInput,
+		FileNameInput:          fileNameInput,
+		DetailsViewport:        detailsViewport,
+		DriveList:              driveList,
+		ActionList:             actionList,
+		ResumeList:             resumeList,
+		HistoryList:            historyList,
+		LoadingSpinner:         loadingSpinner,
 	}
 }

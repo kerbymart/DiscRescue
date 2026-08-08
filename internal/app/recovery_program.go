@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -23,7 +22,7 @@ func NewRecoveryProgramModel(runtime platform.Runtime) RecoveryProgramModel {
 }
 
 func (m RecoveryProgramModel) Init() tea.Cmd {
-	return m.ProgramModel.Init()
+	return tea.Batch(m.ProgramModel.Init(), m.LoadingSpinner.Tick)
 }
 
 func (m RecoveryProgramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -113,58 +112,14 @@ func renderPassRecoveryView(m Model) tea.View {
 	}
 
 	width := contentWidth(m.Width)
-	lines := []string{"DiscRescue", ""}
-	lines = append(lines, wrapText(pageTitle(m), width)...)
-	lines = append(lines, "")
-	lines = append(lines, renderPassRecoveryBody(m, width, tier)...)
-	lines = append(lines, "")
-	lines = append(lines, renderFooter(m.Page, width, tier))
-
-	view := tea.NewView(strings.Join(lines, "\n") + "\n")
+	view := tea.NewView(renderShell(m, renderPassRecoveryBody(m, width, tier), tier))
 	view.WindowTitle = "DiscRescue"
 	view.AltScreen = usesAltScreen(m.Page)
 	return view
 }
 
 func renderPassRecoveryBody(m Model, width int, tier layoutTier) []string {
-	bar := scannedProgressBar(m, tier)
-	percent := uint64(0)
-	if m.Recovery.TotalSectors > 0 {
-		percent = (m.Recovery.ScannedSectors * 100) / m.Recovery.TotalSectors
-		if percent > 100 {
-			percent = 100
-		}
-	}
-	lines := []string{fitToWidth(fmt.Sprintf("%s %d%% scanned", bar, percent), width), ""}
-	if m.Recovery.Phase != "" {
-		lines = append(lines, fitToWidth(m.Recovery.Phase, width))
-	}
-	if m.Recovery.Status != "" {
-		lines = append(lines, wrapText(m.Recovery.Status, width)...)
-	}
-	if summary := recoveryTimeSummary(m, tier); summary != "" {
-		lines = append(lines, wrapText(summary, width)...)
-	}
-	if tier != layoutCompact {
-		if m.Recovery.Throughput != "" {
-			lines = append(lines, labeledLines("Rate", m.Recovery.Throughput, width)...)
-		}
-		if m.Recovery.Elapsed != "" {
-			lines = append(lines, labeledLines("Elapsed", m.Recovery.Elapsed, width)...)
-		}
-	}
-	lines = append(lines, "")
-	lines = append(lines, fitToWidth(fmt.Sprintf("Scanned       %s of %s sectors", formatCount(m.Recovery.ScannedSectors), formatCount(m.Recovery.TotalSectors)), width))
-	lines = append(lines, fitToWidth(fmt.Sprintf("Recovered     %s sectors", formatCount(m.Recovery.RecoveredSectors)), width))
-	lines = append(lines, fitToWidth(fmt.Sprintf("Deferred      %s sectors", formatCount(m.Recovery.DeferredSectors)), width))
-	lines = append(lines, fitToWidth(fmt.Sprintf("Unreadable    %s sectors", formatCount(m.Recovery.UnreadableSectors)), width))
-	if tier != layoutCompact && len(m.Recovery.LastIssue) > 0 {
-		lines = append(lines, "")
-		for _, line := range m.Recovery.LastIssue {
-			lines = append(lines, wrapText(line, width)...)
-		}
-	}
-	return lines
+	return renderRecoveryDashboard(m, width, tier)
 }
 
 func scannedProgressBar(m Model, tier layoutTier) string {
