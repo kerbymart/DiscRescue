@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -120,36 +119,7 @@ func renderPassRecoveryView(m Model) tea.View {
 }
 
 func renderPassRecoveryBody(m Model, width int, tier layoutTier) []string {
-	lines := []string{recoveryProgressLine(m, width, tier), ""}
-	if m.Recovery.Phase != "" {
-		lines = append(lines, fitToWidth(m.Recovery.Phase, width))
-	}
-	if m.Recovery.Status != "" {
-		lines = append(lines, wrapText(m.Recovery.Status, width)...)
-	}
-	if summary := recoveryTimeSummary(m, tier); summary != "" {
-		lines = append(lines, wrapText(summary, width)...)
-	}
-	if tier != layoutCompact {
-		if m.Recovery.Throughput != "" {
-			lines = append(lines, labeledLines("Rate", m.Recovery.Throughput, width)...)
-		}
-		if m.Recovery.Elapsed != "" {
-			lines = append(lines, labeledLines("Elapsed", m.Recovery.Elapsed, width)...)
-		}
-	}
-	lines = append(lines, "")
-	lines = append(lines, fitToWidth(fmt.Sprintf("Scanned       %s of %s sectors", formatCount(m.Recovery.ScannedSectors), formatCount(m.Recovery.TotalSectors)), width))
-	lines = append(lines, fitToWidth(fmt.Sprintf("Recovered     %s sectors", formatCount(m.Recovery.RecoveredSectors)), width))
-	lines = append(lines, fitToWidth(fmt.Sprintf("Deferred      %s sectors", formatCount(m.Recovery.DeferredSectors)), width))
-	lines = append(lines, fitToWidth(fmt.Sprintf("Unreadable    %s sectors", formatCount(m.Recovery.UnreadableSectors)), width))
-	if tier != layoutCompact && len(m.Recovery.LastIssue) > 0 {
-		lines = append(lines, "")
-		for _, line := range m.Recovery.LastIssue {
-			lines = append(lines, wrapText(line, width)...)
-		}
-	}
-	return lines
+	return renderRecoveryDashboard(m, width, tier)
 }
 
 func scannedProgressBar(m Model, tier layoutTier) string {
