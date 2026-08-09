@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"discrescue/internal/catalog"
 	"discrescue/internal/platform"
 	"discrescue/internal/recovery"
 )
@@ -392,6 +393,7 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						TotalSectors:      totalSectors,
 						UnresolvedSectors: snapshot.UnreadableSectors,
 						Duration:          time.Since(snapshot.StartedAt).Round(time.Second).String(),
+						CatalogStatus:     catalog.CatalogWriteStatus{State: catalog.CatalogWriteNotAttempted},
 					}
 					if snapshot.Canceled {
 						summary.Outcome = "Recovery stopped"

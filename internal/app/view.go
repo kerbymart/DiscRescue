@@ -807,7 +807,9 @@ func renderSummaryPage(m Model, width int, tier layoutTier) []string {
 		result = append(result, "Image      "+firstNonEmpty(m.Summary.ImagePath, m.Recovery.OutputPath))
 		if tier != layoutCompact {
 			result = append(result, "Map        "+firstNonEmpty(m.Summary.MapPath, replaceExtension(m.Recovery.OutputPath, ".drmap")))
-			result = append(result, "History    "+firstNonEmpty(m.Summary.CatalogStatus, "Recorded in local processed-media catalog"))
+			if history := m.Summary.CatalogStatus.SummaryLine(); history != "" {
+				result = append(result, "History    "+history)
+			}
 		}
 	}
 	lines := cardLines(theme, "Result", result, width, false)
