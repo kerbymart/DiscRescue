@@ -10,6 +10,7 @@ type KeyMap struct {
 	Advanced []string
 	Pause    []string
 	Force    []string
+	Refresh  []string
 }
 
 func DefaultKeys() KeyMap {
@@ -23,5 +24,6 @@ func DefaultKeys() KeyMap {
 		Advanced: []string{"a"},
 		Pause:    []string{"space"},
 		Force:    []string{"ctrl+c"},
+		Refresh:  []string{"r"},
 	}
 }

@@ -44,9 +44,11 @@ const (
 )
 
 type DeviceSummary struct {
+	ID          string
 	Path        string
 	DisplayName string
 	Status      string
+	MediaToken  string
 }
 
 type OutputField uint8

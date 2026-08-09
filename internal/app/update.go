@@ -45,7 +45,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		resizeCompactLists(componentWidth, listHeight, &m.DriveList, &m.ActionList, &m.ResumeList, &m.HistoryList)
 		return m, nil
 	case tea.KeyPressMsg:
-		if m.Page == PageChooseDrive && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) {
+		if m.Page == PageChooseDrive && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Refresh) {
 			var cmd tea.Cmd
 			m.DriveList, cmd = updateCompactList(m.DriveList, typed)
 			m.Cursor = m.DriveList.Index()
@@ -96,7 +96,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityError}
 			return m, nil
 		}
-		m.Devices = append([]DeviceSummary(nil), typed.Devices...)
+		previousSelection := m.SelectedDrive
+		var mediaInvalidated bool
+		m.Devices, m.SelectedDrive, mediaInvalidated = reconcileDevices(typed.Devices, previousSelection)
+		if mediaInvalidated {
+			m.ActiveMediaRequest = 0
+			m.MediaFileSystem = ""
+			m.MediaVolumeLabel = ""
+			m.MediaLogicalSectorSize = 0
+			m.MediaCapacitySectors = 0
+			m.Identity = ContentIdentityViewModel{Summary: "Media changed; inspect the current disc before continuing."}
+			m.PriorView = defaultPriorProcessingView()
+		}
 		m.DriveList.SetItems(driveItems(m.Devices))
 		resizeCompactLists(interactiveWidth(m.Width), maxInt(1, m.Height-11), &m.DriveList)
 		m.Cursor = 0
@@ -390,6 +401,11 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case matchesKey(key, DefaultKeys().Back):
 		return m.handleBack()
+	case matchesKey(key, DefaultKeys().Refresh):
+		if m.Page == PageChooseDrive {
+			return m.beginDiscovery()
+		}
+		return m, nil
 	case matchesKey(key, DefaultKeys().Up):
 		m.moveCursor(-1)
 		return m, nil

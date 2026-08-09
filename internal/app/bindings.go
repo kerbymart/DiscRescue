@@ -66,6 +66,9 @@ func pageHelp(page Page) pageHelpMap {
 		edit := k.Select
 		edit.SetHelp("enter", "edit / accept")
 		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, edit, k.Tab, k.Back}}}
+	case PageChooseDrive:
+		refresh := key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh drives"))
+		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, refresh, k.Back, k.Quit}}}
 	default:
 		return pageHelpMap{groups: [][]key.Binding{common}}
 	}
