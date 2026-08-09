@@ -5,6 +5,8 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
+
+	"discrescue/internal/platform"
 )
 
 type Page uint8
@@ -63,6 +65,7 @@ type JobSetupModel struct {
 	OutputFormat      string
 	FreeSpace         string
 	MethodLabel       string
+	Method            platform.RecoveryMethod
 	CopyLabel         string
 	ResumeReady       bool
 	ResumeMapPath     string
@@ -259,6 +262,7 @@ func NewModel() Model {
 			OutputFormat:      "ISO",
 			FreeSpace:         "Unknown until an output location is selected",
 			MethodLabel:       "Balanced recovery",
+			Method:            platform.RecoveryMethodBalanced,
 			CopyLabel:         "Not set (optional)",
 		},
 		Identity: ContentIdentityViewModel{

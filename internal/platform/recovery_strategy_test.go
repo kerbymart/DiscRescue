@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"discrescue/internal/mapfile"
+	"discrescue/internal/recovery"
 )
 
 type memoryRecoveryStore struct {
@@ -172,6 +173,47 @@ func TestPassBasedRecoveryCompletesFastCoverageBeforeTargetedRetry(t *testing.T)
 	_, recovered, unresolved := summarizeRecoveryExtents(store.Extents())
 	if recovered != 128 || unresolved != 64 {
 		t.Fatalf("unexpected fast-pass state: recovered=%d unresolved=%d extents=%+v", recovered, unresolved, store.Extents())
+	}
+}
+
+func TestPassBasedRecoveryPolicyControlsPassSequence(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		method        recovery.RecoveryMethod
+		wantTargeted  bool
+		wantFinalPass string
+	}{
+		{name: "fast", method: recovery.RecoveryMethodFast, wantTargeted: false, wantFinalPass: "Deferred work remains"},
+		{name: "balanced", method: recovery.RecoveryMethodBalanced, wantTargeted: true, wantFinalPass: "Complete"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			policy, err := recovery.PolicyForMethod(test.method)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader := &scriptedRecoveryReader{failAll: true, data: newRecoveryTestData(8)}
+			writer := &memoryRecoveryWriter{data: make([]byte, 8)}
+			store := &memoryRecoveryStore{}
+			var passes []string
+			err = runPassBasedRecoveryWithPolicy(context.Background(), reader, writer, 1, 8, store, policy, func(progress recoveryPassProgress) {
+				passes = append(passes, progress.Pass)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			foundTargeted := false
+			for _, pass := range passes {
+				if pass == "Targeted retry" {
+					foundTargeted = true
+				}
+			}
+			if foundTargeted != test.wantTargeted {
+				t.Fatalf("targeted pass=%v, want %v; passes=%v", foundTargeted, test.wantTargeted, passes)
+			}
+			if passes[len(passes)-1] != test.wantFinalPass {
+				t.Fatalf("final pass=%q, want %q; passes=%v", passes[len(passes)-1], test.wantFinalPass, passes)
+			}
+		})
 	}
 }
 

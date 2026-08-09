@@ -619,12 +619,16 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		case 0:
 			return m, startJobEffect()
 		case 1:
+			m.Setup.Method, m.Setup.MethodLabel = nextRecoveryMethod(m.Setup.Method)
+			m.Notice = &NoticeModel{Text: "Recovery method changed to " + m.Setup.MethodLabel + ".", Severity: SeverityInfo}
+			return m, nil
+		case 2:
 			m.PreviousPage = PageReview
 			m.Page = PageChooseOutput
 			m.Cursor = 2
 			m.Setup.OutputEditing = false
 			return m, nil
-		case 2:
+		case 3:
 			m.Page = PageChooseDrive
 			m.Cursor = 0
 			m.Notice = &NoticeModel{Text: "Choose one optical drive.", Severity: SeverityInfo}
@@ -751,7 +755,7 @@ func (m Model) cursorLimit() int {
 	case PagePriorProcessing:
 		return len(m.PriorView.Options)
 	case PageReview:
-		return 3
+		return 4
 	case PageResumeJobs:
 		if len(m.ResumeJobs) == 0 {
 			return 1
@@ -1121,6 +1125,17 @@ func nextMethodLabel(current string) string {
 		return "Gentle recovery"
 	default:
 		return "Balanced recovery"
+	}
+}
+
+func nextRecoveryMethod(current platform.RecoveryMethod) (platform.RecoveryMethod, string) {
+	switch current {
+	case platform.RecoveryMethodBalanced:
+		return platform.RecoveryMethodFast, "Fast recovery"
+	case platform.RecoveryMethodFast:
+		return platform.RecoveryMethodGentle, "Gentle recovery"
+	default:
+		return platform.RecoveryMethodBalanced, "Balanced recovery"
 	}
 }
 
