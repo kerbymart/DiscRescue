@@ -10,9 +10,9 @@ Release builds inject:
 - commit
 - build date
 
-The PowerShell entrypoint for metadata-aware builds is:
+The shell-neutral entrypoint for metadata-aware builds is:
 
-- `scripts/build-release.ps1`
+- `go run ./tools/devtool build`
 
 It sets linker variables for `discrescue/internal/buildinfo` and keeps `-trimpath` enabled.
 
@@ -47,6 +47,6 @@ Linux packaging should include:
 - the `discrescue` executable;
 - user-facing documentation or a pointer to it;
 - any package notes needed for device-node permissions;
-- release verification notes for race coverage, simulator gates, and command-audit status.
+- release verification notes for native race coverage, simulator gates, and command-audit status.
 
 The package must not add helpers that expand scope beyond the single executable model. Service units, shell wrappers, or desktop launchers are optional distribution extras and must not become required for normal recovery use.
