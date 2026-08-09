@@ -147,6 +147,31 @@ func TestReplayJournalRejectsCompleteCorruptRecord(t *testing.T) {
 	}
 }
 
+func TestReplayJournalReaderIgnoresTornFinalRecord(t *testing.T) {
+	record, err := MarshalJournalRecord(JournalRecord{Type: RecordJobCreated, Sequence: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := ReplayJournalReader(Checkpoint{}, bytes.NewReader(append(record, record[:7]...)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.LastSequence != 1 {
+		t.Fatalf("last sequence = %d, want 1", checkpoint.LastSequence)
+	}
+}
+
+func TestReplayJournalReaderRejectsCompleteCorruptRecord(t *testing.T) {
+	record, err := MarshalJournalRecord(JournalRecord{Type: RecordJobCreated, Sequence: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record[len(record)-1] ^= 0xFF
+	if _, err := ReplayJournalReader(Checkpoint{}, bytes.NewReader(record)); err == nil {
+		t.Fatal("expected complete record corruption to fail")
+	}
+}
+
 func TestReplayJournalRevertsQueuedStateToUnknown(t *testing.T) {
 	extent := Extent{StartLBA: 4, Sectors: 2, State: SectorStateQueued, Confidence: ConfidenceNone}
 	journal, err := AppendJournalRecord(nil, JournalRecord{
