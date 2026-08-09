@@ -13,3 +13,9 @@ identity and current media token, so they are discarded after media replacement.
 
 The enclosing worker frame remains version 1, length-prefixed, and CRC32C
 protected as specified by `internal/device/protocol.go`.
+
+Eject requests use a four-byte payload: mode (`0` normal, `1` force), explicit
+confirmation (`0` or `1`), and two reserved zero bytes. Force eject is rejected
+unless explicitly confirmed. Normal and force eject remain distinct operations;
+the caller must release recovery ownership before normal eject and must verify
+the resulting media state after either operation.
