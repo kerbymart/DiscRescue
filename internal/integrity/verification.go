@@ -88,12 +88,15 @@ func VerifyMap(input MapVerificationInput) (MapVerificationResult, error) {
 		return MapVerificationResult{}, fmt.Errorf("verify map checkpoint: %w", err)
 	}
 
-	replayed, err := mapfile.ReplayJournal(checkpoint, input.JournalBytes)
+	replayed, err := mapfile.ReplayJournalWithinCapacity(checkpoint, input.JournalBytes, header.ExpectedSectorCount)
 	if err != nil {
 		return MapVerificationResult{}, fmt.Errorf("verify map journal: %w", err)
 	}
 
-	requiredImageBytes := requiredImageBytes(replayed.Extents, header.LogicalSectorSize)
+	requiredImageBytes, err := requiredImageBytes(replayed.Extents, header.LogicalSectorSize)
+	if err != nil {
+		return MapVerificationResult{}, fmt.Errorf("verify map image offset: %w", err)
+	}
 	if input.ImageLength < requiredImageBytes {
 		return MapVerificationResult{}, fmt.Errorf(
 			"verify map image length: image length %d is smaller than required %d",
@@ -172,8 +175,12 @@ func VerifyImage(input ImageVerificationInput) (ImageVerificationResult, error) 
 			Sectors:  downgraded.Sectors,
 			Items:    nil,
 		})
+		offset, err := mapfile.CheckedSectorByteOffset(item.Extent.StartLBA, input.LogicalSectorSize)
+		if err != nil {
+			return ImageVerificationResult{}, fmt.Errorf("verify image extent[%d]: %w", i, err)
+		}
 		result.ChangedRanges = append(result.ChangedRanges, ByteRange{
-			Offset: item.Extent.StartLBA * uint64(input.LogicalSectorSize),
+			Offset: offset,
 			Length: expectedLength,
 		})
 	}
@@ -301,17 +308,21 @@ func EvaluateFilesystemAdvisories(advisories []FilesystemAdvisory, extents []map
 	}, nil
 }
 
-func requiredImageBytes(extents []mapfile.Extent, logicalSectorSize uint32) uint64 {
+func requiredImageBytes(extents []mapfile.Extent, logicalSectorSize uint32) (uint64, error) {
 	var maxEnd uint64
 	for _, extent := range extents {
 		if !claimsImageData(extent.State) {
 			continue
 		}
-		if extent.EndLBA() > maxEnd {
-			maxEnd = extent.EndLBA()
+		end, err := extent.CheckedEndLBA()
+		if err != nil {
+			return 0, err
+		}
+		if end > maxEnd {
+			maxEnd = end
 		}
 	}
-	return maxEnd * uint64(logicalSectorSize)
+	return mapfile.CheckedSectorByteOffset(maxEnd, logicalSectorSize)
 }
 
 func claimsImageData(state mapfile.SectorState) bool {
