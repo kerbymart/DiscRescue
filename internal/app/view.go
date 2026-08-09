@@ -584,6 +584,7 @@ func renderReviewPage(m Model, width int, tier layoutTier) []string {
 	theme := newTheme(m.Monochrome, m.DarkBackground)
 	options := []string{
 		firstNonEmpty(m.Setup.ActionLabel, "Start a new recovery"),
+		"Change recovery method",
 		"Edit output path",
 		"Choose another drive",
 	}
