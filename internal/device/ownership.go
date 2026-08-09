@@ -31,3 +31,20 @@ func (o *Ownership) Release(owner DriveOwner) {
 		o.owner = DriveUnowned
 	}
 }
+
+func (o *Ownership) ValidateEject(request EjectRequest) error {
+	if err := request.Validate(); err != nil {
+		return err
+	}
+	switch request.Mode {
+	case EjectNormal:
+		if o.Owner() != DriveUnowned {
+			return &OperationError{Code: ErrorBusy, Op: "normal eject", Detail: "drive is owned"}
+		}
+	case EjectForce:
+		if o.Owner() == DriveRecoveryOwned {
+			return &OperationError{Code: ErrorBusy, Op: "force eject", Detail: "recovery must be stopped first"}
+		}
+	}
+	return nil
+}
