@@ -104,6 +104,13 @@ func strongPriorProcessingCopy(entry Entry) PriorProcessingCopy {
 			Detail:     "Archived successfully",
 			Candidates: []Entry{entry},
 		}
+	case ProcessingCompleted:
+		return PriorProcessingCopy{
+			State:      PriorProcessingArchived,
+			Title:      "Matching contents were processed before",
+			Detail:     "Completed successfully",
+			Candidates: []Entry{entry},
+		}
 	case ProcessingCompletedWithGaps:
 		return PriorProcessingCopy{
 			State:      PriorProcessingArchived,

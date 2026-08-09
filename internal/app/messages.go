@@ -3,6 +3,7 @@ package app
 import (
 	"time"
 
+	"discrescue/internal/catalog"
 	"discrescue/internal/platform"
 )
 
@@ -26,6 +27,8 @@ type MediaIdentifiedMsg struct {
 	SuggestedOutputPath string
 	Recoverable         bool
 	RecoverabilityNote  string
+	IdentityObservation *catalog.IdentityObservation
+	PriorProcessing     *catalog.PriorProcessingResult
 	Err                 error
 }
 
