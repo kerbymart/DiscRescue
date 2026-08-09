@@ -2,6 +2,7 @@ package mapfile
 
 import (
 	"fmt"
+	"math"
 	"sort"
 )
 
@@ -22,9 +23,22 @@ func (e Extent) EndLBA() uint64 {
 	return e.StartLBA + uint64(e.Sectors)
 }
 
+// CheckedEndLBA returns the exclusive end of an extent without allowing
+// uint64 arithmetic to wrap.
+func (e Extent) CheckedEndLBA() (uint64, error) {
+	sectors := uint64(e.Sectors)
+	if sectors > math.MaxUint64-e.StartLBA {
+		return 0, fmt.Errorf("extent lba range overflows")
+	}
+	return e.StartLBA + sectors, nil
+}
+
 func (e Extent) Validate() error {
 	if e.Sectors == 0 {
 		return fmt.Errorf("validate extent: sectors must be greater than zero")
+	}
+	if _, err := e.CheckedEndLBA(); err != nil {
+		return fmt.Errorf("validate extent: %w", err)
 	}
 	return ValidateStateConfidence(e.State, e.Confidence)
 }
@@ -116,6 +130,40 @@ func ValidateExtentSet(extents []Extent) error {
 		}
 	}
 	return nil
+}
+
+// ValidateExtentSetWithinCapacity validates intrinsic extent invariants and
+// requires every extent to be contained in the declared media geometry.
+func ValidateExtentSetWithinCapacity(extents []Extent, expectedSectorCount uint64) error {
+	if expectedSectorCount == 0 {
+		return fmt.Errorf("validate extent capacity: expected sector count must be greater than zero")
+	}
+	if err := ValidateExtentSet(extents); err != nil {
+		return err
+	}
+	for index, extent := range extents {
+		end, err := extent.CheckedEndLBA()
+		if err != nil {
+			return fmt.Errorf("validate extent capacity[%d]: %w", index, err)
+		}
+		if extent.StartLBA >= expectedSectorCount || end > expectedSectorCount {
+			return fmt.Errorf("validate extent capacity[%d]: range [%d,%d) exceeds media capacity %d", index, extent.StartLBA, end, expectedSectorCount)
+		}
+	}
+	return nil
+}
+
+// CheckedSectorByteOffset converts a sector position to an image byte offset
+// without allowing multiplication to wrap.
+func CheckedSectorByteOffset(lba uint64, logicalSectorSize uint32) (uint64, error) {
+	if logicalSectorSize == 0 {
+		return 0, fmt.Errorf("sector byte offset: logical sector size must be greater than zero")
+	}
+	sectorSize := uint64(logicalSectorSize)
+	if lba > math.MaxUint64/sectorSize {
+		return 0, fmt.Errorf("sector byte offset: lba %d overflows sector size %d", lba, logicalSectorSize)
+	}
+	return lba * sectorSize, nil
 }
 
 func InsertExtent(extents []Extent, candidate Extent) ([]Extent, error) {
