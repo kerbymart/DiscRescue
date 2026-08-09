@@ -33,6 +33,12 @@ type recoveryDurableSnapshot interface {
 	DurableExtents() []mapfile.Extent
 }
 
+type recoveryDataPersistence interface {
+	recoveryExtentStore
+	PersistRecovered(data []byte, offset int64, extent mapfile.Extent) error
+	ForceCheckpoint(CheckpointReason) error
+}
+
 type recoverySyncWriter interface {
 	io.WriterAt
 	Sync() error
@@ -86,14 +92,26 @@ func runPassBasedRecovery(
 		return nil
 	}
 
+	if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
+		return err
+	}
 	budget := &retryBudget{}
 	if err := runTrimPass(ctx, source, output, logicalSectorSize, store, budget, report); err != nil {
+		return err
+	}
+	if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
 		return err
 	}
 	if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, 16, 3, "Adaptive recovery (16-sector reads)", budget, report); err != nil {
 		return err
 	}
+	if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
+		return err
+	}
 	if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, 4, 4, "Adaptive recovery (4-sector reads)", budget, report); err != nil {
+		return err
+	}
+	if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
 		return err
 	}
 	if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, 1, maxTargetedAttempts, "Targeted retry", budget, report); err != nil {
@@ -339,6 +357,9 @@ func attemptDeferredBlock(
 }
 
 func persistRecoveredRead(output recoverySyncWriter, store recoveryExtentStore, data []byte, offset int64, extent mapfile.Extent) error {
+	if persistence, ok := store.(recoveryDataPersistence); ok {
+		return persistence.PersistRecovered(data, offset, extent)
+	}
 	if err := writeFullAtWriter(output, data, offset); err != nil {
 		return fmt.Errorf("write recovered data at byte %d: %w", offset, err)
 	}
@@ -358,10 +379,20 @@ func persistRecoveredRead(output recoverySyncWriter, store recoveryExtentStore, 
 }
 
 func flushRecoveryStore(store recoveryExtentStore) error {
+	if persistence, ok := store.(recoveryDataPersistence); ok {
+		return persistence.ForceCheckpoint(CheckpointReasonRecoveryReturn)
+	}
 	if batched, ok := store.(recoveryBatchedStore); ok {
 		if err := batched.Flush(); err != nil {
 			return fmt.Errorf("flush recovery map: %w", err)
 		}
+	}
+	return nil
+}
+
+func forceRecoveryCheckpoint(store recoveryExtentStore, reason CheckpointReason) error {
+	if persistence, ok := store.(recoveryDataPersistence); ok {
+		return persistence.ForceCheckpoint(reason)
 	}
 	return nil
 }

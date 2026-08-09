@@ -197,13 +197,14 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 		j.startup.Commit()
 	}
 
+	persistence := newRecoveryPersistence(output, j.state)
 	err = runPassBasedRecovery(
 		ctx,
 		source,
 		output,
 		input.LogicalSectorSize,
 		input.CapacitySectors,
-		j.state,
+		persistence,
 		func(progress recoveryPassProgress) {
 			j.setPassProgress(progress, input.LogicalSectorSize)
 		},
