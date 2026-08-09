@@ -27,6 +27,7 @@ type darwinRecoveryJob struct {
 	lifecycle *recovery.Lifecycle
 	stopTimer *time.Timer
 	source    io.Closer
+	telemetry *recovery.TelemetryRecorder
 
 	mu       sync.Mutex
 	snapshot RecoverySnapshot
@@ -35,7 +36,16 @@ type darwinRecoveryJob struct {
 func (j *darwinRecoveryJob) Snapshot() RecoverySnapshot {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	j.refreshTelemetryLocked()
 	return j.snapshot
+}
+
+func (j *darwinRecoveryJob) refreshTelemetryLocked() {
+	if j.telemetry == nil {
+		return
+	}
+	j.snapshot.Telemetry = j.telemetry.Snapshot(j.snapshot.CumulativeRecoveredBytes, j.snapshot.TotalBytes, !j.snapshot.Done)
+	j.snapshot.SessionRecoveredBytes = j.snapshot.Telemetry.RecoveredBytes
 }
 
 func (j *darwinRecoveryJob) Cancel() { _ = j.RequestStop(recovery.StopIntentPause) }
@@ -96,6 +106,7 @@ func (j *darwinRecoveryJob) setProgress(progress recoveryPassProgress, sectorSiz
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.snapshot.CopiedBytes = progress.RecoveredSectors * uint64(sectorSize)
+	j.snapshot.CumulativeRecoveredBytes = j.snapshot.CopiedBytes
 	j.snapshot.ScannedSectors = progress.ScannedSectors
 	j.snapshot.DeferredSectors = progress.DeferredSectors
 	j.snapshot.UnreadableSectors = progress.UnreadableSectors
@@ -169,6 +180,7 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 		cancel:    cancel,
 		state:     state,
 		lifecycle: recovery.NewLifecycle(),
+		telemetry: recovery.NewTelemetryRecorder(recovery.SystemClock{}, recovered*uint64(input.LogicalSectorSize)),
 		snapshot: RecoverySnapshot{
 			StartedAt: time.Now(), TotalBytes: input.CapacitySectors * uint64(input.LogicalSectorSize),
 			CopiedBytes: recovered * uint64(input.LogicalSectorSize), ScannedSectors: recovered + deferred + unreadable,
@@ -182,6 +194,7 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	}
 	job.snapshot.State = job.lifecycle.State()
 	job.snapshot.Method = input.Method
+	job.refreshTelemetryLocked()
 	go job.run(ctx, input)
 	return job, nil
 }
