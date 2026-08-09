@@ -97,10 +97,45 @@ func parseDarwinDiskutilInfo(text string) (darwinDiskInfo, error) {
 	if info.DevicePath == "" {
 		return darwinDiskInfo{}, fmt.Errorf("diskutil did not report a device node")
 	}
-	if info.LogicalSectorSize == 0 || info.CapacityBytes == 0 {
-		return darwinDiskInfo{}, fmt.Errorf("diskutil did not report usable media geometry")
-	}
 	return info, nil
+}
+
+type darwinDrutilDrive struct {
+	Index        int
+	Vendor       string
+	Product      string
+	Revision     string
+	Bus          string
+	SupportLevel string
+}
+
+func parseDarwinDrutilList(text string) []darwinDrutilDrive {
+	var drives []darwinDrutilDrive
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 6 {
+			continue
+		}
+		index, err := strconv.Atoi(fields[0])
+		if err != nil || index < 1 {
+			continue
+		}
+		drives = append(drives, darwinDrutilDrive{
+			Index: index, Vendor: fields[1], Product: strings.Join(fields[2:len(fields)-3], " "),
+			Revision: fields[len(fields)-3], Bus: fields[len(fields)-2], SupportLevel: fields[len(fields)-1],
+		})
+	}
+	return drives
+}
+
+func drutilDrivePath(index int) string { return fmt.Sprintf("drutil:%d", index) }
+
+func parseDrutilDrivePath(path string) (int, bool) {
+	if !strings.HasPrefix(path, "drutil:") {
+		return 0, false
+	}
+	index, err := strconv.Atoi(strings.TrimPrefix(path, "drutil:"))
+	return index, err == nil && index > 0
 }
 
 func darwinDriveDisplayName(info darwinDiskInfo, path string) string {
