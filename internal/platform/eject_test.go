@@ -20,3 +20,10 @@ func TestOSOpticalEjectCapabilityIsExplicit(t *testing.T) {
 		t.Fatalf("capability must be explicit: %+v", capability)
 	}
 }
+
+func TestOSOpticalCapabilitiesReportRecoveryExplicitly(t *testing.T) {
+	capabilities := (OSOpticalDiscovery{}).OpticalCapabilities("/dev/sr0")
+	if capabilities.RecoveryRead.Status == device.SupportUnknown {
+		t.Fatalf("recovery capability must be explicit: %+v", capabilities)
+	}
+}
