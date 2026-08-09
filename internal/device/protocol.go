@@ -168,6 +168,37 @@ func UnmarshalSetSpeedRequest(payload []byte) (ReadSpeedRequest, error) {
 	return request, nil
 }
 
+func MarshalEjectRequest(request EjectRequest) ([]byte, error) {
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	encoded := []byte{0, 0, 0, 0}
+	if request.Mode == EjectForce {
+		encoded[0] = 1
+	}
+	if request.ExplicitConfirm {
+		encoded[1] = 1
+	}
+	return encoded, nil
+}
+
+func UnmarshalEjectRequest(payload []byte) (EjectRequest, error) {
+	if len(payload) != 4 {
+		return EjectRequest{}, fmt.Errorf("unmarshal eject request: expected 4 bytes, got %d", len(payload))
+	}
+	if payload[0] > 1 || payload[1] > 1 {
+		return EjectRequest{}, fmt.Errorf("unmarshal eject request: invalid flags")
+	}
+	request := EjectRequest{Mode: EjectNormal, ExplicitConfirm: payload[1] == 1}
+	if payload[0] == 1 {
+		request.Mode = EjectForce
+	}
+	if err := request.Validate(); err != nil {
+		return EjectRequest{}, err
+	}
+	return request, nil
+}
+
 func MarshalCommandResult(result CommandResult) ([]byte, error) {
 	if len(result.Status) > 0xffff {
 		return nil, fmt.Errorf("marshal command result: status length %d exceeds uint16", len(result.Status))
