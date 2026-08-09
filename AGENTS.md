@@ -4,7 +4,7 @@
 
 This file applies to the entire repository. `.project/discrescue-tdd.md` is the normative product and architecture contract. Read the sections relevant to a change before editing, and treat its **MUST**, **MUST NOT**, **SHOULD**, and **SHOULD NOT** language literally. If this file and the TDD appear to disagree, follow the TDD and update this file in the same change.
 
-DiscRescue is a Linux-first, Go 1.25+ optical-disc recovery application. It ships as one `discrescue` executable with a Bubble Tea v2 TUI and an internal self-executed device-worker mode. The initial implementation boundary is CD/DVD recovery; do not expand it into general block-device recovery, filesystem repair, decryption, or media writing.
+DiscRescue is a Linux-first, Go 1.26.5+ optical-disc recovery application. It ships as one `discrescue` executable with a Bubble Tea v2 TUI and an internal self-executed device-worker mode. The initial implementation boundary is CD/DVD recovery; do not expand it into general block-device recovery, filesystem repair, decryption, or media writing.
 
 Use only public Go, OS, SCSI, and MMC specifications when implementing device behavior. Do not copy another recovery application's source, control flow, private formats, internal names, comments, or diagnostic text. Project-owned persisted formats and protocols must be independently documented and versioned.
 
