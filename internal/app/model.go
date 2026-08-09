@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 
+	"discrescue/internal/catalog"
 	"discrescue/internal/platform"
 )
 
@@ -184,7 +185,7 @@ type JobSummary struct {
 	RecoveredSectors  uint64
 	TotalSectors      uint64
 	Duration          string
-	CatalogStatus     string
+	CatalogStatus     catalog.CatalogWriteStatus
 }
 
 type Model struct {
