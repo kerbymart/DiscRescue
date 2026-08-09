@@ -4,10 +4,8 @@ package platform
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,21 +13,14 @@ import (
 	"time"
 
 	"discrescue/internal/mapfile"
+	"discrescue/internal/recoverymap"
 )
 
 type OSRecovery struct{}
 
-type darwinRecoveryMapState struct {
-	mapPath      string
-	journalFile  *os.File
-	header       mapfile.Header
-	nextSequence uint64
-	extents      []mapfile.Extent
-}
-
 type darwinRecoveryJob struct {
 	cancel context.CancelFunc
-	state  *darwinRecoveryMapState
+	state  *recoverymap.Store
 
 	mu       sync.Mutex
 	snapshot RecoverySnapshot
@@ -63,7 +54,13 @@ func (j *darwinRecoveryJob) finish(canceled bool, err error) {
 		j.snapshot.ErrText = err.Error()
 	}
 	if j.state != nil {
-		_ = j.state.close(canceled || err == nil)
+		if closeErr := j.state.Close(canceled || err == nil); closeErr != nil {
+			if j.snapshot.ErrText == "" {
+				j.snapshot.ErrText = closeErr.Error()
+			} else {
+				j.snapshot.ErrText += "; finalize recovery map: " + closeErr.Error()
+			}
+		}
 	}
 }
 
@@ -78,7 +75,7 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, recovered, deferred, unreadable := summarizeRecoveryExtentStates(state.extents)
+	_, recovered, deferred, unreadable := summarizeRecoveryExtentStates(state.Extents())
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &darwinRecoveryJob{
 		cancel: cancel,
@@ -86,7 +83,7 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 		snapshot: RecoverySnapshot{
 			StartedAt: time.Now(), TotalBytes: input.CapacitySectors * uint64(input.LogicalSectorSize),
 			CopiedBytes: recovered * uint64(input.LogicalSectorSize), ScannedSectors: recovered + deferred + unreadable,
-			DeferredSectors: deferred, UnreadableSectors: unreadable, Pass: "Fast acquisition", MapPath: state.mapPath, Resumed: resumed,
+			DeferredSectors: deferred, UnreadableSectors: unreadable, Pass: "Fast acquisition", MapPath: state.Path(), Resumed: resumed,
 		},
 	}
 	go job.run(ctx, input)
@@ -107,29 +104,21 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 		status.Detail = "A new recovery will be created at this path."
 		return status, nil
 	case outputErr == nil && mapErr == nil:
-		data, err := os.ReadFile(mapPath)
-		if err != nil {
-			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: read recovery map %s: %w", mapPath, err)
-		}
-		header, checkpoint, journalOffset, err := readDarwinRecoveryMap(data)
+		_, extents, err := recoverymap.Inspect(mapPath, recoverymap.Geometry{
+			LogicalSectorSize:   input.LogicalSectorSize,
+			ExpectedSectorCount: input.CapacitySectors,
+		})
 		if err != nil {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: load recovery map %s: %w", mapPath, err)
 		}
-		if header.LogicalSectorSize != input.LogicalSectorSize || header.ExpectedSectorCount != input.CapacitySectors {
-			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: recovery map %s does not match the selected media", mapPath)
-		}
-		replayed, err := mapfile.ReplayJournalWithinCapacity(checkpoint, data[journalOffset:], input.CapacitySectors)
-		if err != nil {
-			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: replay recovery map %s: %w", mapPath, err)
-		}
-		requiredBytes, err := requiredImageBytesDarwin(replayed.Extents, input.LogicalSectorSize)
+		requiredBytes, err := requiredImageBytesDarwin(extents, input.LogicalSectorSize)
 		if err != nil {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: calculate durable image length: %w", err)
 		}
 		if requiredBytes > uint64(outputInfo.Size()) {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: image %s is smaller than the durable recovery map", input.OutputPath)
 		}
-		_, recovered, deferred, unreadable := summarizeRecoveryExtentStates(replayed.Extents)
+		_, recovered, deferred, unreadable := summarizeRecoveryExtentStates(extents)
 		status.CanResume = true
 		status.RecoveredSectors, status.DeferredSectors, status.UnreadableSectors = recovered, deferred, unreadable
 		status.Detail = fmt.Sprintf("Resume recovery from %d recovered sectors, %d deferred sectors, and %d unreadable sectors.", recovered, deferred, unreadable)
@@ -189,7 +178,7 @@ func (j *darwinRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	j.finish(false, nil)
 }
 
-func openDarwinRecoveryMap(input RecoveryInput) (*darwinRecoveryMapState, bool, error) {
+func openDarwinRecoveryMap(input RecoveryInput) (*recoverymap.Store, bool, error) {
 	status, err := (OSRecovery{}).InspectRecoveryTarget(input)
 	if err != nil {
 		return nil, false, err
@@ -203,124 +192,22 @@ func openDarwinRecoveryMap(input RecoveryInput) (*darwinRecoveryMapState, bool, 
 	return nil, false, fmt.Errorf("start image recovery: %s", status.Detail)
 }
 
-func createDarwinRecoveryMap(input RecoveryInput, mapPath string) (*darwinRecoveryMapState, bool, error) {
-	headerBytes, err := mapfile.MarshalHeader(mapfile.Header{LogicalSectorSize: input.LogicalSectorSize, ExpectedSectorCount: input.CapacitySectors, OutputFormat: 1, CreationUnixNano: time.Now().UnixNano()})
-	if err != nil {
-		return nil, false, fmt.Errorf("create recovery map header: %w", err)
-	}
-	checkpointBytes, err := mapfile.MarshalCheckpoint(mapfile.Checkpoint{})
-	if err != nil {
-		return nil, false, fmt.Errorf("create recovery map checkpoint: %w", err)
-	}
-	if dir := filepath.Dir(mapPath); dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, false, err
-		}
-	}
-	file, err := os.OpenFile(mapPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, false, fmt.Errorf("create recovery map %s: %w", mapPath, err)
-	}
-	if _, err = file.Write(append(headerBytes, checkpointBytes...)); err != nil {
-		file.Close()
-		return nil, false, err
-	}
-	if err = file.Sync(); err != nil {
-		file.Close()
-		return nil, false, err
-	}
-	return &darwinRecoveryMapState{mapPath: mapPath, journalFile: file, header: mapfile.Header{LogicalSectorSize: input.LogicalSectorSize, ExpectedSectorCount: input.CapacitySectors, OutputFormat: 1}, nextSequence: 1}, false, nil
+func createDarwinRecoveryMap(input RecoveryInput, mapPath string) (*recoverymap.Store, bool, error) {
+	store, err := recoverymap.Create(mapPath, mapfile.Header{
+		LogicalSectorSize:   input.LogicalSectorSize,
+		ExpectedSectorCount: input.CapacitySectors,
+		OutputFormat:        1,
+		CreationUnixNano:    time.Now().UnixNano(),
+	})
+	return store, false, err
 }
 
-func loadDarwinRecoveryMap(input RecoveryInput, mapPath string) (*darwinRecoveryMapState, bool, error) {
-	data, err := os.ReadFile(mapPath)
-	if err != nil {
-		return nil, false, err
-	}
-	header, checkpoint, offset, err := readDarwinRecoveryMap(data)
-	if err != nil {
-		return nil, false, err
-	}
-	replayed, err := mapfile.ReplayJournalWithinCapacity(checkpoint, data[offset:], input.CapacitySectors)
-	if err != nil {
-		return nil, false, err
-	}
-	if header.LogicalSectorSize != input.LogicalSectorSize || header.ExpectedSectorCount != input.CapacitySectors {
-		return nil, false, fmt.Errorf("recovery map %s does not match the selected media", mapPath)
-	}
-	file, err := os.OpenFile(mapPath, os.O_RDWR|os.O_APPEND, 0o644)
-	if err != nil {
-		return nil, false, err
-	}
-	return &darwinRecoveryMapState{mapPath: mapPath, journalFile: file, header: header, nextSequence: replayed.LastSequence + 1, extents: append([]mapfile.Extent(nil), replayed.Extents...)}, true, nil
-}
-
-func readDarwinRecoveryMap(data []byte) (mapfile.Header, mapfile.Checkpoint, int, error) {
-	if len(data) < 8 {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, fmt.Errorf("recovery map is too short")
-	}
-	headerLength := int(binary.LittleEndian.Uint16(data[6:8]))
-	if len(data) < headerLength+10 {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, fmt.Errorf("recovery map checkpoint is truncated")
-	}
-	header, err := mapfile.UnmarshalHeader(data[:headerLength])
-	if err != nil {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, err
-	}
-	payloadLength := int(binary.LittleEndian.Uint32(data[headerLength+6 : headerLength+10]))
-	checkpointLength := 14 + payloadLength
-	if len(data) < headerLength+checkpointLength {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, fmt.Errorf("recovery map checkpoint is truncated")
-	}
-	checkpoint, err := mapfile.UnmarshalCheckpoint(data[headerLength : headerLength+checkpointLength])
-	if err != nil {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, err
-	}
-	return header, checkpoint, headerLength + checkpointLength, nil
-}
-
-func (s *darwinRecoveryMapState) Extents() []mapfile.Extent {
-	return append([]mapfile.Extent(nil), s.extents...)
-}
-
-func (s *darwinRecoveryMapState) ApplyExtent(extent mapfile.Extent) error {
-	next, err := mapfile.ApplyExtent(s.extents, extent)
-	if err != nil {
-		return err
-	}
-	record, err := mapfile.MarshalJournalRecord(mapfile.JournalRecord{Type: mapfile.RecordExtentStateChanged, Sequence: s.nextSequence, Extent: &extent})
-	if err != nil {
-		return err
-	}
-	if _, err = s.journalFile.Write(record); err != nil {
-		return err
-	}
-	if err = s.journalFile.Sync(); err != nil {
-		return err
-	}
-	s.extents, s.nextSequence = next, s.nextSequence+1
-	return nil
-}
-
-func (s *darwinRecoveryMapState) close(clean bool) error {
-	if s == nil || s.journalFile == nil {
-		return nil
-	}
-	s.header.CleanShutdown = clean
-	header, err := mapfile.MarshalHeader(s.header)
-	if err != nil {
-		s.journalFile.Close()
-		return err
-	}
-	if _, err = s.journalFile.WriteAt(header, 0); err != nil {
-		s.journalFile.Close()
-		return err
-	}
-	if err = s.journalFile.Sync(); err != nil {
-		s.journalFile.Close()
-		return err
-	}
-	return s.journalFile.Close()
+func loadDarwinRecoveryMap(input RecoveryInput, mapPath string) (*recoverymap.Store, bool, error) {
+	store, err := recoverymap.Open(mapPath, recoverymap.Geometry{
+		LogicalSectorSize:   input.LogicalSectorSize,
+		ExpectedSectorCount: input.CapacitySectors,
+	})
+	return store, true, err
 }
 
 func darwinRecoveryMapPath(outputPath string) string {
@@ -350,5 +237,3 @@ func requiredImageBytesDarwin(extents []mapfile.Extent, logicalSectorSize uint32
 	}
 	return required, nil
 }
-
-var _ io.ReaderAt = (*os.File)(nil)

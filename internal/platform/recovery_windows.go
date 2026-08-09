@@ -4,10 +4,8 @@ package platform
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +13,7 @@ import (
 	"time"
 
 	"discrescue/internal/mapfile"
+	"discrescue/internal/recoverymap"
 	"golang.org/x/sys/windows"
 )
 
@@ -22,19 +21,10 @@ type OSRecovery struct{}
 
 type mountedRecoveryJob struct {
 	cancel context.CancelFunc
-	state  *recoveryMapState
+	state  *recoverymap.Store
 
 	mu       sync.Mutex
 	snapshot RecoverySnapshot
-}
-
-type recoveryMapState struct {
-	mapPath       string
-	journalFile   *os.File
-	header        mapfile.Header
-	checkpointLen int
-	nextSequence  uint64
-	extents       []mapfile.Extent
 }
 
 func (j *mountedRecoveryJob) Snapshot() RecoverySnapshot {
@@ -78,7 +68,13 @@ func (j *mountedRecoveryJob) finish(canceled bool, err error) {
 		j.snapshot.ErrText = err.Error()
 	}
 	if j.state != nil {
-		_ = j.state.close(canceled, err == nil)
+		if closeErr := j.state.Close(canceled || err == nil); closeErr != nil {
+			if j.snapshot.ErrText == "" {
+				j.snapshot.ErrText = closeErr.Error()
+			} else {
+				j.snapshot.ErrText += "; finalize recovery map: " + closeErr.Error()
+			}
+		}
 	}
 }
 
@@ -102,7 +98,7 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	scannedSectors, recoveredSectors, deferredSectors, unreadableSectors := summarizeRecoveryExtentStates(state.extents)
+	scannedSectors, recoveredSectors, deferredSectors, unreadableSectors := summarizeRecoveryExtentStates(state.Extents())
 	lastIssue := []string{}
 	if resumed {
 		lastIssue = []string{
@@ -126,7 +122,7 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 			DeferredSectors:   deferredSectors,
 			UnreadableSectors: unreadableSectors,
 			Pass:              "Fast acquisition",
-			MapPath:           state.mapPath,
+			MapPath:           state.Path(),
 			Resumed:           resumed,
 			LastIssue:         lastIssue,
 		},
@@ -202,7 +198,7 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	j.finish(false, nil)
 }
 
-func openRecoveryMapState(input RecoveryInput) (*recoveryMapState, bool, error) {
+func openRecoveryMapState(input RecoveryInput) (*recoverymap.Store, bool, error) {
 	status, err := inspectRecoveryTarget(input)
 	if err != nil {
 		return nil, false, err
@@ -218,83 +214,22 @@ func openRecoveryMapState(input RecoveryInput) (*recoveryMapState, bool, error) 
 	}
 }
 
-func createRecoveryMapState(input RecoveryInput, mapPath string) (*recoveryMapState, bool, error) {
-	header := mapfile.Header{
+func createRecoveryMapState(input RecoveryInput, mapPath string) (*recoverymap.Store, bool, error) {
+	store, err := recoverymap.Create(mapPath, mapfile.Header{
 		LogicalSectorSize:   input.LogicalSectorSize,
 		ExpectedSectorCount: input.CapacitySectors,
 		OutputFormat:        1,
 		CreationUnixNano:    time.Now().UnixNano(),
-	}
-	headerBytes, err := mapfile.MarshalHeader(header)
-	if err != nil {
-		return nil, false, fmt.Errorf("create recovery map header: %w", err)
-	}
-	checkpointBytes, err := mapfile.MarshalCheckpoint(mapfile.Checkpoint{})
-	if err != nil {
-		return nil, false, fmt.Errorf("create recovery map checkpoint: %w", err)
-	}
-	if dir := filepath.Dir(mapPath); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, false, fmt.Errorf("create recovery map directory %s: %w", dir, err)
-		}
-	}
-	file, err := os.OpenFile(mapPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, false, fmt.Errorf("create recovery map %s: %w", mapPath, err)
-	}
-	if _, err := file.Write(headerBytes); err != nil {
-		file.Close()
-		return nil, false, fmt.Errorf("write recovery map header %s: %w", mapPath, err)
-	}
-	if _, err := file.Write(checkpointBytes); err != nil {
-		file.Close()
-		return nil, false, fmt.Errorf("write recovery map checkpoint %s: %w", mapPath, err)
-	}
-	if err := file.Sync(); err != nil {
-		file.Close()
-		return nil, false, fmt.Errorf("sync recovery map %s: %w", mapPath, err)
-	}
-	if _, err := file.Seek(0, io.SeekEnd); err != nil {
-		file.Close()
-		return nil, false, fmt.Errorf("seek recovery map journal %s: %w", mapPath, err)
-	}
-	return &recoveryMapState{
-		mapPath:       mapPath,
-		journalFile:   file,
-		header:        header,
-		checkpointLen: len(checkpointBytes),
-		nextSequence:  1,
-	}, false, nil
+	})
+	return store, false, err
 }
 
-func loadRecoveryMapState(input RecoveryInput, mapPath string) (*recoveryMapState, bool, error) {
-	data, err := os.ReadFile(mapPath)
-	if err != nil {
-		return nil, false, fmt.Errorf("read recovery map %s: %w", mapPath, err)
-	}
-	header, checkpoint, journalOffset, err := readRecoveryMapBytes(data)
-	if err != nil {
-		return nil, false, fmt.Errorf("load recovery map %s: %w", mapPath, err)
-	}
-	if header.LogicalSectorSize != input.LogicalSectorSize || header.ExpectedSectorCount != input.CapacitySectors {
-		return nil, false, fmt.Errorf("start image recovery: recovery map %s does not match the selected media", mapPath)
-	}
-	replayed, err := mapfile.ReplayJournalWithinCapacity(checkpoint, data[journalOffset:], input.CapacitySectors)
-	if err != nil {
-		return nil, false, fmt.Errorf("replay recovery map %s: %w", mapPath, err)
-	}
-	file, err := os.OpenFile(mapPath, os.O_RDWR|os.O_APPEND, 0o644)
-	if err != nil {
-		return nil, false, fmt.Errorf("open recovery map %s for append: %w", mapPath, err)
-	}
-	return &recoveryMapState{
-		mapPath:       mapPath,
-		journalFile:   file,
-		header:        header,
-		checkpointLen: journalOffset - len(mustMarshalHeader(header)),
-		nextSequence:  replayed.LastSequence + 1,
-		extents:       append([]mapfile.Extent(nil), replayed.Extents...),
-	}, true, nil
+func loadRecoveryMapState(input RecoveryInput, mapPath string) (*recoverymap.Store, bool, error) {
+	store, err := recoverymap.Open(mapPath, recoverymap.Geometry{
+		LogicalSectorSize:   input.LogicalSectorSize,
+		ExpectedSectorCount: input.CapacitySectors,
+	})
+	return store, true, err
 }
 
 func inspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStatus, error) {
@@ -330,29 +265,21 @@ func inspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStatus, error) {
 			Detail:         "A new recovery will be created at this path.",
 		}, nil
 	case outputErr == nil && mapErr == nil:
-		data, err := os.ReadFile(mapPath)
-		if err != nil {
-			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: read recovery map %s: %w", mapPath, err)
-		}
-		header, checkpoint, journalOffset, err := readRecoveryMapBytes(data)
+		_, extents, err := recoverymap.Inspect(mapPath, recoverymap.Geometry{
+			LogicalSectorSize:   input.LogicalSectorSize,
+			ExpectedSectorCount: input.CapacitySectors,
+		})
 		if err != nil {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: load recovery map %s: %w", mapPath, err)
 		}
-		if header.LogicalSectorSize != input.LogicalSectorSize || header.ExpectedSectorCount != input.CapacitySectors {
-			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: recovery map %s does not match the selected media", mapPath)
-		}
-		replayed, err := mapfile.ReplayJournalWithinCapacity(checkpoint, data[journalOffset:], input.CapacitySectors)
-		if err != nil {
-			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: replay recovery map %s: %w", mapPath, err)
-		}
-		requiredBytes, err := requiredImageBytes(replayed.Extents, input.LogicalSectorSize)
+		requiredBytes, err := requiredImageBytes(extents, input.LogicalSectorSize)
 		if err != nil {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: calculate durable image length: %w", err)
 		}
 		if requiredBytes > uint64(outputInfo.Size()) {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: image %s is smaller than the durable recovery map", input.OutputPath)
 		}
-		_, recoveredSectors, deferredSectors, unreadableSectors := summarizeRecoveryExtentStates(replayed.Extents)
+		_, recoveredSectors, deferredSectors, unreadableSectors := summarizeRecoveryExtentStates(extents)
 		return RecoveryTargetStatus{
 			OutputPath:        input.OutputPath,
 			MapPath:           mapPath,
@@ -416,88 +343,6 @@ func availableBytesForOutputPath(outputPath string) (uint64, bool, error) {
 		return 0, false, fmt.Errorf("check free space for %s: %w", root, err)
 	}
 	return freeTotal, true, nil
-}
-
-func readRecoveryMapBytes(data []byte) (mapfile.Header, mapfile.Checkpoint, int, error) {
-	if len(data) < 8 {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, fmt.Errorf("recovery map is too short")
-	}
-	headerLength := int(binary.LittleEndian.Uint16(data[6:8]))
-	if len(data) < headerLength+10 {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, fmt.Errorf("recovery map is missing checkpoint data")
-	}
-	header, err := mapfile.UnmarshalHeader(data[:headerLength])
-	if err != nil {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, err
-	}
-	checkpointPayloadLength := int(binary.LittleEndian.Uint32(data[headerLength+6 : headerLength+10]))
-	checkpointLength := 4 + 2 + 4 + checkpointPayloadLength + 4
-	if len(data) < headerLength+checkpointLength {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, fmt.Errorf("recovery map checkpoint is truncated")
-	}
-	checkpoint, err := mapfile.UnmarshalCheckpoint(data[headerLength : headerLength+checkpointLength])
-	if err != nil {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, err
-	}
-	return header, checkpoint, headerLength + checkpointLength, nil
-}
-
-func (s *recoveryMapState) Extents() []mapfile.Extent {
-	return append([]mapfile.Extent(nil), s.extents...)
-}
-
-func (s *recoveryMapState) ApplyExtent(extent mapfile.Extent) error {
-	return s.appendExtent(extent)
-}
-
-func (s *recoveryMapState) appendExtent(extent mapfile.Extent) error {
-	nextExtents, err := mapfile.ApplyExtent(s.extents, extent)
-	if err != nil {
-		return err
-	}
-	record := mapfile.JournalRecord{
-		Type:     mapfile.RecordExtentStateChanged,
-		Sequence: s.nextSequence,
-		Extent:   &extent,
-	}
-	encoded, err := mapfile.MarshalJournalRecord(record)
-	if err != nil {
-		return err
-	}
-	if _, err := s.journalFile.Write(encoded); err != nil {
-		return err
-	}
-	if err := s.journalFile.Sync(); err != nil {
-		return err
-	}
-	s.extents = nextExtents
-	s.nextSequence++
-	return nil
-}
-
-func (s *recoveryMapState) close(canceled bool, success bool) error {
-	if s == nil || s.journalFile == nil {
-		return nil
-	}
-	if _, err := s.journalFile.Seek(0, io.SeekStart); err != nil {
-		s.journalFile.Close()
-		return err
-	}
-	s.header.CleanShutdown = canceled || success
-	headerBytes, err := mapfile.MarshalHeader(s.header)
-	if err != nil {
-		s.journalFile.Close()
-		return err
-	}
-	if _, err := s.journalFile.WriteAt(headerBytes, 0); err != nil {
-		s.journalFile.Close()
-		return err
-	}
-	if err := s.journalFile.Sync(); err != nil {
-		s.journalFile.Close()
-		return err
-	}
-	return s.journalFile.Close()
 }
 
 func summarizeExtents(extents []mapfile.Extent, logicalSectorSize uint32) (uint64, uint64) {
