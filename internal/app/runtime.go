@@ -130,8 +130,14 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			return StatusMsg{Text: "No active recovery job is available to pause.", Severity: SeverityWarning}
 		}
 		m.state.pendingPause = true
+		if job, ok := m.state.activeRecovery.(platform.StoppableRecoveryJob); ok {
+			if err := job.RequestStop(platform.StopIntentPause); err != nil {
+				return StatusMsg{Text: "Could not pause recovery: " + err.Error(), Severity: SeverityWarning}
+			}
+			return StatusMsg{Text: "Pause requested; saving durable recovery state.", Severity: SeverityInfo}
+		}
 		m.state.activeRecovery.Cancel()
-		return StatusMsg{Text: "Pausing recovery after the current read completes.", Severity: SeverityInfo}
+		return StatusMsg{Text: "Pause requested after the current read completes.", Severity: SeverityInfo}
 	case EffectResumeJob:
 		if m.state.activeRecovery != nil {
 			return StatusMsg{Text: "Recovery is already running.", Severity: SeverityWarning}
@@ -142,15 +148,27 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			return StatusMsg{Text: "No active recovery job is available to stop.", Severity: SeverityWarning}
 		}
 		m.state.pendingPause = false
+		if job, ok := m.state.activeRecovery.(platform.StoppableRecoveryJob); ok {
+			if err := job.RequestStop(platform.StopIntentStop); err != nil {
+				return StatusMsg{Text: "Could not stop recovery: " + err.Error(), Severity: SeverityWarning}
+			}
+			return StatusMsg{Text: "Stop requested; saving durable recovery state.", Severity: SeverityWarning}
+		}
 		m.state.activeRecovery.Cancel()
-		return StatusMsg{Text: "Stopping recovery after the current read completes.", Severity: SeverityWarning}
+		return StatusMsg{Text: "Stop requested after the current read completes.", Severity: SeverityWarning}
 	case EffectStopNow:
 		if m.state.activeRecovery == nil {
 			return StatusMsg{Text: "No active recovery job is available to stop.", Severity: SeverityWarning}
 		}
+		job, ok := m.state.activeRecovery.(platform.StoppableRecoveryJob)
+		if !ok || !job.Snapshot().CanForceStop {
+			return StatusMsg{Text: "Force stop is unavailable until the recovery worker needs escalation.", Severity: SeverityWarning}
+		}
 		m.state.pendingPause = false
-		m.state.activeRecovery.Cancel()
-		return StatusMsg{Text: "Stopping recovery after the current read completes.", Severity: SeverityWarning}
+		if err := job.ForceStop(); err != nil {
+			return StatusMsg{Text: "Could not force stop recovery: " + err.Error(), Severity: SeverityWarning}
+		}
+		return StatusMsg{Text: "Force-stopping the recovery worker; durable state is preserved.", Severity: SeverityWarning}
 	default:
 		return FatalMsg{Err: fmt.Errorf("unsupported effect: %s", request.Kind)}
 	}
