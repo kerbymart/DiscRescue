@@ -106,7 +106,7 @@ func TestOpenRejectsMapExtentOutsideGeometry(t *testing.T) {
 	}
 }
 
-func TestStageExtentFlushesAtBoundedRecordCount(t *testing.T) {
+func TestStageExtentQueuesUntilExplicitFlush(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "capture.drmap")
 	header := testHeader()
 	header.ExpectedSectorCount = 512
@@ -119,8 +119,18 @@ func TestStageExtentFlushesAtBoundedRecordCount(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if pending := store.PendingBytes(); pending != 0 {
-		t.Fatalf("expected bounded batch to flush at record limit, %d bytes remain", pending)
+	if pending := store.PendingBytes(); pending == 0 {
+		t.Fatal("expected staged journal bytes to remain pending")
+	}
+	if len(store.DurableExtents()) != 0 {
+		t.Fatalf("expected staged extents to remain non-durable: %+v", store.DurableExtents())
+	}
+	if err := store.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	durable := store.DurableExtents()
+	if len(durable) != 1 || durable[0].Sectors != 256 {
+		t.Fatalf("durable extents = %+v, want one 256-sector extent", durable)
 	}
 	if err := store.Close(true); err != nil {
 		t.Fatal(err)
