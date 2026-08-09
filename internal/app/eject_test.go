@@ -66,6 +66,18 @@ func TestAcceptedEjectRefreshesDevices(t *testing.T) {
 	if msg.Kind != EffectDiscoverDevices {
 		t.Fatalf("effect=%+v", msg)
 	}
+
+	refreshed, _ := updated.Update(DevicesDiscoveredMsg{RequestID: updated.ActiveDiscoveryRequest})
+	afterRefresh := refreshed.(Model)
+	if afterRefresh.Page != PageChooseDrive || len(afterRefresh.Devices) != 1 {
+		t.Fatalf("after empty refresh page=%v devices=%+v", afterRefresh.Page, afterRefresh.Devices)
+	}
+	if afterRefresh.SelectedDrive.Status != "drive available; media ejected" {
+		t.Fatalf("unexpected ejected-drive status: %+v", afterRefresh.SelectedDrive)
+	}
+	if afterRefresh.PreserveEjectedDrive {
+		t.Fatal("ejected-drive preservation should be consumed by refresh")
+	}
 }
 
 func TestRuntimeEjectUsesPlatformAdapter(t *testing.T) {
