@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"discrescue/internal/catalog"
+	"discrescue/internal/device"
 	"discrescue/internal/mapfile"
 	"discrescue/internal/recovery"
 	"discrescue/internal/recoverymap"
@@ -27,6 +28,7 @@ type RecoveryInput struct {
 	LogicalSectorSize uint32
 	CapacitySectors   uint64
 	Method            RecoveryMethod
+	ReadSpeed         device.ReadSpeedRequest
 	Identity          *catalog.ContentIdentity
 	CaptureID         catalog.RecordID
 	JobID             catalog.RecordID

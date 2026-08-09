@@ -57,7 +57,13 @@ func BuildCDB(kind device.CommandKind, request device.CommandRequest) (CDB, erro
 		cdb[9] = 0x10
 		return cdb, nil
 	case device.CommandSetSpeed:
-		return CDB{0xbb, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, nil
+		if request.SpeedKbps == 0 {
+			return nil, fmt.Errorf("build cdb: set speed requires a non-zero speed")
+		}
+		cdb := CDB{0xbb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+		binary.BigEndian.PutUint16(cdb[2:4], uint16(request.SpeedKbps))
+		binary.BigEndian.PutUint16(cdb[4:6], uint16(request.SpeedKbps))
+		return cdb, nil
 	case device.CommandEject:
 		return CDB{0x1b, 0x00, 0x00, 0x00, 0x02, 0x00}, nil
 	default:
