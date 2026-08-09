@@ -57,3 +57,30 @@ func TestDarwinDriveDisplayNameUsesLabelAndTechnicalPath(t *testing.T) {
 		t.Fatalf("unexpected display name: %q", got)
 	}
 }
+
+func TestParseDarwinDiskutilInfoKeepsOpticalDriveWithoutMediaGeometry(t *testing.T) {
+	got, err := parseDarwinDiskutilInfo("Device Node: /dev/disk4\nDevice / Media Name: USB DVD Writer\nOptical Drive Type: CD-ROM\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.OpticalMedia || got.LogicalSectorSize != 0 || got.CapacityBytes != 0 {
+		t.Fatalf("unexpected blank-drive info: %+v", got)
+	}
+}
+
+func TestParseDarwinDrutilList(t *testing.T) {
+	got := parseDarwinDrutilList("   Vendor   Product           Rev   Bus       SupportLevel\n1  TS8XDVDS TRANSCEND         1.03  USB       Unsupported\n")
+	if len(got) != 1 {
+		t.Fatalf("got %d drives: %+v", len(got), got)
+	}
+	if got[0].Index != 1 || got[0].Vendor != "TS8XDVDS" || got[0].Product != "TRANSCEND" || got[0].Bus != "USB" || got[0].SupportLevel != "Unsupported" {
+		t.Fatalf("unexpected drutil drive: %+v", got[0])
+	}
+	path := drutilDrivePath(got[0].Index)
+	if path != "drutil:1" {
+		t.Fatalf("unexpected synthetic path %q", path)
+	}
+	if index, ok := parseDrutilDrivePath(path); !ok || index != 1 {
+		t.Fatalf("failed to parse synthetic path")
+	}
+}
