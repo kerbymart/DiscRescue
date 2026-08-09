@@ -1,6 +1,9 @@
 package mapfile
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var ErrTruncatedRecord = errors.New("truncated final record")
 
@@ -52,4 +55,17 @@ func ReplayJournal(checkpoint Checkpoint, journal []byte) (Checkpoint, error) {
 	}
 
 	return next, nil
+}
+
+// ReplayJournalWithinCapacity replays a journal and rejects any resulting
+// extent outside the selected media geometry.
+func ReplayJournalWithinCapacity(checkpoint Checkpoint, journal []byte, expectedSectorCount uint64) (Checkpoint, error) {
+	replayed, err := ReplayJournal(checkpoint, journal)
+	if err != nil {
+		return Checkpoint{}, err
+	}
+	if err := ValidateExtentSetWithinCapacity(replayed.Extents, expectedSectorCount); err != nil {
+		return Checkpoint{}, fmt.Errorf("replay journal capacity: %w", err)
+	}
+	return replayed, nil
 }
