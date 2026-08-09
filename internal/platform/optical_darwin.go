@@ -13,6 +13,8 @@ import (
 
 const darwinDiskutilTimeout = 10 * time.Second
 
+const darwinDrutilTimeout = 10 * time.Second
+
 func runDarwinDiskutil(ctx context.Context, args ...string) ([]byte, error) {
 	commandCtx, cancel := context.WithTimeout(ctx, darwinDiskutilTimeout)
 	defer cancel()
@@ -23,6 +25,20 @@ func runDarwinDiskutil(ctx context.Context, args ...string) ([]byte, error) {
 			return nil, fmt.Errorf("diskutil %s: %w", strings.Join(args, " "), commandCtx.Err())
 		}
 		return nil, fmt.Errorf("diskutil %s: %w", strings.Join(args, " "), err)
+	}
+	return output, nil
+}
+
+func runDarwinDrutil(ctx context.Context, args ...string) ([]byte, error) {
+	commandCtx, cancel := context.WithTimeout(ctx, darwinDrutilTimeout)
+	defer cancel()
+	command := processcmd.CommandContext(commandCtx, "/usr/bin/drutil", args...)
+	output, err := command.Output()
+	if err != nil {
+		if commandCtx.Err() != nil {
+			return nil, fmt.Errorf("drutil %s: %w", strings.Join(args, " "), commandCtx.Err())
+		}
+		return nil, fmt.Errorf("drutil %s: %w", strings.Join(args, " "), err)
 	}
 	return output, nil
 }
@@ -44,12 +60,35 @@ func discoverHostOpticalDrives() ([]OpticalDrive, error) {
 			continue
 		}
 		candidate.DisplayName = darwinDriveDisplayName(info, candidate.Path)
+		if info.LogicalSectorSize == 0 || info.CapacityBytes == 0 {
+			candidate.Status = "optical drive present; media geometry unavailable"
+		}
 		drives = append(drives, candidate)
+	}
+	var drutilErr error
+	if len(drives) == 0 {
+		var drutilOutput []byte
+		drutilOutput, drutilErr = runDarwinDrutil(context.Background(), "list")
+		if drutilErr == nil {
+			for _, drive := range parseDarwinDrutilList(string(drutilOutput)) {
+				drives = append(drives, OpticalDrive{
+					Path:        drutilDrivePath(drive.Index),
+					DisplayName: strings.TrimSpace(strings.Join([]string{drive.Vendor, drive.Product}, " ")),
+					Status:      fmt.Sprintf("drive present; media state unavailable (%s)", drive.SupportLevel),
+				})
+			}
+		}
+	}
+	if len(drives) == 0 && drutilErr != nil {
+		return nil, fmt.Errorf("discover macOS optical drives: diskutil found no usable media and drutil fallback failed: %w", drutilErr)
 	}
 	return drives, nil
 }
 
 func identifyHostOpticalMedia(path string) (OpticalMedia, error) {
+	if index, ok := parseDrutilDrivePath(path); ok {
+		return OpticalMedia{}, fmt.Errorf("inspect macOS optical media: drutil drive %d is present, but no mounted media geometry is available; insert a disc and retry", index)
+	}
 	rawPath, err := normalizeDarwinOpticalDevice(path)
 	if err != nil {
 		return OpticalMedia{}, err
