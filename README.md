@@ -1,55 +1,47 @@
 # DiscRescue
 
-DiscRescue is a Go 1.25+ optical-disc recovery application with a Bubble Tea v2 terminal UI and a single `discrescue` executable. The current repository focuses on a simulator-first, Windows-validated startup workflow and Linux-first production device access.
+DiscRescue is a Go 1.26.5+ optical-disc recovery application with a Bubble Tea v2 terminal UI and a single `discrescue` executable. The repository uses a simulator-first workflow and supports Linux, macOS, and Windows development; production device access remains platform-specific and read-only.
 
 macOS optical-drive access uses the system `diskutil` command for discovery and media geometry, then opens the corresponding `/dev/rdiskN` device read-only for recovery. macOS may require additional permissions for raw-device access; DiscRescue reports that failure and does not unmount or eject media automatically. See [macOS development and hardware validation](docs/architecture/macos-development.md) for the manual USB-drive check.
 
 ## Requirements
 
-- Go 1.25 or newer
-- PowerShell on Windows for the provided scripts
-- Windows Terminal or another terminal that supports interactive keyboard input
+- Go 1.26.5 or newer
+- A terminal that supports interactive keyboard input
 
 ## Build
 
 Build the default executable:
 
-```powershell
+```console
 go build -trimpath ./cmd/discrescue
 ```
 
-Build a release-style Windows binary with embedded metadata:
+Build a release-style binary with embedded metadata:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/build-release.ps1 `
-  -Version 0.1.0 `
-  -Commit dev `
-  -BuildDate 2026-08-06 `
-  -Output dist/discrescue.exe
+```console
+go run ./tools/devtool build --version 0.1.0 --commit dev --build-date 2026-08-06 --output dist/discrescue
 ```
 
 ## Run
 
 Start the terminal UI:
 
-```powershell
+```console
 go run ./cmd/discrescue
 ```
 
 Run the built executable:
 
-```powershell
+```console
 .\discrescue.exe
 ```
 
 ### Optional demo workflow
 
-The production executable does not require Gum. On Unix-like systems, install
-Gum optionally and run `scripts/demo.sh` to choose a controlled synthetic-drive
-scenario, build, launch, and optionally inspect or clean up demo artifacts.
-Without Gum, run `go run ./cmd/discrescue` directly. The companion
-`scripts/inspect-log.sh` command reads logs from a file and never writes into
-the active Bubble Tea renderer.
+The production executable does not require a shell helper or Gum. Run
+`go run ./cmd/discrescue` directly; controlled discovery inputs can be supplied
+through the environment as described below.
 
 ## Recovery behavior
 
@@ -72,51 +64,53 @@ path|display name|status;path|display name|status
 
 Example:
 
-```powershell
-$env:DISKRESCUE_DISCOVERY_DRIVES = 'D:\|Virtual DVD Drive|available;E:\|Physical Blu-ray Drive|available'
+```console
 go run ./cmd/discrescue
 ```
+
+Set `DISKRESCUE_DISCOVERY_DRIVES` in the environment using the operating
+system's normal environment settings before launching the command.
 
 This is useful for verifying the startup workflow when a physical optical drive is not available on the current machine.
 
 You can also force specific discovery outcomes:
 
-```powershell
-$env:DISKRESCUE_DISCOVERY_UNSUPPORTED = '1'
+```console
 go run ./cmd/discrescue
 ```
 
-```powershell
-$env:DISKRESCUE_DISCOVERY_ERROR = 'permission denied while listing optical drives'
+```console
 go run ./cmd/discrescue
 ```
 
 ## Test and verification
 
-Format changed files:
+Apply formatting:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/format.ps1
+```console
+go run ./tools/devtool format
 ```
 
-Run tests:
+Check formatting without changing files:
 
-```powershell
-go test ./...
+```console
+go run ./tools/devtool format --check
 ```
 
-Run vet and build checks:
+Run the normal validation gate:
 
-```powershell
-go vet ./...
-go build -trimpath ./cmd/discrescue
+```console
+go run ./tools/devtool check
 ```
 
-Run the local release gate:
+Run the full local release gate:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/release-gates.ps1
+```console
+go run ./tools/devtool release --race=auto
 ```
+
+The release command reports unsupported or unavailable race validation as
+`SKIPPED`; an explicit `--race=on` makes that condition a failure.
 
 ## Project layout
 
@@ -130,5 +124,6 @@ powershell -ExecutionPolicy Bypass -File scripts/release-gates.ps1
 
 - [AGENTS.md](AGENTS.md)
 - [docs/architecture/package-layout.md](docs/architecture/package-layout.md)
+- [docs/architecture/cross-platform-development.md](docs/architecture/cross-platform-development.md)
 - [docs/architecture/validation-workflow.md](docs/architecture/validation-workflow.md)
 - [docs/formats/drmap-v1.md](docs/formats/drmap-v1.md)

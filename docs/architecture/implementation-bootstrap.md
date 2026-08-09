@@ -1,17 +1,17 @@
 # DiscRescue Implementation Bootstrap
 
-This repository is bootstrapped from the project-owned TDD in `.project/discrescue-tdd.md`. The TDD is the normative contract. Current code is only the initial scaffold needed to establish package ownership, compile boundaries, and a Windows-first local development loop.
+This repository is bootstrapped from the project-owned TDD in `.project/discrescue-tdd.md`. The TDD is the normative contract. The repository-owned Go devtool establishes the shell-neutral development and validation loop across Linux, macOS, and Windows.
 
 ## Constraints
 
 - DiscRescue remains Linux-first for production optical-device access.
-- Windows is the initial local development platform for simulator work, pure transitions, documentation, and the Bubble Tea shell.
+- Linux, macOS, and Windows are supported development platforms; hardware evidence remains target-OS-specific.
 - Device behavior must be implemented only from public OS, SCSI, and MMC specifications.
 - Project-owned formats, protocols, and messages must be documented under `docs/formats/` before they are treated as stable.
 
 ## Public Specification Inputs
 
-- Go 1.25+ language and standard library.
+- Go 1.26.5+ language and standard library.
 - `charm.land/bubbletea/v2` for the TUI runtime boundary.
 - Public Linux block-device and `SG_IO` APIs for later device adapters.
 - Public MMC and SCSI command specifications for later command and sense handling.
