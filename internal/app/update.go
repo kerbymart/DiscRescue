@@ -98,8 +98,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		previousSelection := m.SelectedDrive
+		discoveredDevices := typed.Devices
+		preserveEjectedDrive := m.PreserveEjectedDrive
+		m.PreserveEjectedDrive = false
+		if len(discoveredDevices) == 0 && preserveEjectedDrive && previousSelection.Path != "" {
+			drive := previousSelection
+			drive.Status = "drive available; media ejected"
+			discoveredDevices = []DeviceSummary{drive}
+		}
 		var mediaInvalidated bool
-		m.Devices, m.SelectedDrive, mediaInvalidated = reconcileDevices(typed.Devices, previousSelection)
+		m.Devices, m.SelectedDrive, mediaInvalidated = reconcileDevices(discoveredDevices, previousSelection)
+		if preserveEjectedDrive {
+			mediaInvalidated = true
+		}
 		if mediaInvalidated {
 			m.ActiveMediaRequest = 0
 			m.MediaFileSystem = ""
@@ -364,6 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.PendingEject = device.EjectRequest{}
+		m.PreserveEjectedDrive = true
 		m.Notice = &NoticeModel{Text: firstNonEmpty(typed.Result.Detail, "Eject request accepted; refreshing drive state."), Severity: SeverityInfo}
 		return m.beginDiscovery()
 	case EffectRequestedMsg:
