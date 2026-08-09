@@ -188,7 +188,8 @@ func (j *darwinRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	if j.startup != nil {
 		j.startup.Commit()
 	}
-	err = runPassBasedRecovery(ctx, source, output, input.LogicalSectorSize, input.CapacitySectors, j.state, func(progress recoveryPassProgress) { j.setProgress(progress, input.LogicalSectorSize) })
+	persistence := newRecoveryPersistence(output, j.state)
+	err = runPassBasedRecovery(ctx, source, output, input.LogicalSectorSize, input.CapacitySectors, persistence, func(progress recoveryPassProgress) { j.setProgress(progress, input.LogicalSectorSize) })
 	if errors.Is(err, context.Canceled) {
 		j.finish(true, nil)
 		return

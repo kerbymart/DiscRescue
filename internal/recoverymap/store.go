@@ -28,16 +28,9 @@ type Store struct {
 	durableExtents []mapfile.Extent
 	nextSequence   uint64
 	pendingBytes   uint64
-	pendingRecords uint32
+	pendingRecords [][]byte
 	closed         bool
 }
-
-const (
-	// MaxPendingJournalBytes and MaxPendingJournalRecords bound the amount of
-	// acknowledged work that can wait for a journal sync.
-	MaxPendingJournalBytes   = uint64(8 << 20)
-	MaxPendingJournalRecords = uint32(256)
-)
 
 // Create creates and durably initializes a new recovery map.
 func Create(path string, header mapfile.Header) (*Store, error) {
@@ -179,12 +172,14 @@ func (s *Store) StageExtent(extent mapfile.Extent) error {
 	if s == nil || s.file == nil || s.closed {
 		return errors.New("stage recovery map extent: store is closed")
 	}
-	if err := s.appendExtent(extent, false); err != nil {
+	nextExtents, record, err := s.prepareExtent(extent)
+	if err != nil {
 		return err
 	}
-	if s.pendingBytes >= MaxPendingJournalBytes || s.pendingRecords >= MaxPendingJournalRecords {
-		return s.Flush()
-	}
+	s.extents = nextExtents
+	s.nextSequence++
+	s.pendingRecords = append(s.pendingRecords, record)
+	s.pendingBytes += uint64(len(record))
 	return nil
 }
 
@@ -193,14 +188,22 @@ func (s *Store) Flush() error {
 	if s == nil || s.file == nil || s.closed {
 		return errors.New("flush recovery map journal: store is closed")
 	}
-	if s.pendingRecords == 0 {
+	if len(s.pendingRecords) == 0 {
 		return nil
+	}
+	if _, err := s.file.Seek(0, io.SeekEnd); err != nil {
+		return fmt.Errorf("seek recovery map journal %s: %w", s.path, err)
+	}
+	for _, record := range s.pendingRecords {
+		if err := writeFull(s.file, record); err != nil {
+			return fmt.Errorf("append recovery map journal %s: %w", s.path, err)
+		}
 	}
 	if err := s.file.Sync(); err != nil {
 		return fmt.Errorf("sync recovery map journal %s: %w", s.path, err)
 	}
 	s.pendingBytes = 0
-	s.pendingRecords = 0
+	s.pendingRecords = nil
 	s.durableExtents = append([]mapfile.Extent(nil), s.extents...)
 	return nil
 }
@@ -214,12 +217,36 @@ func (s *Store) PendingBytes() uint64 {
 }
 
 func (s *Store) appendExtent(extent mapfile.Extent, sync bool) error {
+	nextExtents, record, err := s.prepareExtent(extent)
+	if err != nil {
+		return err
+	}
+	if _, err := s.file.Seek(0, io.SeekEnd); err != nil {
+		return fmt.Errorf("seek recovery map journal %s: %w", s.path, err)
+	}
+	if err := writeFull(s.file, record); err != nil {
+		return fmt.Errorf("append recovery map journal %s: %w", s.path, err)
+	}
+	if sync {
+		if err := s.file.Sync(); err != nil {
+			return fmt.Errorf("sync recovery map journal %s: %w", s.path, err)
+		}
+	}
+	s.extents = nextExtents
+	s.nextSequence++
+	if sync {
+		s.durableExtents = append([]mapfile.Extent(nil), s.extents...)
+	}
+	return nil
+}
+
+func (s *Store) prepareExtent(extent mapfile.Extent) ([]mapfile.Extent, []byte, error) {
 	nextExtents, err := mapfile.ApplyExtent(s.extents, extent)
 	if err != nil {
-		return fmt.Errorf("validate recovery map extent: %w", err)
+		return nil, nil, fmt.Errorf("validate recovery map extent: %w", err)
 	}
 	if s.nextSequence == 0 {
-		return errors.New("apply recovery map extent: sequence exhausted")
+		return nil, nil, errors.New("apply recovery map extent: sequence exhausted")
 	}
 	record, err := mapfile.MarshalJournalRecord(mapfile.JournalRecord{
 		Type:     mapfile.RecordExtentStateChanged,
@@ -227,26 +254,21 @@ func (s *Store) appendExtent(extent mapfile.Extent, sync bool) error {
 		Extent:   &extent,
 	})
 	if err != nil {
-		return fmt.Errorf("marshal recovery map extent: %w", err)
+		return nil, nil, fmt.Errorf("marshal recovery map extent: %w", err)
 	}
-	if _, err := s.file.Seek(0, io.SeekEnd); err != nil {
-		return fmt.Errorf("seek recovery map journal %s: %w", s.path, err)
-	}
-	if _, err := s.file.Write(record); err != nil {
-		return fmt.Errorf("append recovery map journal %s: %w", s.path, err)
-	}
-	if sync {
-		if err := s.file.Sync(); err != nil {
-			return fmt.Errorf("sync recovery map journal %s: %w", s.path, err)
+	return nextExtents, record, nil
+}
+
+func writeFull(file *os.File, data []byte) error {
+	for len(data) > 0 {
+		written, err := file.Write(data)
+		if err != nil {
+			return err
 		}
-	} else {
-		s.pendingBytes += uint64(len(record))
-		s.pendingRecords++
-	}
-	s.extents = nextExtents
-	s.nextSequence++
-	if sync {
-		s.durableExtents = append([]mapfile.Extent(nil), s.extents...)
+		if written == 0 {
+			return io.ErrShortWrite
+		}
+		data = data[written:]
 	}
 	return nil
 }
