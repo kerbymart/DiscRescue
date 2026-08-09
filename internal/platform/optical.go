@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"discrescue/internal/catalog"
+	"discrescue/internal/device"
 )
 
 const (
@@ -39,6 +40,12 @@ type OpticalMedia struct {
 type OpticalDiscovery interface {
 	DiscoverOpticalDrives() ([]OpticalDrive, error)
 	IdentifyOpticalMedia(path string) (OpticalMedia, error)
+}
+
+// OpticalCapabilityProvider exposes operation-level support without leaking
+// native handles into the application package.
+type OpticalCapabilityProvider interface {
+	OpticalCapabilities(path string) device.DriveCapabilities
 }
 
 type OSOpticalDiscovery struct {
@@ -97,6 +104,10 @@ func (d OSOpticalDiscovery) IdentifyOpticalMedia(path string) (OpticalMedia, err
 		}), nil
 	}
 	return OpticalMedia{}, fmt.Errorf("inspect media: drive %q is no longer available", path)
+}
+
+func (d OSOpticalDiscovery) OpticalCapabilities(path string) device.DriveCapabilities {
+	return hostOpticalCapabilities(path)
 }
 
 func ensureIdentityObservation(media OpticalMedia) OpticalMedia {
