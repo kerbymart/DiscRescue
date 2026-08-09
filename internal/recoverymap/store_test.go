@@ -1,6 +1,7 @@
 package recoverymap
 
 import (
+	"bytes"
 	"path/filepath"
 	"testing"
 
@@ -8,7 +9,7 @@ import (
 )
 
 func testHeader() mapfile.Header {
-	return mapfile.Header{
+	header := mapfile.Header{
 		LogicalSectorSize:        2048,
 		ExpectedSectorCount:      128,
 		OutputFormat:             1,
@@ -16,6 +17,24 @@ func testHeader() mapfile.Header {
 		CreationUnixNano:         1234,
 		CleanShutdown:            true,
 	}
+	for i := range header.LayoutSHA256 {
+		header.LayoutSHA256[i] = byte(i + 1)
+	}
+	header.QuickContentIDPresent = true
+	for i := range header.QuickContentID {
+		header.QuickContentID[i] = byte(16 - i)
+	}
+	for i := range header.CaptureID {
+		header.CaptureID[i] = byte(32 + i)
+	}
+	header.CatalogRecordIDPresent = true
+	for i := range header.CatalogRecordID {
+		header.CatalogRecordID[i] = byte(48 + i)
+	}
+	for i := range header.JobID {
+		header.JobID[i] = byte(64 + i)
+	}
+	return header
 }
 
 func TestCreateAndOpenPreservesHeaderMetadata(t *testing.T) {
@@ -39,8 +58,16 @@ func TestCreateAndOpenPreservesHeaderMetadata(t *testing.T) {
 		t.Fatal("opened writable session must be marked unclean")
 	}
 	header := resumed.Header()
-	if header.IdentityAlgorithmVersion != 7 || header.CreationUnixNano != 1234 || header.OutputFormat != 1 {
+	expected := testHeader()
+	if header.IdentityAlgorithmVersion != expected.IdentityAlgorithmVersion || header.CreationUnixNano != expected.CreationUnixNano || header.OutputFormat != expected.OutputFormat ||
+		header.LogicalSectorSize != expected.LogicalSectorSize || header.ExpectedSectorCount != expected.ExpectedSectorCount ||
+		header.QuickContentIDPresent != expected.QuickContentIDPresent || header.CatalogRecordIDPresent != expected.CatalogRecordIDPresent ||
+		header.LayoutSHA256 != expected.LayoutSHA256 || header.QuickContentID != expected.QuickContentID || header.CaptureID != expected.CaptureID ||
+		header.CatalogRecordID != expected.CatalogRecordID || header.JobID != expected.JobID {
 		t.Fatalf("metadata changed during resume: %+v", header)
+	}
+	if !bytes.Equal(header.LayoutSHA256[:], expected.LayoutSHA256[:]) {
+		t.Fatal("layout identity changed during resume")
 	}
 	extent := mapfile.Extent{StartLBA: 8, Sectors: 2, State: mapfile.SectorStateMissing}
 	if err := resumed.ApplyExtent(extent); err != nil {
