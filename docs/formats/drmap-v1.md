@@ -17,14 +17,16 @@ This document defines the version 1 on-disk recovery map format used by DiscResc
 
 ## File Layout
 
-The file layout is:
+The implemented v1 layout is:
 
 ```text
 Header
-Checkpoint A
-Checkpoint B
+One checkpoint
 Append-only journal
-Footer/index
+
+The dual-checkpoint/footer layout remains a future design and is not emitted
+or required by the current v1 implementation. Readers must not infer state
+from image bytes.
 ```
 
 All integer fields are little-endian.
@@ -64,9 +66,9 @@ Header validation rules:
 - Reject `quick_content_id_present` and `catalog_record_id_present` values other than `0` or `1`.
 - Reject non-zero reserved bytes.
 
-## Checkpoints
+## Checkpoint
 
-Two fixed-position checkpoints exist so startup can choose the newest valid one without trusting the journal tail. Each checkpoint contains:
+The checkpoint is followed by the journal. It contains:
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -86,9 +88,17 @@ Extent payload entry:
 | sector_count | uint32 | must be greater than zero |
 | state | uint8 | see sector-state table |
 | confidence | uint8 | see confidence table |
-| reserved | uint16 | zero in v1 |
+| attempts | uint16 | bounded retry-attempt count |
+| capture_id | uint32 | extent capture identifier |
+| sense_key | uint8 | last device sense key |
+| asc | uint8 | last device ASC |
+| ascq | uint8 | last device ASCQ |
+| data_hash | 16 bytes | optional sector-data hash |
 
-The newest valid checkpoint is the valid checkpoint with the greatest `last_sequence`. Ties resolve to the later file position.
+The parser validates payload length, extent-count arithmetic, exact buffer
+length, CRC32C, extent ordering, and finite decode limits before allocating the
+extent slice. The default limits are 64 MiB per checkpoint payload and
+1,048,576 extents.
 
 ## Journal
 
@@ -152,10 +162,10 @@ For recovered data, the required order is:
 1. Validate worker result bounds.
 2. Write the full sector data to the image.
 3. Confirm image write success.
-4. Optionally sync the image according to policy.
+4. Sync the image.
 5. Append the extent transition to the journal.
-6. Sync the journal according to policy.
-7. Only then expose the progress change to the UI.
+6. Sync the journal immediately or within the bounded 8 MiB/256-record batch.
+7. Only then expose the progress change to the UI as durable state.
 
 For failed data:
 
@@ -169,19 +179,14 @@ For failed data:
 
 Startup rules:
 
-1. Validate the header and both checkpoints.
-2. Select the newest valid checkpoint.
-3. Replay only journal records with valid CRC32C and strictly increasing sequence numbers.
-4. Ignore one truncated final record at EOF.
-5. Stop replay on any other corruption and preserve earlier durable history.
+1. Validate the header and checkpoint.
+2. Replay only journal records with valid CRC32C and strictly increasing sequence numbers.
+3. Ignore an incomplete final record at EOF, including a torn final header.
+4. Stop replay on any other corruption and preserve earlier durable history.
+5. Validate every extent's checked end against expected media capacity.
 6. Convert any replayed `queued` state back to `unknown`.
 7. Verify image length against the highest recovered extent.
-8. Mark extents beyond image EOF as unresolved.
-9. Require media re-identification before resume.
-
-## Footer and Index
-
-The v1 footer is optional and non-authoritative. If present, it may contain offsets to the latest checkpoints and journal start. Readers must function without it and must not trust it over valid checkpoints and journal records.
+8. Require media re-identification before resume.
 
 ## Compatibility
 
@@ -192,8 +197,11 @@ The v1 footer is optional and non-authoritative. If present, it may contain offs
 ## Size and Bounds
 
 - Maximum journal payload length: `1 MiB`
-- Maximum extent count in one checkpoint: bounded by payload length and available memory policy
-- Maximum file growth is bounded by periodic checkpointing and journal compaction policy
+- Maximum checkpoint payload: `64 MiB`
+- Maximum extent count in one checkpoint: `1,048,576`
+- Maximum pending journal batch: `8 MiB` or `256` records
+- Journal growth is currently bounded by the recovery job's finite work and
+  remains subject to future checkpoint/compaction work.
 
 ## Failure Semantics
 
