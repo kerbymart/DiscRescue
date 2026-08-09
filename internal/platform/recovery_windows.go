@@ -279,7 +279,7 @@ func loadRecoveryMapState(input RecoveryInput, mapPath string) (*recoveryMapStat
 	if header.LogicalSectorSize != input.LogicalSectorSize || header.ExpectedSectorCount != input.CapacitySectors {
 		return nil, false, fmt.Errorf("start image recovery: recovery map %s does not match the selected media", mapPath)
 	}
-	replayed, err := mapfile.ReplayJournal(checkpoint, data[journalOffset:])
+	replayed, err := mapfile.ReplayJournalWithinCapacity(checkpoint, data[journalOffset:], input.CapacitySectors)
 	if err != nil {
 		return nil, false, fmt.Errorf("replay recovery map %s: %w", mapPath, err)
 	}
@@ -341,11 +341,15 @@ func inspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStatus, error) {
 		if header.LogicalSectorSize != input.LogicalSectorSize || header.ExpectedSectorCount != input.CapacitySectors {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: recovery map %s does not match the selected media", mapPath)
 		}
-		replayed, err := mapfile.ReplayJournal(checkpoint, data[journalOffset:])
+		replayed, err := mapfile.ReplayJournalWithinCapacity(checkpoint, data[journalOffset:], input.CapacitySectors)
 		if err != nil {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: replay recovery map %s: %w", mapPath, err)
 		}
-		if requiredImageBytes(replayed.Extents, input.LogicalSectorSize) > uint64(outputInfo.Size()) {
+		requiredBytes, err := requiredImageBytes(replayed.Extents, input.LogicalSectorSize)
+		if err != nil {
+			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: calculate durable image length: %w", err)
+		}
+		if requiredBytes > uint64(outputInfo.Size()) {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: image %s is smaller than the durable recovery map", input.OutputPath)
 		}
 		_, recoveredSectors, deferredSectors, unreadableSectors := summarizeRecoveryExtentStates(replayed.Extents)
@@ -510,18 +514,25 @@ func claimsImageData(state mapfile.SectorState) bool {
 	return recoveryStateHasData(state)
 }
 
-func requiredImageBytes(extents []mapfile.Extent, logicalSectorSize uint32) uint64 {
+func requiredImageBytes(extents []mapfile.Extent, logicalSectorSize uint32) (uint64, error) {
 	var required uint64
 	for _, extent := range extents {
 		if !claimsImageData(extent.State) {
 			continue
 		}
-		end := extent.EndLBA() * uint64(logicalSectorSize)
+		endLBA, err := extent.CheckedEndLBA()
+		if err != nil {
+			return 0, err
+		}
+		end, err := mapfile.CheckedSectorByteOffset(endLBA, logicalSectorSize)
+		if err != nil {
+			return 0, err
+		}
 		if end > required {
 			required = end
 		}
 	}
-	return required
+	return required, nil
 }
 
 func mustMarshalHeader(header mapfile.Header) []byte {

@@ -226,3 +226,18 @@ func TestReplayJournalAppliesStateRefinement(t *testing.T) {
 		t.Fatalf("expected refined recovered extent, got %+v", checkpoint.Extents[0])
 	}
 }
+
+func TestReplayJournalWithinCapacityRejectsOutOfRangeExtent(t *testing.T) {
+	extent := Extent{StartLBA: 8, Sectors: 4, State: SectorStateMissing, Confidence: ConfidenceNone}
+	journal, err := AppendJournalRecord(nil, JournalRecord{
+		Type:     RecordExtentStateChanged,
+		Sequence: 1,
+		Extent:   &extent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReplayJournalWithinCapacity(Checkpoint{}, journal, 10); err == nil {
+		t.Fatal("expected capacity validation to fail")
+	}
+}

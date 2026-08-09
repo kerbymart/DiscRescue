@@ -1,11 +1,50 @@
 package mapfile
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestExtentValidateRejectsZeroSectors(t *testing.T) {
 	err := (Extent{StartLBA: 10, Sectors: 0, State: SectorStateUnknown, Confidence: ConfidenceNone}).Validate()
 	if err == nil {
 		t.Fatal("expected zero-sector extent to fail validation")
+	}
+}
+
+func TestExtentValidateRejectsEndOverflow(t *testing.T) {
+	err := (Extent{StartLBA: math.MaxUint64, Sectors: 1}).Validate()
+	if err == nil {
+		t.Fatal("expected extent end overflow to fail validation")
+	}
+}
+
+func TestValidateExtentSetWithinCapacity(t *testing.T) {
+	valid := []Extent{{StartLBA: 8, Sectors: 2, State: SectorStateMissing, Confidence: ConfidenceNone}}
+	if err := ValidateExtentSetWithinCapacity(valid, 10); err != nil {
+		t.Fatalf("valid extent rejected: %v", err)
+	}
+	for _, test := range []struct {
+		name   string
+		extent Extent
+	}{
+		{name: "starts at capacity", extent: Extent{StartLBA: 10, Sectors: 1, State: SectorStateMissing}},
+		{name: "crosses capacity", extent: Extent{StartLBA: 9, Sectors: 2, State: SectorStateMissing}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := ValidateExtentSetWithinCapacity([]Extent{test.extent}, 10); err == nil {
+				t.Fatal("expected out-of-range extent to fail")
+			}
+		})
+	}
+}
+
+func TestCheckedSectorByteOffsetRejectsOverflow(t *testing.T) {
+	if _, err := CheckedSectorByteOffset(math.MaxUint64, 2); err == nil {
+		t.Fatal("expected byte offset overflow to fail")
+	}
+	if got, err := CheckedSectorByteOffset(4, 2048); err != nil || got != 8192 {
+		t.Fatalf("offset = %d, err = %v", got, err)
 	}
 }
 
