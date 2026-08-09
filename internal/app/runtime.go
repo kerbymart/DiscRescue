@@ -82,9 +82,10 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 	case EffectDiscoverDevices:
 		drives, err := m.runtime.Optical.DiscoverOpticalDrives()
 		return DevicesDiscoveredMsg{
-			RequestID: request.RequestID,
-			Devices:   toDeviceSummaries(drives),
-			Err:       err,
+			RequestID:  request.RequestID,
+			Generation: uint64(request.RequestID),
+			Devices:    toDeviceSummaries(drives),
+			Err:        err,
 		}
 	case EffectIdentifyMedia:
 		media, err := m.runtime.Optical.IdentifyOpticalMedia(request.DevicePath)
@@ -517,6 +518,7 @@ func toDeviceSummaries(drives []platform.OpticalDrive) []DeviceSummary {
 			status = "available"
 		}
 		items = append(items, DeviceSummary{
+			ID:          key,
 			Path:        drive.Path,
 			DisplayName: displayName,
 			Status:      status,

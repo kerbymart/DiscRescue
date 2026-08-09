@@ -12,9 +12,10 @@ type StartRequested struct{}
 type QuitRequested struct{}
 
 type DevicesDiscoveredMsg struct {
-	RequestID int
-	Devices   []DeviceSummary
-	Err       error
+	RequestID  int
+	Generation uint64
+	Devices    []DeviceSummary
+	Err        error
 }
 
 type MediaIdentifiedMsg struct {
