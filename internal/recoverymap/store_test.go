@@ -126,3 +126,27 @@ func TestStageExtentFlushesAtBoundedRecordCount(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDurableExtentsLagUntilBatchFlush(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "capture.drmap")
+	store, err := Create(path, testHeader())
+	if err != nil {
+		t.Fatal(err)
+	}
+	extent := mapfile.Extent{StartLBA: 8, Sectors: 2, State: mapfile.SectorStateReadUnverified, Confidence: mapfile.ConfidenceSingleRead}
+	if err := store.StageExtent(extent); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.Extents()) != 1 || len(store.DurableExtents()) != 0 {
+		t.Fatalf("working/durable extents = %d/%d, want 1/0", len(store.Extents()), len(store.DurableExtents()))
+	}
+	if err := store.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.DurableExtents()) != 1 {
+		t.Fatalf("durable extents = %d, want 1", len(store.DurableExtents()))
+	}
+	if err := store.Close(true); err != nil {
+		t.Fatal(err)
+	}
+}
