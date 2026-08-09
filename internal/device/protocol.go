@@ -137,6 +137,37 @@ func UnmarshalCommandRequest(payload []byte) (CommandRequest, error) {
 	}, nil
 }
 
+// MarshalSetSpeedRequest uses a fixed-width payload so the worker cannot
+// receive an unbounded or ambiguous device-control request.
+func MarshalSetSpeedRequest(request ReadSpeedRequest) ([]byte, error) {
+	if err := request.Validate(); err != nil {
+		return nil, err
+	}
+	encoded := make([]byte, 8)
+	if request.Mode == ReadSpeedExplicit {
+		encoded[0] = 1
+	}
+	binary.LittleEndian.PutUint32(encoded[4:8], request.Speed.KilobytesPerSecond)
+	return encoded, nil
+}
+
+func UnmarshalSetSpeedRequest(payload []byte) (ReadSpeedRequest, error) {
+	if len(payload) != 8 {
+		return ReadSpeedRequest{}, fmt.Errorf("unmarshal set speed request: expected 8 bytes, got %d", len(payload))
+	}
+	request := ReadSpeedRequest{Mode: ReadSpeedAuto}
+	if payload[0] == 1 {
+		request.Mode = ReadSpeedExplicit
+	} else if payload[0] != 0 {
+		return ReadSpeedRequest{}, fmt.Errorf("unmarshal set speed request: invalid mode %d", payload[0])
+	}
+	request.Speed.KilobytesPerSecond = binary.LittleEndian.Uint32(payload[4:8])
+	if err := request.Validate(); err != nil {
+		return ReadSpeedRequest{}, err
+	}
+	return request, nil
+}
+
 func MarshalCommandResult(result CommandResult) ([]byte, error) {
 	if len(result.Status) > 0xffff {
 		return nil, fmt.Errorf("marshal command result: status length %d exceeds uint16", len(result.Status))

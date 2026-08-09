@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 
 	"discrescue/internal/catalog"
+	"discrescue/internal/device"
 	"discrescue/internal/platform"
 )
 
@@ -67,6 +68,7 @@ type JobSetupModel struct {
 	FreeSpace         string
 	MethodLabel       string
 	Method            platform.RecoveryMethod
+	ReadSpeed         device.ReadSpeedRequest
 	CopyLabel         string
 	ResumeReady       bool
 	ResumeMapPath     string
@@ -267,6 +269,7 @@ func NewModel() Model {
 			FreeSpace:         "Unknown until an output location is selected",
 			MethodLabel:       "Balanced recovery",
 			Method:            platform.RecoveryMethodBalanced,
+			ReadSpeed:         device.DefaultReadSpeedRequest(),
 			CopyLabel:         "Not set (optional)",
 		},
 		Identity: ContentIdentityViewModel{

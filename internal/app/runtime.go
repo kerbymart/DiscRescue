@@ -198,6 +198,7 @@ func (m ProgramModel) startRecoveryJob() tea.Msg {
 		LogicalSectorSize: m.MediaLogicalSectorSize,
 		CapacitySectors:   m.MediaCapacitySectors,
 		Method:            m.Setup.Method,
+		ReadSpeed:         m.Setup.ReadSpeed,
 	})
 	if err != nil {
 		return JobStartFailedMsg{Err: err}
