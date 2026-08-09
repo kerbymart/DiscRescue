@@ -17,7 +17,7 @@ This audit checks the current repository state against TDD Sections 22, 23, and 
 | 22.3 Fault injection | Partial | `internal/image/enospc_test.go`, `internal/mapfile/replay_test.go`, `internal/coordinator/transition_table_test.go`, `internal/coordinator/shutdown_test.go` | Current tests cover ENOSPC, truncated replay, worker crash/hung-worker responsiveness, and terminal restoration ordering. Dedicated kill-point coverage for checkpoint rotation, TUI quit interruption, and every listed termination point is not yet fully evidenced. |
 | 22.4 TUI tests | Partial | `internal/app/view_test.go`, `internal/app/update_test.go` | Current evidence covers the named screens, supported layout tiers, below-minimum resize, monochrome-safe rendering, wrapped paths, safe destructive defaults, footer keys, and no dense telemetry table. Explicit golden-view artifacts, invalid Unicode/device-string panic coverage, and some history-browser states are not yet directly evidenced. |
 | 22.5 Linux integration tests | Gap | No current Linux hardware test artifacts in repository | This remains a later Linux-device milestone item. |
-| 22.6 Soak tests | Partial | `internal/testdevice/release_gate_test.go`, `scripts/release-gates.ps1` | Current evidence covers repeated simulator validation and a goroutine-leak guard. The TDD's 24-hour runs, thousands of worker restarts, and terminal attach/detach coverage are not yet present. |
+| 22.6 Soak tests | Partial | `internal/testdevice/release_gate_test.go`, `go run ./tools/devtool release --race=auto` | Current evidence covers repeated simulator validation and a goroutine-leak guard. The TDD's 24-hour runs, thousands of worker restarts, and terminal attach/detach coverage are not yet present. |
 
 ## Section 23 Acceptance Criteria
 
@@ -53,7 +53,7 @@ This audit checks the current repository state against TDD Sections 22, 23, and 
 | Forced worker crash does not corrupt the map | Partial | `internal/coordinator/transition_table_test.go`, `internal/mapfile/replay_test.go` | Current worker-crash and replay tests cover parts of the requirement, but not a direct persisted map-corruption acceptance test. |
 | ENOSPC stops scheduling and preserves resumable state | Covered | `internal/image/enospc_test.go` | Current ENOSPC evaluation tests directly cover resumable-state preservation. |
 | Terminal state is restored after handled fatal errors | Covered | `internal/coordinator/shutdown_test.go`, `internal/app/view_test.go` | Current shutdown ordering and TUI alt-screen behavior provide direct evidence. |
-| No source-media write command appears in command-audit tests | Covered | `internal/testdevice/audit_test.go`, `scripts/release-gates.ps1` | Current command-audit checks are explicit and part of the release gate. |
+| No source-media write command appears in command-audit tests | Covered | `internal/testdevice/audit_test.go`, `go run ./tools/devtool release --race=auto` | Current command-audit checks are explicit and part of the release gate. |
 | Catalog corruption or lock contention does not stop a valid recovery | Partial | `internal/catalog/journal.go`, `internal/catalog/snapshot.go`, `internal/catalog/store.go`, current catalog tests | Current repository covers journal/snapshot validation and read-only open behavior, but not a full acceptance flow tied to an active recovery job. |
 | Catalog replay never associates conflicting sample hashes as matching content | Covered | `internal/catalog/lookup_test.go`, `internal/catalog/fingerprint_test.go` | Conflict classification is directly covered. |
 
@@ -61,7 +61,7 @@ This audit checks the current repository state against TDD Sections 22, 23, and 
 
 | Requirement | Status | Current evidence | Notes |
 | --- | --- | --- | --- |
-| Healthy sequential imaging reaches the stated throughput target | Gap | `scripts/release-gates.ps1`, `internal/merge/merge_bench_test.go`, `internal/integrity/verification_bench_test.go` | Benchmark commands now exist, but the TDD does not yet have an enforced repository threshold or healthy-imaging benchmark fixture. |
+| Healthy sequential imaging reaches the stated throughput target | Gap | `go run ./tools/devtool release --race=auto`, `internal/merge/merge_bench_test.go`, `internal/integrity/verification_bench_test.go` | Benchmark commands now exist, but the TDD does not yet have an enforced repository threshold or healthy-imaging benchmark fixture. |
 | UI rendering uses less than 5% CPU on a typical idle recovery screen | Gap | No current CPU-budget assertion in repository | Current release gate runs CPU-related benchmark commands only for merge and verification. |
 | Progress messages are limited to the configured rate | Gap | No current progress-rate assertion in repository | This remains unproven. |
 | Map commits are extent-based rather than per-sector during healthy reads | Covered | `internal/image/commit_order_test.go`, `internal/mapfile/extents_test.go` | Current repository uses extent-oriented state and positioned writes. |
