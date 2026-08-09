@@ -27,6 +27,58 @@ func (s *memoryRecoveryStore) ApplyExtent(extent mapfile.Extent) error {
 	return nil
 }
 
+type stagedMemoryRecoveryStore struct {
+	extents        []mapfile.Extent
+	durableExtents []mapfile.Extent
+	pending        bool
+}
+
+func (s *stagedMemoryRecoveryStore) Extents() []mapfile.Extent {
+	return append([]mapfile.Extent(nil), s.extents...)
+}
+
+func (s *stagedMemoryRecoveryStore) DurableExtents() []mapfile.Extent {
+	return append([]mapfile.Extent(nil), s.durableExtents...)
+}
+
+func (s *stagedMemoryRecoveryStore) ApplyExtent(extent mapfile.Extent) error {
+	if err := s.Flush(); err != nil {
+		return err
+	}
+	next, err := mapfile.ApplyExtent(s.extents, extent)
+	if err != nil {
+		return err
+	}
+	s.extents = next
+	s.durableExtents = append([]mapfile.Extent(nil), next...)
+	return nil
+}
+
+func (s *stagedMemoryRecoveryStore) StageExtent(extent mapfile.Extent) error {
+	next, err := mapfile.ApplyExtent(s.extents, extent)
+	if err != nil {
+		return err
+	}
+	s.extents = next
+	s.pending = true
+	return nil
+}
+
+func (s *stagedMemoryRecoveryStore) Flush() error {
+	if s.pending {
+		s.durableExtents = append([]mapfile.Extent(nil), s.extents...)
+		s.pending = false
+	}
+	return nil
+}
+
+func (s *stagedMemoryRecoveryStore) PendingBytes() uint64 {
+	if s.pending {
+		return 1
+	}
+	return 0
+}
+
 type memoryRecoveryWriter struct {
 	data []byte
 }
@@ -120,6 +172,30 @@ func TestPassBasedRecoveryCompletesFastCoverageBeforeTargetedRetry(t *testing.T)
 	_, recovered, unresolved := summarizeRecoveryExtents(store.Extents())
 	if recovered != 128 || unresolved != 64 {
 		t.Fatalf("unexpected fast-pass state: recovered=%d unresolved=%d extents=%+v", recovered, unresolved, store.Extents())
+	}
+}
+
+func TestPassBasedRecoveryPublishesOnlyDurableBatchedProgress(t *testing.T) {
+	const sectors = 64
+	reader := &scriptedRecoveryReader{data: newRecoveryTestData(sectors)}
+	writer := &memoryRecoveryWriter{data: make([]byte, sectors)}
+	store := &stagedMemoryRecoveryStore{}
+	var progress []recoveryPassProgress
+	if err := runPassBasedRecovery(context.Background(), reader, writer, 1, sectors, store, func(update recoveryPassProgress) {
+		progress = append(progress, update)
+	}); err != nil {
+		t.Fatalf("run recovery: %v", err)
+	}
+	if len(progress) == 0 || progress[len(progress)-1].Pass != "Complete" {
+		t.Fatalf("unexpected progress updates: %+v", progress)
+	}
+	for _, update := range progress {
+		if update.Pass != "Complete" && update.RecoveredSectors != 0 {
+			t.Fatalf("published staged recovery as durable: %+v", update)
+		}
+	}
+	if got := progress[len(progress)-1].RecoveredSectors; got != sectors {
+		t.Fatalf("final durable progress = %d, want %d", got, sectors)
 	}
 }
 

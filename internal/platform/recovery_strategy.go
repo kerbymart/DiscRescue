@@ -23,6 +23,16 @@ type recoveryExtentStore interface {
 	ApplyExtent(mapfile.Extent) error
 }
 
+type recoveryBatchedStore interface {
+	StageExtent(mapfile.Extent) error
+	Flush() error
+	PendingBytes() uint64
+}
+
+type recoveryDurableSnapshot interface {
+	DurableExtents() []mapfile.Extent
+}
+
 type recoverySyncWriter interface {
 	io.WriterAt
 	Sync() error
@@ -49,7 +59,12 @@ func runPassBasedRecovery(
 	capacitySectors uint64,
 	store recoveryExtentStore,
 	report func(recoveryPassProgress),
-) error {
+) (err error) {
+	defer func() {
+		if flushErr := flushRecoveryStore(store); flushErr != nil {
+			err = errors.Join(err, flushErr)
+		}
+	}()
 	if logicalSectorSize == 0 {
 		return fmt.Errorf("run pass-based recovery: logical sector size is required")
 	}
@@ -64,7 +79,10 @@ func runPassBasedRecovery(
 		return err
 	}
 	if unresolvedSectorCount(store.Extents()) == 0 {
-		reportRecoveryProgress(report, "Complete", store.Extents(), nil)
+		if err := flushRecoveryStore(store); err != nil {
+			return err
+		}
+		reportRecoveryProgress(report, "Complete", progressExtents(store), nil)
 		return nil
 	}
 
@@ -84,7 +102,10 @@ func runPassBasedRecovery(
 	if err := finalizeUnresolvedRanges(store); err != nil {
 		return err
 	}
-	reportRecoveryProgress(report, "Complete", store.Extents(), nil)
+	if err := flushRecoveryStore(store); err != nil {
+		return err
+	}
+	reportRecoveryProgress(report, "Complete", progressExtents(store), nil)
 	return nil
 }
 
@@ -101,7 +122,7 @@ func runFastAcquisitionPass(
 	buffer := make([]byte, fastPassSectors*sectorSize)
 	consecutiveFailures := 0
 
-	reportRecoveryProgress(report, "Fast acquisition", store.Extents(), nil)
+	reportRecoveryProgress(report, "Fast acquisition", progressExtents(store), nil)
 	for lba := uint64(0); lba < capacitySectors; {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -141,7 +162,7 @@ func runFastAcquisitionPass(
 				return err
 			}
 			consecutiveFailures = 0
-			reportRecoveryProgress(report, "Fast acquisition", store.Extents(), nil)
+			reportRecoveryProgress(report, "Fast acquisition", progressExtents(store), nil)
 			lba += sectorsToRead
 			continue
 		}
@@ -157,7 +178,7 @@ func runFastAcquisitionPass(
 			return fmt.Errorf("defer failed range [%d,%d): %w", lba, lba+sectorsToRead, err)
 		}
 		consecutiveFailures++
-		reportRecoveryProgress(report, "Fast acquisition", store.Extents(), []string{
+		reportRecoveryProgress(report, "Fast acquisition", progressExtents(store), []string{
 			fmt.Sprintf("Deferred LBA %d-%d after the first block read failed.", lba, lba+sectorsToRead-1),
 			"Continuing forward; smaller bounded reads will revisit this range later.",
 		})
@@ -178,7 +199,7 @@ func runTrimPass(
 	budget *retryBudget,
 	report func(recoveryPassProgress),
 ) error {
-	reportRecoveryProgress(report, "Trimming deferred ranges", store.Extents(), nil)
+	reportRecoveryProgress(report, "Trimming deferred ranges", progressExtents(store), nil)
 	ranges := retryableExtents(store.Extents())
 	for _, extent := range ranges {
 		if extent.Sectors <= 1 {
@@ -213,7 +234,7 @@ func runAdaptivePass(
 	budget *retryBudget,
 	report func(recoveryPassProgress),
 ) error {
-	reportRecoveryProgress(report, passName, store.Extents(), nil)
+	reportRecoveryProgress(report, passName, progressExtents(store), nil)
 	ranges := retryableExtents(store.Extents())
 	for _, extent := range ranges {
 		for lba := extent.StartLBA; lba < extent.EndLBA(); {
@@ -297,7 +318,7 @@ func attemptDeferredBlock(
 			return err
 		}
 		budget.consecutiveFailures = 0
-		reportRecoveryProgress(report, passName, store.Extents(), nil)
+		reportRecoveryProgress(report, passName, progressExtents(store), nil)
 		return nil
 	}
 
@@ -307,7 +328,7 @@ func attemptDeferredBlock(
 		return fmt.Errorf("restore deferred range [%d,%d): %w", lba, lba+sectorsToRead, err)
 	}
 	budget.consecutiveFailures++
-	reportRecoveryProgress(report, passName, store.Extents(), []string{
+	reportRecoveryProgress(report, passName, progressExtents(store), []string{
 		fmt.Sprintf("Retry %d failed for LBA %d-%d.", attempts, lba, lba+sectorsToRead-1),
 		"The range remains deferred until its bounded retry budget is exhausted.",
 	})
@@ -324,10 +345,32 @@ func persistRecoveredRead(output recoverySyncWriter, store recoveryExtentStore, 
 	if err := output.Sync(); err != nil {
 		return fmt.Errorf("sync recovered data at byte %d: %w", offset, err)
 	}
+	if batched, ok := store.(recoveryBatchedStore); ok {
+		if err := batched.StageExtent(extent); err != nil {
+			return fmt.Errorf("persist recovered extent [%d,%d): %w", extent.StartLBA, extent.EndLBA(), err)
+		}
+		return nil
+	}
 	if err := store.ApplyExtent(extent); err != nil {
 		return fmt.Errorf("persist recovered extent [%d,%d): %w", extent.StartLBA, extent.EndLBA(), err)
 	}
 	return nil
+}
+
+func flushRecoveryStore(store recoveryExtentStore) error {
+	if batched, ok := store.(recoveryBatchedStore); ok {
+		if err := batched.Flush(); err != nil {
+			return fmt.Errorf("flush recovery map: %w", err)
+		}
+	}
+	return nil
+}
+
+func progressExtents(store recoveryExtentStore) []mapfile.Extent {
+	if durable, ok := store.(recoveryDurableSnapshot); ok {
+		return durable.DurableExtents()
+	}
+	return store.Extents()
 }
 
 func finalizeUnresolvedRanges(store recoveryExtentStore) error {
