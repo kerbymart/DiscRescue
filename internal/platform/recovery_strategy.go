@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"discrescue/internal/mapfile"
+	"discrescue/internal/recovery"
 )
 
 const (
@@ -54,7 +55,8 @@ type recoveryPassProgress struct {
 }
 
 type retryBudget struct {
-	consecutiveFailures int
+	consecutiveFailures    int
+	maxConsecutiveFailures int
 }
 
 func runPassBasedRecovery(
@@ -66,6 +68,26 @@ func runPassBasedRecovery(
 	store recoveryExtentStore,
 	report func(recoveryPassProgress),
 ) (err error) {
+	policy, policyErr := recovery.PolicyForMethod(recovery.RecoveryMethodBalanced)
+	if policyErr != nil {
+		return policyErr
+	}
+	return runPassBasedRecoveryWithPolicy(ctx, source, output, logicalSectorSize, capacitySectors, store, policy, report)
+}
+
+func runPassBasedRecoveryWithPolicy(
+	ctx context.Context,
+	source io.ReaderAt,
+	output recoverySyncWriter,
+	logicalSectorSize uint32,
+	capacitySectors uint64,
+	store recoveryExtentStore,
+	policy recovery.RecoveryPolicy,
+	report func(recoveryPassProgress),
+) (err error) {
+	if policyErr := policy.Validate(); policyErr != nil {
+		return policyErr
+	}
 	defer func() {
 		if flushErr := flushRecoveryStore(store); flushErr != nil {
 			err = errors.Join(err, flushErr)
@@ -81,8 +103,10 @@ func runPassBasedRecovery(
 		return fmt.Errorf("run pass-based recovery: source, output, and extent store are required")
 	}
 
-	if err := runFastAcquisitionPass(ctx, source, output, logicalSectorSize, capacitySectors, store, report); err != nil {
-		return err
+	if policy.Fast.Enabled {
+		if err := runFastAcquisitionPass(ctx, source, output, logicalSectorSize, capacitySectors, store, policy.Fast.BlockSectors, policy.Fast.MaxConsecutiveFailures, report); err != nil {
+			return err
+		}
 	}
 	if unresolvedSectorCount(store.Extents()) == 0 {
 		if err := flushRecoveryStore(store); err != nil {
@@ -95,35 +119,47 @@ func runPassBasedRecovery(
 	if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
 		return err
 	}
-	budget := &retryBudget{}
-	if err := runTrimPass(ctx, source, output, logicalSectorSize, store, budget, report); err != nil {
-		return err
+	budget := &retryBudget{maxConsecutiveFailures: int(policy.RetryMaxConsecutiveFailures)}
+	if policy.Trim.Enabled {
+		if err := runTrimPass(ctx, source, output, logicalSectorSize, store, budget, policy.Trim.AttemptsLimit, report); err != nil {
+			return err
+		}
 	}
 	if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
 		return err
 	}
-	if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, 16, 3, "Adaptive recovery (16-sector reads)", budget, report); err != nil {
-		return err
+	for _, adaptive := range policy.Adaptive {
+		if !adaptive.Enabled {
+			continue
+		}
+		if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, uint64(adaptive.BlockSectors), adaptive.AttemptsLimit, fmt.Sprintf("Adaptive recovery (%d-sector reads)", adaptive.BlockSectors), budget, report); err != nil {
+			return err
+		}
+		if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
+			return err
+		}
 	}
-	if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
-		return err
+	if policy.Targeted.Enabled {
+		if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, uint64(policy.Targeted.BlockSectors), policy.Targeted.AttemptsLimit, "Targeted retry", budget, report); err != nil {
+			return err
+		}
+		if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
+			return err
+		}
 	}
-	if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, 4, 4, "Adaptive recovery (4-sector reads)", budget, report); err != nil {
-		return err
-	}
-	if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
-		return err
-	}
-	if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, 1, maxTargetedAttempts, "Targeted retry", budget, report); err != nil {
-		return err
-	}
-	if err := finalizeUnresolvedRanges(store); err != nil {
-		return err
+	if policy.FinalizeUnresolved {
+		if err := finalizeUnresolvedRanges(store); err != nil {
+			return err
+		}
 	}
 	if err := flushRecoveryStore(store); err != nil {
 		return err
 	}
-	reportRecoveryProgress(report, "Complete", progressExtents(store), nil)
+	finalPass := "Complete"
+	if !policy.FinalizeUnresolved && unresolvedSectorCount(store.Extents()) > 0 {
+		finalPass = "Deferred work remains"
+	}
+	reportRecoveryProgress(report, finalPass, progressExtents(store), nil)
 	return nil
 }
 
@@ -134,10 +170,15 @@ func runFastAcquisitionPass(
 	logicalSectorSize uint32,
 	capacitySectors uint64,
 	store recoveryExtentStore,
+	blockSectors uint32,
+	maxFailures uint32,
 	report func(recoveryPassProgress),
 ) error {
+	if blockSectors == 0 || maxFailures == 0 {
+		return fmt.Errorf("run fast acquisition pass: invalid policy limits")
+	}
 	sectorSize := uint64(logicalSectorSize)
-	buffer := make([]byte, fastPassSectors*sectorSize)
+	buffer := make([]byte, uint64(blockSectors)*sectorSize)
 	consecutiveFailures := 0
 
 	reportRecoveryProgress(report, "Fast acquisition", progressExtents(store), nil)
@@ -152,7 +193,7 @@ func runFastAcquisitionPass(
 			continue
 		}
 
-		sectorsToRead := fastPassSectors
+		sectorsToRead := uint64(blockSectors)
 		if remaining := capacitySectors - lba; remaining < sectorsToRead {
 			sectorsToRead = remaining
 		}
@@ -201,7 +242,7 @@ func runFastAcquisitionPass(
 			"Continuing forward; smaller bounded reads will revisit this range later.",
 		})
 		lba += sectorsToRead
-		if consecutiveFailures >= maxFastConsecutiveFailures {
+		if uint32(consecutiveFailures) >= maxFailures {
 			return fmt.Errorf("%w during fast acquisition (%d failed blocks)", errRecoveryConsecutiveFailures, consecutiveFailures)
 		}
 	}
@@ -215,6 +256,7 @@ func runTrimPass(
 	logicalSectorSize uint32,
 	store recoveryExtentStore,
 	budget *retryBudget,
+	attemptLimit uint16,
 	report func(recoveryPassProgress),
 ) error {
 	reportRecoveryProgress(report, "Trimming deferred ranges", progressExtents(store), nil)
@@ -229,7 +271,7 @@ func runTrimPass(
 				return err
 			}
 			current, _, ok := mapfile.LookupExtent(store.Extents(), lba)
-			if !ok || !isRetryableState(current.State) || current.Attempts >= 2 {
+			if !ok || !isRetryableState(current.State) || current.Attempts >= attemptLimit {
 				continue
 			}
 			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, 1, budget, "Trimming deferred ranges", report); err != nil {
@@ -350,7 +392,7 @@ func attemptDeferredBlock(
 		fmt.Sprintf("Retry %d failed for LBA %d-%d.", attempts, lba, lba+sectorsToRead-1),
 		"The range remains deferred until its bounded retry budget is exhausted.",
 	})
-	if budget.consecutiveFailures >= maxRetryConsecutiveFailures {
+	if budget.maxConsecutiveFailures > 0 && uint32(budget.consecutiveFailures) >= uint32(budget.maxConsecutiveFailures) {
 		return fmt.Errorf("%w during error recovery (%d failed reads)", errRecoveryConsecutiveFailures, budget.consecutiveFailures)
 	}
 	return nil
