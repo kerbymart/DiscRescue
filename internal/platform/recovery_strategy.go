@@ -23,6 +23,12 @@ type recoveryExtentStore interface {
 	ApplyExtent(mapfile.Extent) error
 }
 
+type recoveryBatchedStore interface {
+	StageExtent(mapfile.Extent) error
+	Flush() error
+	PendingBytes() uint64
+}
+
 type recoverySyncWriter interface {
 	io.WriterAt
 	Sync() error
@@ -49,7 +55,12 @@ func runPassBasedRecovery(
 	capacitySectors uint64,
 	store recoveryExtentStore,
 	report func(recoveryPassProgress),
-) error {
+) (err error) {
+	defer func() {
+		if flushErr := flushRecoveryStore(store); flushErr != nil {
+			err = errors.Join(err, flushErr)
+		}
+	}()
 	if logicalSectorSize == 0 {
 		return fmt.Errorf("run pass-based recovery: logical sector size is required")
 	}
@@ -324,8 +335,23 @@ func persistRecoveredRead(output recoverySyncWriter, store recoveryExtentStore, 
 	if err := output.Sync(); err != nil {
 		return fmt.Errorf("sync recovered data at byte %d: %w", offset, err)
 	}
+	if batched, ok := store.(recoveryBatchedStore); ok {
+		if err := batched.StageExtent(extent); err != nil {
+			return fmt.Errorf("persist recovered extent [%d,%d): %w", extent.StartLBA, extent.EndLBA(), err)
+		}
+		return nil
+	}
 	if err := store.ApplyExtent(extent); err != nil {
 		return fmt.Errorf("persist recovered extent [%d,%d): %w", extent.StartLBA, extent.EndLBA(), err)
+	}
+	return nil
+}
+
+func flushRecoveryStore(store recoveryExtentStore) error {
+	if batched, ok := store.(recoveryBatchedStore); ok {
+		if err := batched.Flush(); err != nil {
+			return fmt.Errorf("flush recovery map: %w", err)
+		}
 	}
 	return nil
 }
