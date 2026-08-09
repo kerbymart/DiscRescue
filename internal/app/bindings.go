@@ -68,7 +68,11 @@ func pageHelp(page Page) pageHelpMap {
 		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, edit, k.Tab, k.Back}}}
 	case PageChooseDrive:
 		refresh := key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh drives"))
-		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, refresh, k.Back, k.Quit}}}
+		eject := key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "eject"))
+		force := key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "force eject"))
+		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, refresh, eject, force, k.Back, k.Quit}}}
+	case PageEjectConfirm:
+		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, k.Back}}}
 	default:
 		return pageHelpMap{groups: [][]key.Binding{common}}
 	}

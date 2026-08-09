@@ -27,6 +27,7 @@ const (
 	PagePausing
 	PagePaused
 	PageStopConfirm
+	PageEjectConfirm
 	PageSummary
 	PageResumeJobs
 	PageHistory
@@ -219,6 +220,7 @@ type Model struct {
 	Summary                 JobSummary
 	Details                 DetailsViewModel
 	Dialog                  *DialogModel
+	PendingEject            device.EjectRequest
 	Notice                  *NoticeModel
 	LastError               error
 	Quitting                bool
