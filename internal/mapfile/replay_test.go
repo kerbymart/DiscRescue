@@ -1,6 +1,11 @@
 package mapfile
 
-import "testing"
+import (
+	"bytes"
+	"errors"
+	"strconv"
+	"testing"
+)
 
 func TestHeaderRoundTrip(t *testing.T) {
 	header := Header{
@@ -64,6 +69,38 @@ func TestReplayJournalIgnoresTruncatedFinalRecord(t *testing.T) {
 	}
 	if checkpoint.LastSequence != 0 || len(checkpoint.Extents) != 0 {
 		t.Fatalf("expected truncated final record to be ignored, got %+v", checkpoint)
+	}
+}
+
+func TestReplayJournalIgnoresEveryShortFinalHeader(t *testing.T) {
+	for size := 1; size < 18; size++ {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			checkpoint, err := ReplayJournal(Checkpoint{}, bytes.Repeat([]byte{0xA5}, size))
+			if err != nil {
+				t.Fatalf("replay journal with %d-byte tail: %v", size, err)
+			}
+			if checkpoint.LastSequence != 0 || len(checkpoint.Extents) != 0 {
+				t.Fatalf("unexpected state after %d-byte tail: %+v", size, checkpoint)
+			}
+		})
+	}
+}
+
+func TestUnmarshalJournalRecordClassifiesShortHeaderAsTruncated(t *testing.T) {
+	_, _, err := UnmarshalJournalRecord(make([]byte, 17))
+	if !errors.Is(err, ErrTruncatedRecord) {
+		t.Fatalf("error = %v, want ErrTruncatedRecord", err)
+	}
+}
+
+func TestReplayJournalRejectsCompleteCorruptRecord(t *testing.T) {
+	record, err := MarshalJournalRecord(JournalRecord{Type: RecordJobCreated, Sequence: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record[len(record)-1] ^= 0xFF
+	if _, err := ReplayJournal(Checkpoint{}, record); err == nil {
+		t.Fatal("expected complete record corruption to fail")
 	}
 }
 

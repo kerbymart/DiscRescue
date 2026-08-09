@@ -57,7 +57,7 @@ func MarshalJournalRecord(record JournalRecord) ([]byte, error) {
 
 func UnmarshalJournalRecord(encoded []byte) (JournalRecord, int, error) {
 	if len(encoded) < 18 {
-		return JournalRecord{}, 0, fmt.Errorf("unmarshal journal record: truncated header")
+		return JournalRecord{}, 0, ErrTruncatedRecord
 	}
 
 	payloadLength := binary.LittleEndian.Uint32(encoded[10:14])
