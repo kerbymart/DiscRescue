@@ -2,6 +2,7 @@ package mapfile
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"strconv"
 	"testing"
@@ -48,6 +49,48 @@ func TestCheckpointRoundTrip(t *testing.T) {
 	}
 	if decoded.LastSequence != checkpoint.LastSequence || len(decoded.Extents) != 1 || decoded.Extents[0].State != checkpoint.Extents[0].State {
 		t.Fatalf("unexpected decoded checkpoint: %+v", decoded)
+	}
+}
+
+func TestUnmarshalCheckpointRejectsCountPayloadMismatchBeforeAllocation(t *testing.T) {
+	encoded, err := MarshalCheckpoint(Checkpoint{LastSequence: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary.LittleEndian.PutUint32(encoded[18:22], 1)
+	if _, err := UnmarshalCheckpoint(encoded); err == nil {
+		t.Fatal("expected count/payload mismatch to fail")
+	}
+}
+
+func TestUnmarshalCheckpointRejectsPayloadLimit(t *testing.T) {
+	encoded, err := MarshalCheckpoint(Checkpoint{
+		LastSequence: 1,
+		Extents: []Extent{{
+			StartLBA: 1,
+			Sectors:  1,
+			State:    SectorStateMissing,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UnmarshalCheckpointWithLimits(encoded, DecodeLimits{
+		MaxCheckpointPayloadBytes: checkpointFixedPayloadBytes,
+		MaxCheckpointExtents:      1,
+	}); err == nil {
+		t.Fatal("expected checkpoint payload limit to fail")
+	}
+}
+
+func TestUnmarshalCheckpointRejectsHugeDeclaredCountWithoutAllocating(t *testing.T) {
+	encoded := make([]byte, 26)
+	copy(encoded[:4], checkpointMagic)
+	binary.LittleEndian.PutUint16(encoded[4:6], FormatVersion)
+	binary.LittleEndian.PutUint32(encoded[6:10], 12)
+	binary.LittleEndian.PutUint32(encoded[18:22], ^uint32(0))
+	if _, err := UnmarshalCheckpoint(encoded); err == nil {
+		t.Fatal("expected huge count mismatch to fail")
 	}
 }
 
