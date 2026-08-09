@@ -10,9 +10,9 @@ Release builds inject:
 - commit
 - build date
 
-The PowerShell entrypoint for metadata-aware builds is:
+The shell-neutral devtool entrypoint for metadata-aware builds is:
 
-- `scripts/build-release.ps1`
+- `go run ./tools/devtool build`
 
 It sets linker variables for `discrescue/internal/buildinfo` and keeps `-trimpath` enabled.
 

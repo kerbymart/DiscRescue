@@ -30,7 +30,7 @@ This note records the repository package scaffold and its ownership boundary rel
 - Production device behavior stays behind `internal/device` and `internal/device/linux`.
 - The Bubble Tea layer depends on coordinator projections, not direct device backends.
 - Persisted formats stay owned by `internal/mapfile`, `internal/catalog`, and the documents under `docs/formats/`.
-- Cross-platform development support stays in `internal/platform` so Windows-local simulator and TUI work do not weaken Linux production boundaries.
+- Cross-platform development orchestration stays in `tools/devtool`; runtime platform adapters remain in `internal/platform` so simulator and TUI work do not weaken Linux production boundaries.
 
 ## Verification
 

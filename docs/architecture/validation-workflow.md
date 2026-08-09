@@ -1,58 +1,60 @@
 # DiscRescue Validation Workflow
 
-This note separates Windows-local verification from future Linux hardware verification so task completion claims stay evidence-based.
+The repository uses one canonical validation command on macOS, Linux, and
+Windows:
 
-## Verification matrix
+```console
+go run ./tools/devtool release --race=auto
+```
 
-| Verification area | Windows-local evidence | Linux-only evidence |
-| --- | --- | --- |
-| Formatting and package checks | `scripts/format.ps1`, `scripts/test.ps1`, `scripts/check.ps1` | rerun the same package checks on Linux before hardware release handoff |
-| Bubble Tea workflow and layouts | `go test ./internal/app`, Windows Terminal manual checks | terminal restoration and layout behavior on the release shell and distro targets |
-| Simulator recovery behavior | `internal/testdevice` scenarios and `scripts/release-gates.ps1` | rerun simulator and integration suites on Linux build agents |
-| Device open and probe behavior | not authoritative on Windows | read-only optical-device probes against Linux block devices |
-| `SG_IO` command behavior | fixed-vector tests only | fixed vectors plus Linux hardware traces allowed by public specs |
-| Worker supervision under blocked I/O | simulator hung-worker coverage | Linux drive and bridge behavior under slow or stalled requests |
-| Release race gate | only if `CGO_ENABLED=1` is set locally | required on Linux release validation when supported by the environment |
+GitHub Actions runs that command in a native three-OS matrix for pull requests
+and pushes to `master`.
 
-## Windows Local Checks
+## Evidence matrix
 
-- `scripts/format.ps1`
-- `scripts/test.ps1`
-- `scripts/check.ps1`
-- `go run ./cmd/discrescue`
-- `scripts/release-gates.ps1`
+| Verification area | macOS | Linux | Windows | Hardware required |
+| --- | ---: | ---: | ---: | ---: |
+| Format, vet, and package tests | Yes | Yes | Yes | No |
+| Simulator recovery scenarios | Yes | Yes | Yes | No |
+| Command audit | Yes | Yes | Yes | No |
+| Soak and goroutine-leak checks | Yes | Yes | Yes | No |
+| Merge/integrity benchmark smoke tests | Yes | Yes | Yes | No |
+| Native adapter compilation | Yes | Yes | Yes | No |
+| Race validation when supported | Yes or skipped | Yes or skipped | Yes or skipped | No |
+| Optical hardware behavior | Manual | Manual | Manual | Yes |
 
-For the TUI on Windows Terminal, include these evidence checks:
+The workflow prints the native Go version, operating system, architecture, and
+`CGO_ENABLED` value. A skipped race or hardware check is reported as skipped,
+not passed.
 
-- `go test ./internal/app`
-- verify `80x24`, `60x18`, and `40x12` layouts through the view tests;
-- verify the below-minimum resize request at sizes smaller than `40x12`;
-- verify monochrome-safe recovery rendering;
-- verify long-path wrapping without horizontal scrolling;
-- verify that recovery and details views preserve terminal state while resizing and restore correctly when leaving the alternate screen.
+## Validation classes
 
-## Linux Hardware Checks
+Portable validation covers shared packages, the TUI, durable formats, catalog
+logic, recovery scheduling, simulator scenarios, command safety, and bounded
+runtime checks. Native validation compiles and tests platform-selected adapter
+code on its matching runner. Hardware validation covers raw optical-device
+access, permissions, media removal, stalled reads, and physical drive
+behavior; GitHub-hosted runners do not provide that evidence.
 
-- Optical-device probe behavior against read-only opens
-- `SG_IO` command and sense handling against fixed vectors and hardware traces permitted by public specs
-- Worker supervision under slow or hung device operations
-- Command-audit checks against the allowed non-destructive command set
+## Local workflow
 
-## Release Gates
+From the repository root:
 
-Release readiness uses `scripts/release-gates.ps1` as the single local entrypoint. That gate runs:
+```console
+go run ./tools/devtool format
+go run ./tools/devtool test
+go run ./tools/devtool check
+go run ./tools/devtool release --race=auto
+```
 
-- formatting;
-- baseline unit and package tests;
-- vet and build;
-- command-audit checks in `internal/testdevice`;
-- simulator integration checks in `internal/testdevice`;
-- soak and goroutine-leak checks in `internal/testdevice`;
-- throughput and CPU benchmark commands for merge and verification paths;
-- `go test -race ./...` only when `CGO_ENABLED=1`.
+Use `go run ./tools/devtool build --version ... --commit ... --build-date ...
+--output ...` for metadata-aware builds. All subprocesses are invoked directly
+with bounded argument lists; no platform shell is part of the project
+contract.
 
-On the current Windows environment, a skipped race gate is not a passing race gate. The release handoff must report whether race coverage actually ran.
+## Hardware handoff
 
-## Rule
-
-Do not treat a passing Windows-local check as proof of Linux device behavior. Hardware-related tasks stay incomplete until their Linux-specific verification exists.
+Do not treat a passing local or CI simulator run as proof of Linux, macOS, or
+Windows optical-device behavior. Record the host OS, device model, permissions,
+media state, and command-audit result for manual hardware validation. Device
+work must remain read-only and must not be added to the normal CI gate.
