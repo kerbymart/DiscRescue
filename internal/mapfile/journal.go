@@ -8,6 +8,10 @@ import (
 
 const maxJournalPayloadBytes = 1 << 20
 
+// MaxJournalPayloadBytes is the maximum payload a journal record may carry.
+// Readers use it to bound record buffers before reading untrusted lengths.
+const MaxJournalPayloadBytes = maxJournalPayloadBytes
+
 type JournalRecord struct {
 	Type     RecordType
 	Sequence uint64
