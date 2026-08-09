@@ -10,9 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
-	"discrescue/internal/mapfile"
 	"discrescue/internal/recovery"
 	"discrescue/internal/recoverymap"
 )
@@ -184,7 +184,7 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 		return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: output path is not configured")
 	}
 	mapPath := linuxRecoveryMapPath(input.OutputPath)
-	outputInfo, outputErr := os.Stat(input.OutputPath)
+	_, outputErr := os.Stat(input.OutputPath)
 	_, mapErr := os.Stat(mapPath)
 	status := RecoveryTargetStatus{OutputPath: input.OutputPath, MapPath: mapPath, RequiredBytes: input.CapacitySectors * uint64(input.LogicalSectorSize)}
 	switch {
@@ -211,7 +211,7 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 }
 
 func (j *linuxRecoveryJob) run(ctx context.Context, input RecoveryInput) {
-	source, err := os.OpenFile(input.DevicePath, os.O_RDONLY|os.O_NONBLOCK, 0)
+	source, err := os.OpenFile(input.DevicePath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		j.finish(false, fmt.Errorf("open Linux optical source %s read-only: %w", input.DevicePath, err))
 		return
