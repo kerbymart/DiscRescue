@@ -24,9 +24,6 @@ func ReplayJournal(checkpoint Checkpoint, journal []byte) (Checkpoint, error) {
 	for offset < len(journal) {
 		record, consumed, err := UnmarshalJournalRecord(journal[offset:])
 		if err != nil {
-			if errors.Is(err, ErrTruncatedRecord) && offset+consumed == offset {
-				break
-			}
 			if errors.Is(err, ErrTruncatedRecord) {
 				break
 			}
