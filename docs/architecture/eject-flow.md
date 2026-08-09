@@ -8,7 +8,7 @@ without explicit confirmation and is never used as recovery cancellation.
 Platform adapters implement `platform.OpticalEjector` behind OS build tags:
 
 - Linux uses the optical-drive eject ioctl after unlocking the door.
-- macOS uses bounded `diskutil eject` invocation.
+- macOS uses the public Darwin `DKIOCEJECT` disk ioctl after recovery handles are closed.
 - Windows uses the storage eject device-control request.
 
 Native success is reported as accepted-unverified unless the adapter can prove
