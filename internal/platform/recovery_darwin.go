@@ -118,11 +118,15 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 		if header.LogicalSectorSize != input.LogicalSectorSize || header.ExpectedSectorCount != input.CapacitySectors {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: recovery map %s does not match the selected media", mapPath)
 		}
-		replayed, err := mapfile.ReplayJournal(checkpoint, data[journalOffset:])
+		replayed, err := mapfile.ReplayJournalWithinCapacity(checkpoint, data[journalOffset:], input.CapacitySectors)
 		if err != nil {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: replay recovery map %s: %w", mapPath, err)
 		}
-		if requiredImageBytesDarwin(replayed.Extents, input.LogicalSectorSize) > uint64(outputInfo.Size()) {
+		requiredBytes, err := requiredImageBytesDarwin(replayed.Extents, input.LogicalSectorSize)
+		if err != nil {
+			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: calculate durable image length: %w", err)
+		}
+		if requiredBytes > uint64(outputInfo.Size()) {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: image %s is smaller than the durable recovery map", input.OutputPath)
 		}
 		_, recovered, deferred, unreadable := summarizeRecoveryExtentStates(replayed.Extents)
@@ -237,7 +241,7 @@ func loadDarwinRecoveryMap(input RecoveryInput, mapPath string) (*darwinRecovery
 	if err != nil {
 		return nil, false, err
 	}
-	replayed, err := mapfile.ReplayJournal(checkpoint, data[offset:])
+	replayed, err := mapfile.ReplayJournalWithinCapacity(checkpoint, data[offset:], input.CapacitySectors)
 	if err != nil {
 		return nil, false, err
 	}
@@ -326,18 +330,25 @@ func darwinRecoveryMapPath(outputPath string) string {
 	return outputPath + ".drmap"
 }
 
-func requiredImageBytesDarwin(extents []mapfile.Extent, logicalSectorSize uint32) uint64 {
+func requiredImageBytesDarwin(extents []mapfile.Extent, logicalSectorSize uint32) (uint64, error) {
 	var required uint64
 	for _, extent := range extents {
 		if !recoveryStateHasData(extent.State) {
 			continue
 		}
-		end := extent.EndLBA() * uint64(logicalSectorSize)
+		endLBA, err := extent.CheckedEndLBA()
+		if err != nil {
+			return 0, err
+		}
+		end, err := mapfile.CheckedSectorByteOffset(endLBA, logicalSectorSize)
+		if err != nil {
+			return 0, err
+		}
 		if end > required {
 			required = end
 		}
 	}
-	return required
+	return required, nil
 }
 
 var _ io.ReaderAt = (*os.File)(nil)
