@@ -50,16 +50,16 @@ func Create(path string, header mapfile.Header) (*Store, error) {
 	}
 	store := &Store{path: path, file: file, header: header, nextSequence: 1}
 	if err := store.writeAt(0, headerBytes); err != nil {
-		return nil, store.abort(err)
+		return nil, store.abortCreate(err)
 	}
 	if err := store.writeAt(int64(len(headerBytes)), checkpointBytes); err != nil {
-		return nil, store.abort(err)
+		return nil, store.abortCreate(err)
 	}
 	if err := file.Sync(); err != nil {
-		return nil, store.abort(fmt.Errorf("sync recovery map %s: %w", path, err))
+		return nil, store.abortCreate(fmt.Errorf("sync recovery map %s: %w", path, err))
 	}
 	if _, err := file.Seek(0, io.SeekEnd); err != nil {
-		return nil, store.abort(fmt.Errorf("seek recovery map journal %s: %w", path, err))
+		return nil, store.abortCreate(fmt.Errorf("seek recovery map journal %s: %w", path, err))
 	}
 	return store, nil
 }
@@ -185,10 +185,10 @@ func (s *Store) Close(clean bool) error {
 	s.header.CleanShutdown = clean
 	headerBytes, err := mapfile.MarshalHeader(s.header)
 	if err != nil {
-		return fmt.Errorf("finalize recovery map %s: %w", s.path, err)
+		return s.failClose(fmt.Errorf("finalize recovery map %s: %w", s.path, err))
 	}
 	if err := s.writeAt(0, headerBytes); err != nil {
-		return fmt.Errorf("finalize recovery map %s: %w", s.path, err)
+		return s.failClose(fmt.Errorf("finalize recovery map %s: %w", s.path, err))
 	}
 	if err := s.file.Sync(); err != nil {
 		return fmt.Errorf("sync finalized recovery map %s: %w", s.path, err)
@@ -213,49 +213,92 @@ func (s *Store) abort(cause error) error {
 	return errors.Join(cause, closeErr)
 }
 
-func decode(data []byte) (mapfile.Header, mapfile.Checkpoint, int, error) {
-	if len(data) < 8 {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, errors.New("recovery map is too short")
+func (s *Store) abortCreate(cause error) error {
+	closeErr := s.file.Close()
+	removeErr := os.Remove(s.path)
+	if errors.Is(removeErr, os.ErrNotExist) {
+		removeErr = nil
 	}
-	headerLength := int(binary.LittleEndian.Uint16(data[6:8]))
-	if headerLength <= 0 || len(data) < headerLength+10 {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, errors.New("recovery map is missing checkpoint data")
-	}
-	header, err := mapfile.UnmarshalHeader(data[:headerLength])
-	if err != nil {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, err
-	}
-	payloadLength := uint64(binary.LittleEndian.Uint32(data[headerLength+6 : headerLength+10]))
-	checkpointLength := uint64(14) + payloadLength
-	if checkpointLength > uint64(len(data)-headerLength) {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, errors.New("recovery map checkpoint is truncated")
-	}
-	checkpointEnd := uint64(headerLength) + checkpointLength
-	checkpoint, err := mapfile.UnmarshalCheckpoint(data[headerLength:int(checkpointEnd)])
-	if err != nil {
-		return mapfile.Header{}, mapfile.Checkpoint{}, 0, err
-	}
-	return header, checkpoint, int(checkpointEnd), nil
+	return errors.Join(cause, closeErr, removeErr)
+}
+
+func (s *Store) failClose(cause error) error {
+	closeErr := s.file.Close()
+	s.closed = true
+	return errors.Join(cause, closeErr)
 }
 
 func readState(path string, geometry Geometry) (mapfile.Header, mapfile.Checkpoint, error) {
 	if geometry.LogicalSectorSize == 0 || geometry.ExpectedSectorCount == 0 {
 		return mapfile.Header{}, mapfile.Checkpoint{}, fmt.Errorf("media geometry is required")
 	}
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
-		return mapfile.Header{}, mapfile.Checkpoint{}, fmt.Errorf("read: %w", err)
+		return mapfile.Header{}, mapfile.Checkpoint{}, fmt.Errorf("open: %w", err)
 	}
-	header, checkpoint, journalOffset, err := decode(data)
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return mapfile.Header{}, mapfile.Checkpoint{}, fmt.Errorf("stat: %w", err)
+	}
+	if info.Size() < 8 {
+		return mapfile.Header{}, mapfile.Checkpoint{}, errors.New("recovery map is too short")
+	}
+	prefix := make([]byte, 8)
+	if err := readAtExact(file, 0, prefix); err != nil {
+		return mapfile.Header{}, mapfile.Checkpoint{}, fmt.Errorf("read prefix: %w", err)
+	}
+	headerLength := int(binary.LittleEndian.Uint16(prefix[6:8]))
+	if headerLength <= 0 {
+		return mapfile.Header{}, mapfile.Checkpoint{}, errors.New("recovery map header length is invalid")
+	}
+	headerBytes := make([]byte, headerLength)
+	if err := readAtExact(file, 0, headerBytes); err != nil {
+		return mapfile.Header{}, mapfile.Checkpoint{}, fmt.Errorf("read header: %w", err)
+	}
+	header, err := mapfile.UnmarshalHeader(headerBytes)
 	if err != nil {
 		return mapfile.Header{}, mapfile.Checkpoint{}, err
 	}
+	checkpointPrefix := make([]byte, 10)
+	if err := readAtExact(file, int64(headerLength), checkpointPrefix); err != nil {
+		return mapfile.Header{}, mapfile.Checkpoint{}, fmt.Errorf("read checkpoint header: %w", err)
+	}
+	payloadLength := uint64(binary.LittleEndian.Uint32(checkpointPrefix[6:10]))
+	checkpointLength := uint64(14) + payloadLength
+	if checkpointLength > uint64(info.Size())-uint64(headerLength) {
+		return mapfile.Header{}, mapfile.Checkpoint{}, errors.New("recovery map checkpoint is truncated")
+	}
+	if payloadLength > mapfile.DefaultDecodeLimits.MaxCheckpointPayloadBytes {
+		return mapfile.Header{}, mapfile.Checkpoint{}, fmt.Errorf("recovery map checkpoint payload %d exceeds limit", payloadLength)
+	}
+	checkpointBytes := make([]byte, int(checkpointLength))
+	if err := readAtExact(file, int64(headerLength), checkpointBytes); err != nil {
+		return mapfile.Header{}, mapfile.Checkpoint{}, fmt.Errorf("read checkpoint: %w", err)
+	}
+	checkpoint, err := mapfile.UnmarshalCheckpoint(checkpointBytes)
+	if err != nil {
+		return mapfile.Header{}, mapfile.Checkpoint{}, err
+	}
+	journalOffset := uint64(headerLength) + checkpointLength
 	if header.LogicalSectorSize != geometry.LogicalSectorSize || header.ExpectedSectorCount != geometry.ExpectedSectorCount {
 		return mapfile.Header{}, mapfile.Checkpoint{}, fmt.Errorf("map geometry does not match media")
 	}
-	replayed, err := mapfile.ReplayJournalWithinCapacity(checkpoint, data[journalOffset:], geometry.ExpectedSectorCount)
+	journalReader := io.NewSectionReader(file, int64(journalOffset), info.Size()-int64(journalOffset))
+	replayed, err := mapfile.ReplayJournalReaderWithinCapacity(checkpoint, journalReader, geometry.ExpectedSectorCount)
 	if err != nil {
 		return mapfile.Header{}, mapfile.Checkpoint{}, err
 	}
 	return header, replayed, nil
+}
+
+func readAtExact(file *os.File, offset int64, data []byte) error {
+	read, err := file.ReadAt(data, offset)
+	if err != nil {
+		return err
+	}
+	if read != len(data) {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }
