@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"discrescue/internal/mapfile"
+	"discrescue/internal/recovery"
 	"discrescue/internal/recoverymap"
 	"golang.org/x/sys/windows"
 )
@@ -20,9 +22,12 @@ import (
 type OSRecovery struct{}
 
 type mountedRecoveryJob struct {
-	cancel  context.CancelFunc
-	state   *recoverymap.Store
-	startup *recoverymap.StartupTransaction
+	cancel    context.CancelFunc
+	state     *recoverymap.Store
+	startup   *recoverymap.StartupTransaction
+	lifecycle *recovery.Lifecycle
+	stopTimer *time.Timer
+	source    io.Closer
 
 	mu       sync.Mutex
 	snapshot RecoverySnapshot
@@ -35,7 +40,60 @@ func (j *mountedRecoveryJob) Snapshot() RecoverySnapshot {
 }
 
 func (j *mountedRecoveryJob) Cancel() {
-	j.cancel()
+	_ = j.RequestStop(recovery.StopIntentPause)
+}
+
+func (j *mountedRecoveryJob) RequestStop(intent recovery.StopIntent) error {
+	j.mu.Lock()
+	if j.lifecycle == nil {
+		j.mu.Unlock()
+		return fmt.Errorf("request stop: lifecycle is unavailable")
+	}
+	err := j.lifecycle.RequestStop(intent)
+	if err != nil {
+		j.mu.Unlock()
+		return err
+	}
+	if j.lifecycle.State() == recovery.JobCancelingRead {
+		j.stopTimer = time.AfterFunc(5*time.Second, func() {
+			j.mu.Lock()
+			_ = j.lifecycle.GraceExpired()
+			j.snapshot.State = j.lifecycle.State()
+			j.snapshot.CanForceStop = j.lifecycle.CanForceStop()
+			j.mu.Unlock()
+		})
+	}
+	j.snapshot.State = j.lifecycle.State()
+	j.snapshot.StopIntent = intent
+	j.snapshot.CanForceStop = j.lifecycle.CanForceStop()
+	cancel := j.cancel
+	j.mu.Unlock()
+	cancel()
+	return nil
+}
+
+func (j *mountedRecoveryJob) ForceStop() error {
+	j.mu.Lock()
+	if j.lifecycle == nil {
+		j.mu.Unlock()
+		return fmt.Errorf("force stop: lifecycle is unavailable")
+	}
+	if err := j.lifecycle.ForceStop(); err != nil {
+		j.mu.Unlock()
+		return err
+	}
+	j.snapshot.State = j.lifecycle.State()
+	j.snapshot.CanForceStop = false
+	cancel := j.cancel
+	source := j.source
+	j.mu.Unlock()
+	if source != nil {
+		if err := source.Close(); err != nil {
+			return fmt.Errorf("force stop close source: %w", err)
+		}
+	}
+	cancel()
+	return nil
 }
 
 func (j *mountedRecoveryJob) setPassProgress(progress recoveryPassProgress, logicalSectorSize uint32) {
@@ -65,6 +123,7 @@ func (j *mountedRecoveryJob) finish(canceled bool, err error) {
 	defer j.mu.Unlock()
 	j.snapshot.Done = true
 	j.snapshot.Canceled = canceled
+	j.snapshot.EndedAt = time.Now()
 	if err != nil {
 		j.snapshot.ErrText = err.Error()
 	}
@@ -85,6 +144,25 @@ func (j *mountedRecoveryJob) finish(canceled bool, err error) {
 				j.snapshot.ErrText += "; rollback startup artifacts: " + rollbackErr.Error()
 			}
 		}
+	}
+	if j.stopTimer != nil {
+		j.stopTimer.Stop()
+	}
+	if j.lifecycle != nil {
+		if err != nil {
+			j.lifecycle.Fail()
+		} else {
+			if canceled {
+				_ = j.lifecycle.Checkpointed()
+				_ = j.lifecycle.Released(false)
+			} else {
+				_ = j.lifecycle.Complete()
+				_ = j.lifecycle.Checkpointed()
+				_ = j.lifecycle.Released(true)
+			}
+		}
+		j.snapshot.State = j.lifecycle.State()
+		j.snapshot.CanForceStop = j.lifecycle.CanForceStop()
 	}
 }
 
@@ -122,8 +200,9 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 		}
 	}
 	job := &mountedRecoveryJob{
-		cancel: cancel,
-		state:  state,
+		cancel:    cancel,
+		state:     state,
+		lifecycle: recovery.NewLifecycle(),
 		snapshot: RecoverySnapshot{
 			StartedAt:         time.Now(),
 			TotalBytes:        input.CapacitySectors * uint64(input.LogicalSectorSize),
@@ -137,6 +216,13 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 			LastIssue:         lastIssue,
 		},
 	}
+	if err := job.lifecycle.Start(); err != nil {
+		cancel()
+		_ = state.Close(false)
+		return nil, err
+	}
+	job.snapshot.State = job.lifecycle.State()
+	job.snapshot.Method = input.Method
 	go job.run(ctx, input)
 	return job, nil
 }
@@ -160,6 +246,9 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 		return
 	}
 	defer source.Close()
+	j.mu.Lock()
+	j.source = source
+	j.mu.Unlock()
 
 	if dir := filepath.Dir(input.OutputPath); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -193,9 +282,10 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	}
 
 	persistence := newRecoveryPersistence(output, j.state)
+	lifecycleSource := &recovery.LifecycleReaderAt{Source: source, Lifecycle: j.lifecycle}
 	err = runPassBasedRecovery(
 		ctx,
-		source,
+		lifecycleSource,
 		output,
 		input.LogicalSectorSize,
 		input.CapacitySectors,
