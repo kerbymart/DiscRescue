@@ -55,7 +55,7 @@ infer optical-device behavior from simulator tests or cross-compilation alone.
 
 - Linux: read-only optical-device probes, `SG_IO` behavior, and worker behavior
   against real hardware where available.
-- macOS: read-only raw-device access and `diskutil` discovery behavior.
+- macOS: pure-Go Darwin ioctl discovery, `DKIOCEJECT` eject behavior, and read-only raw-device access.
 - Windows: native platform adapter and optical-volume behavior.
 
 ## Deferred automation
