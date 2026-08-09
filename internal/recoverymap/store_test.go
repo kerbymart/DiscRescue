@@ -105,3 +105,24 @@ func TestOpenRejectsMapExtentOutsideGeometry(t *testing.T) {
 		t.Fatal("expected geometry mismatch to fail")
 	}
 }
+
+func TestStageExtentFlushesAtBoundedRecordCount(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "capture.drmap")
+	header := testHeader()
+	header.ExpectedSectorCount = 512
+	store, err := Create(path, header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for lba := uint64(0); lba < 256; lba++ {
+		if err := store.StageExtent(mapfile.Extent{StartLBA: lba, Sectors: 1, State: mapfile.SectorStateMissing}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if pending := store.PendingBytes(); pending != 0 {
+		t.Fatalf("expected bounded batch to flush at record limit, %d bytes remain", pending)
+	}
+	if err := store.Close(true); err != nil {
+		t.Fatal(err)
+	}
+}

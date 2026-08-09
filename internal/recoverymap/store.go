@@ -21,13 +21,22 @@ type Geometry struct {
 // Store owns one recovery map file and its in-memory working extent state.
 // Store is intentionally single-owner; callers must serialize its methods.
 type Store struct {
-	path         string
-	file         *os.File
-	header       mapfile.Header
-	extents      []mapfile.Extent
-	nextSequence uint64
-	closed       bool
+	path           string
+	file           *os.File
+	header         mapfile.Header
+	extents        []mapfile.Extent
+	nextSequence   uint64
+	pendingBytes   uint64
+	pendingRecords uint32
+	closed         bool
 }
+
+const (
+	// MaxPendingJournalBytes and MaxPendingJournalRecords bound the amount of
+	// acknowledged work that can wait for a journal sync.
+	MaxPendingJournalBytes   = uint64(8 << 20)
+	MaxPendingJournalRecords = uint32(256)
+)
 
 // Create creates and durably initializes a new recovery map.
 func Create(path string, header mapfile.Header) (*Store, error) {
@@ -147,9 +156,55 @@ func (s *Store) ApplyExtent(extent mapfile.Extent) error {
 	if s == nil || s.file == nil || s.closed {
 		return errors.New("apply recovery map extent: store is closed")
 	}
+	if err := s.Flush(); err != nil {
+		return fmt.Errorf("flush pending recovery map journal: %w", err)
+	}
+	return s.appendExtent(extent, true)
+}
+
+// StageExtent appends an extent transition without forcing a sync. The caller
+// must call Flush before relying on the transition after a crash.
+func (s *Store) StageExtent(extent mapfile.Extent) error {
+	if s == nil || s.file == nil || s.closed {
+		return errors.New("stage recovery map extent: store is closed")
+	}
+	if err := s.appendExtent(extent, false); err != nil {
+		return err
+	}
+	if s.pendingBytes >= MaxPendingJournalBytes || s.pendingRecords >= MaxPendingJournalRecords {
+		return s.Flush()
+	}
+	return nil
+}
+
+// Flush durably syncs staged journal transitions.
+func (s *Store) Flush() error {
+	if s == nil || s.file == nil || s.closed {
+		return errors.New("flush recovery map journal: store is closed")
+	}
+	if s.pendingRecords == 0 {
+		return nil
+	}
+	if err := s.file.Sync(); err != nil {
+		return fmt.Errorf("sync recovery map journal %s: %w", s.path, err)
+	}
+	s.pendingBytes = 0
+	s.pendingRecords = 0
+	return nil
+}
+
+// PendingBytes reports staged journal bytes not yet synced.
+func (s *Store) PendingBytes() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.pendingBytes
+}
+
+func (s *Store) appendExtent(extent mapfile.Extent, sync bool) error {
 	nextExtents, err := mapfile.ApplyExtent(s.extents, extent)
 	if err != nil {
-		return fmt.Errorf("apply recovery map extent: %w", err)
+		return fmt.Errorf("validate recovery map extent: %w", err)
 	}
 	if s.nextSequence == 0 {
 		return errors.New("apply recovery map extent: sequence exhausted")
@@ -168,8 +223,13 @@ func (s *Store) ApplyExtent(extent mapfile.Extent) error {
 	if _, err := s.file.Write(record); err != nil {
 		return fmt.Errorf("append recovery map journal %s: %w", s.path, err)
 	}
-	if err := s.file.Sync(); err != nil {
-		return fmt.Errorf("sync recovery map journal %s: %w", s.path, err)
+	if sync {
+		if err := s.file.Sync(); err != nil {
+			return fmt.Errorf("sync recovery map journal %s: %w", s.path, err)
+		}
+	} else {
+		s.pendingBytes += uint64(len(record))
+		s.pendingRecords++
 	}
 	s.extents = nextExtents
 	s.nextSequence++
@@ -182,6 +242,11 @@ func (s *Store) Close(clean bool) error {
 	if s == nil || s.file == nil || s.closed {
 		return nil
 	}
+	if err := s.Flush(); err != nil {
+		closeErr := s.file.Close()
+		s.closed = true
+		return errors.Join(err, closeErr)
+	}
 	s.header.CleanShutdown = clean
 	headerBytes, err := mapfile.MarshalHeader(s.header)
 	if err != nil {
@@ -191,7 +256,9 @@ func (s *Store) Close(clean bool) error {
 		return s.failClose(fmt.Errorf("finalize recovery map %s: %w", s.path, err))
 	}
 	if err := s.file.Sync(); err != nil {
-		return fmt.Errorf("sync finalized recovery map %s: %w", s.path, err)
+		closeErr := s.file.Close()
+		s.closed = true
+		return errors.Join(fmt.Errorf("sync finalized recovery map %s: %w", s.path, err), closeErr)
 	}
 	s.closed = true
 	return s.file.Close()
