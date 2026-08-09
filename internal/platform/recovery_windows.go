@@ -28,6 +28,7 @@ type mountedRecoveryJob struct {
 	lifecycle *recovery.Lifecycle
 	stopTimer *time.Timer
 	source    io.Closer
+	telemetry *recovery.TelemetryRecorder
 
 	mu       sync.Mutex
 	snapshot RecoverySnapshot
@@ -36,7 +37,16 @@ type mountedRecoveryJob struct {
 func (j *mountedRecoveryJob) Snapshot() RecoverySnapshot {
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	j.refreshTelemetryLocked()
 	return j.snapshot
+}
+
+func (j *mountedRecoveryJob) refreshTelemetryLocked() {
+	if j.telemetry == nil {
+		return
+	}
+	j.snapshot.Telemetry = j.telemetry.Snapshot(j.snapshot.CumulativeRecoveredBytes, j.snapshot.TotalBytes, !j.snapshot.Done)
+	j.snapshot.SessionRecoveredBytes = j.snapshot.Telemetry.RecoveredBytes
 }
 
 func (j *mountedRecoveryJob) Cancel() {
@@ -101,6 +111,7 @@ func (j *mountedRecoveryJob) setPassProgress(progress recoveryPassProgress, logi
 	defer j.mu.Unlock()
 
 	j.snapshot.CopiedBytes = progress.RecoveredSectors * uint64(logicalSectorSize)
+	j.snapshot.CumulativeRecoveredBytes = j.snapshot.CopiedBytes
 	j.snapshot.ScannedSectors = progress.ScannedSectors
 	j.snapshot.DeferredSectors = progress.DeferredSectors
 	j.snapshot.UnreadableSectors = progress.UnreadableSectors
@@ -206,6 +217,7 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 		cancel:    cancel,
 		state:     state,
 		lifecycle: recovery.NewLifecycle(),
+		telemetry: recovery.NewTelemetryRecorder(recovery.SystemClock{}, recoveredSectors*uint64(input.LogicalSectorSize)),
 		snapshot: RecoverySnapshot{
 			StartedAt:         time.Now(),
 			TotalBytes:        input.CapacitySectors * uint64(input.LogicalSectorSize),
@@ -226,6 +238,7 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	}
 	job.snapshot.State = job.lifecycle.State()
 	job.snapshot.Method = input.Method
+	job.refreshTelemetryLocked()
 	go job.run(ctx, input)
 	return job, nil
 }

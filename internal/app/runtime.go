@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"discrescue/internal/platform"
+	"discrescue/internal/recovery"
 )
 
 type ProgramModel struct {
@@ -423,8 +424,8 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						Status:            status,
 						Elapsed:           elapsedLabel(snapshot.StartedAt),
 						Remaining:         humanBytes(snapshot.TotalBytes-snapshot.CopiedBytes) + " remaining",
-						ETA:               estimateETA(snapshot.StartedAt, snapshot.CopiedBytes, snapshot.TotalBytes),
-						Throughput:        throughputLabel(snapshot.StartedAt, snapshot.CopiedBytes),
+						ETA:               telemetryETA(snapshot.Telemetry),
+						Throughput:        telemetryThroughput(snapshot.Telemetry),
 						LastIssue:         append([]string(nil), snapshot.LastIssue...),
 						OutputPath:        m.Setup.OutputPath,
 						PausePending:      m.state.pendingPause,
@@ -436,13 +437,11 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-func throughputLabel(startedAt time.Time, copiedBytes uint64) string {
-	elapsed := time.Since(startedAt)
-	if copiedBytes == 0 || elapsed < time.Second {
+func telemetryThroughput(telemetry recovery.SessionTelemetry) string {
+	if telemetry.RateBytesPerSecond <= 0 {
 		return ""
 	}
-	bytesPerSecond := float64(copiedBytes) / elapsed.Seconds()
-	return humanBytes(uint64(bytesPerSecond)) + "/s"
+	return humanBytes(uint64(telemetry.RateBytesPerSecond)) + "/s"
 }
 
 func elapsedLabel(startedAt time.Time) string {
@@ -453,20 +452,14 @@ func elapsedLabel(startedAt time.Time) string {
 	return elapsed.Round(time.Second).String()
 }
 
-func estimateETA(startedAt time.Time, copiedBytes, totalBytes uint64) string {
-	elapsed := time.Since(startedAt)
-	if copiedBytes == 0 || totalBytes <= copiedBytes || elapsed < 2*time.Second {
+func telemetryETA(telemetry recovery.SessionTelemetry) string {
+	if !telemetry.ETAKnown || telemetry.ETA <= 0 {
 		return ""
 	}
-	bytesPerSecond := float64(copiedBytes) / elapsed.Seconds()
-	if bytesPerSecond <= 0 {
-		return ""
-	}
-	remainingSeconds := float64(totalBytes-copiedBytes) / bytesPerSecond
-	if remainingSeconds < 1 {
+	if telemetry.ETA < time.Second {
 		return "less than 1 second left"
 	}
-	return "about " + (time.Duration(remainingSeconds) * time.Second).Round(time.Second).String() + " left"
+	return "about " + telemetry.ETA.Round(time.Second).String() + " left"
 }
 
 func humanBytes(value uint64) string {
