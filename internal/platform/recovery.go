@@ -49,6 +49,7 @@ type RecoverySnapshot struct {
 	CopiedBytes              uint64
 	CumulativeRecoveredBytes uint64
 	SessionRecoveredBytes    uint64
+	Telemetry                recovery.SessionTelemetry
 	ScannedSectors           uint64
 	DeferredSectors          uint64
 	UnreadableSectors        uint64
