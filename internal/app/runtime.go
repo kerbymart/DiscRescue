@@ -181,6 +181,7 @@ func (m ProgramModel) startRecoveryJob() tea.Msg {
 		OutputPath:        m.Setup.OutputPath,
 		LogicalSectorSize: m.MediaLogicalSectorSize,
 		CapacitySectors:   m.MediaCapacitySectors,
+		Method:            m.Setup.Method,
 	})
 	if err != nil {
 		return JobStartFailedMsg{Err: err}
