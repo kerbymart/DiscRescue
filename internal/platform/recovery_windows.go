@@ -179,6 +179,9 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	if input.CapacitySectors == 0 {
 		return nil, fmt.Errorf("start image recovery: capacity sectors must be greater than zero")
 	}
+	if _, err := recovery.PolicyForMethod(input.Method); err != nil {
+		return nil, fmt.Errorf("start image recovery: %w", err)
+	}
 
 	state, resumed, err := openRecoveryMapState(input)
 	if err != nil {
@@ -283,13 +286,19 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 
 	persistence := newRecoveryPersistence(output, j.state)
 	lifecycleSource := &recovery.LifecycleReaderAt{Source: source, Lifecycle: j.lifecycle}
-	err = runPassBasedRecovery(
+	policy, policyErr := recovery.PolicyForMethod(input.Method)
+	if policyErr != nil {
+		j.finish(false, policyErr)
+		return
+	}
+	err = runPassBasedRecoveryWithPolicy(
 		ctx,
 		lifecycleSource,
 		output,
 		input.LogicalSectorSize,
 		input.CapacitySectors,
 		persistence,
+		policy,
 		func(progress recoveryPassProgress) {
 			j.setPassProgress(progress, input.LogicalSectorSize)
 		},

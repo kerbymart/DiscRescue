@@ -156,6 +156,9 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	if input.LogicalSectorSize == 0 || input.CapacitySectors == 0 {
 		return nil, fmt.Errorf("start image recovery: media geometry is required")
 	}
+	if _, err := recovery.PolicyForMethod(input.Method); err != nil {
+		return nil, fmt.Errorf("start image recovery: %w", err)
+	}
 	state, resumed, err := openDarwinRecoveryMap(input)
 	if err != nil {
 		return nil, err
@@ -272,7 +275,12 @@ func (j *darwinRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	}
 	persistence := newRecoveryPersistence(output, j.state)
 	lifecycleSource := &recovery.LifecycleReaderAt{Source: source, Lifecycle: j.lifecycle}
-	err = runPassBasedRecovery(ctx, lifecycleSource, output, input.LogicalSectorSize, input.CapacitySectors, persistence, func(progress recoveryPassProgress) { j.setProgress(progress, input.LogicalSectorSize) })
+	policy, policyErr := recovery.PolicyForMethod(input.Method)
+	if policyErr != nil {
+		j.finish(false, policyErr)
+		return
+	}
+	err = runPassBasedRecoveryWithPolicy(ctx, lifecycleSource, output, input.LogicalSectorSize, input.CapacitySectors, persistence, policy, func(progress recoveryPassProgress) { j.setProgress(progress, input.LogicalSectorSize) })
 	if errors.Is(err, context.Canceled) {
 		j.finish(true, nil)
 		return
