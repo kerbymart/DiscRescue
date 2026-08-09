@@ -56,6 +56,17 @@ Header fields in order:
 | reserved | 7 bytes | must be zero in v1 |
 | header_crc32c | uint32 | CRC32C over header bytes before this field |
 
+Identity binding rules:
+
+- Version 1 identity uses eight distributed one-sector samples with a
+  ten-second total collection budget.
+- `quick_content_id` in the map is the first 16 bytes of the full catalog
+  QuickID digest.
+- A map without `quick_content_id_present` is legacy/indeterminate and cannot
+  be an automatic strong resume match.
+- Automatic resume requires matching identity algorithm version, layout hash,
+  compact QuickID, valid geometry, and valid map/job bindings.
+
 Header validation rules:
 
 - Reject unknown `magic`.

@@ -144,6 +144,7 @@ const (
 	ProcessingInProgress        ProcessingState = "in_progress"
 	ProcessingStoppedResumable  ProcessingState = "stopped_resumable"
 	ProcessingCompletedVerified ProcessingState = "completed_verified"
+	ProcessingCompleted         ProcessingState = "completed"
 	ProcessingCompletedWithGaps ProcessingState = "completed_with_gaps"
 	ProcessingFailed            ProcessingState = "failed"
 	ProcessingMerged            ProcessingState = "merged"

@@ -1,10 +1,20 @@
 package catalog
 
 import (
+	"crypto/rand"
 	"fmt"
 	"reflect"
 	"time"
 )
+
+// NewRecordID returns a cryptographically random local catalog/job identifier.
+func NewRecordID() (RecordID, error) {
+	var id RecordID
+	if _, err := rand.Read(id[:]); err != nil {
+		return RecordID{}, fmt.Errorf("generate catalog record id: %w", err)
+	}
+	return id, nil
+}
 
 type DeviceIdentity struct {
 	Vendor    string

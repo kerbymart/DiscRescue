@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"discrescue/internal/catalog"
 )
 
 const (
@@ -30,6 +32,8 @@ type OpticalMedia struct {
 	SuggestedOutputPath string
 	Recoverable         bool
 	RecoverabilityNote  string
+	IdentityObservation *catalog.IdentityObservation
+	PriorProcessing     *catalog.PriorProcessingResult
 }
 
 type OpticalDiscovery interface {
@@ -59,7 +63,7 @@ func (d OSOpticalDiscovery) DiscoverOpticalDrives() ([]OpticalDrive, error) {
 
 func (d OSOpticalDiscovery) IdentifyOpticalMedia(path string) (OpticalMedia, error) {
 	if media, err := identifyHostOpticalMedia(path); err == nil {
-		return media, nil
+		return ensureIdentityObservation(media), nil
 	}
 	drives, err := d.DiscoverOpticalDrives()
 	if err != nil {
@@ -86,13 +90,23 @@ func (d OSOpticalDiscovery) IdentifyOpticalMedia(path string) (OpticalMedia, err
 				detail = name
 			}
 		}
-		return OpticalMedia{
+		return ensureIdentityObservation(OpticalMedia{
 			Summary:            "Media inspection completed.",
 			Detail:             detail,
 			RecoverabilityNote: "The current build cannot start recovery from this media.",
-		}, nil
+		}), nil
 	}
 	return OpticalMedia{}, fmt.Errorf("inspect media: drive %q is no longer available", path)
+}
+
+func ensureIdentityObservation(media OpticalMedia) OpticalMedia {
+	if media.IdentityObservation == nil {
+		media.IdentityObservation = &catalog.IdentityObservation{
+			Status: catalog.IdentityUnavailable,
+			Detail: "Content fingerprint collection is unavailable for this media inspection.",
+		}
+	}
+	return media
 }
 
 func parseOpticalDrives(text string) []OpticalDrive {
