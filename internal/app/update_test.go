@@ -355,7 +355,7 @@ func TestChooseActionBrowseHistoryRequestsFolderScan(t *testing.T) {
 func TestReviewChooseAnotherDriveReturnsToDriveList(t *testing.T) {
 	model := NewModel()
 	model.Page = PageReview
-	model.Cursor = 2
+	model.Cursor = 3
 
 	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
