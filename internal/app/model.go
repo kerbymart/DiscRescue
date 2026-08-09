@@ -74,8 +74,11 @@ type JobSetupModel struct {
 }
 
 type ContentIdentityViewModel struct {
-	Summary string
-	Detail  string
+	Summary         string
+	Detail          string
+	Evidence        string
+	IdentityStatus  string
+	AutoResumeReady bool
 }
 
 type PriorProcessingRecord struct {

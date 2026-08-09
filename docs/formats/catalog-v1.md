@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft for implementation
+Implemented for Epic 4's filesystem-backed catalog repository.
 
 ## Scope
 
@@ -16,7 +16,7 @@ Default location:
 $XDG_STATE_HOME/discrescue/catalog/
     catalog.snapshot
     catalog.journal
-    lock
+    catalog.lock
 ```
 
 Fallback when `XDG_STATE_HOME` is unset:
@@ -31,7 +31,7 @@ The catalog consists of:
 
 - an append-only journal
 - an atomically replaced compacted snapshot
-- an advisory lock file for mutation
+- an exclusive lock file for mutation
 
 The catalog is local-only, bounded, crash-safe, and non-authoritative for recovery correctness.
 
@@ -129,13 +129,14 @@ Job reference records are serialized inline and contain:
 | 4 | `completed_with_gaps` |
 | 5 | `failed` |
 | 6 | `merged` |
+| 7 | `completed` |
 
 ## Write Order
 
 Catalog write order is:
 
 1. Append a length-delimited journal record with sequence and CRC32C.
-2. Flush according to durability policy.
+2. Sync the journal successfully.
 3. Apply the event to the in-memory index.
 4. Periodically write a full snapshot to a temporary file.
 5. Sync and atomically rename the snapshot.
@@ -143,9 +144,24 @@ Catalog write order is:
 
 ## Locking
 
-- Mutation requires an exclusive advisory lock on `lock`.
+- Mutation requires an exclusive `catalog.lock` created atomically.
 - A second DiscRescue process may open the catalog read-only.
 - Read-only access must report that history updates are temporarily unavailable.
+- The lock records the owning process and acquisition time. It is never
+  silently removed as stale; an operator must verify that the owner is gone
+  before removing a leftover lock.
+
+## Parser and File Bounds
+
+- Each snapshot or journal file is limited to 64 MiB when opened.
+- Snapshot entries are limited to 100,000.
+- Each identity is limited to 256 tracks, 64 volume hints, and 64 samples.
+- Each entry is limited to 1,024 captures and 1,024 job references.
+- Journal payloads are limited to 1 MiB.
+
+Counts and lengths are checked against the remaining payload before any slice
+is allocated. A final torn journal record may be ignored; complete CRC,
+sequence, or type corruption remains an error.
 
 ## Crash Recovery
 

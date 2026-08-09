@@ -3,7 +3,10 @@ package platform
 import (
 	"time"
 
+	"discrescue/internal/catalog"
+	"discrescue/internal/mapfile"
 	"discrescue/internal/recovery"
+	"discrescue/internal/recoverymap"
 )
 
 type RecoveryMethod = recovery.RecoveryMethod
@@ -24,6 +27,23 @@ type RecoveryInput struct {
 	LogicalSectorSize uint32
 	CapacitySectors   uint64
 	Method            RecoveryMethod
+	Identity          *catalog.ContentIdentity
+	CaptureID         catalog.RecordID
+	JobID             catalog.RecordID
+	CatalogRecordID   catalog.RecordID
+}
+
+func recoveryMapHeader(input RecoveryInput) (mapfile.Header, error) {
+	header := mapfile.Header{
+		LogicalSectorSize:   input.LogicalSectorSize,
+		ExpectedSectorCount: input.CapacitySectors,
+		OutputFormat:        1,
+		CreationUnixNano:    time.Now().UnixNano(),
+	}
+	if input.Identity == nil {
+		return header, nil
+	}
+	return recoverymap.IdentityBinding(header, *input.Identity, input.CaptureID, input.JobID, input.CatalogRecordID)
 }
 
 type RecoveryTargetStatus struct {

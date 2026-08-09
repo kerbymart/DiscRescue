@@ -10,6 +10,15 @@ import (
 const snapshotMagic = "DSCS"
 const catalogFormatVersion uint16 = 1
 
+const (
+	maxCatalogEntries          = 100_000
+	maxCatalogTracks           = 256
+	maxCatalogHints            = 64
+	maxCatalogSamples          = 64
+	maxCatalogCapturesPerEntry = 1_024
+	maxCatalogJobsPerEntry     = 1_024
+)
+
 var catalogCRC32CTable = crc32.MakeTable(crc32.Castagnoli)
 
 type Snapshot struct {
@@ -69,6 +78,12 @@ func UnmarshalSnapshot(encoded []byte) (Snapshot, error) {
 	}
 
 	entryCount := int(binary.LittleEndian.Uint32(encoded[18:22]))
+	if entryCount > maxCatalogEntries {
+		return Snapshot{}, fmt.Errorf("unmarshal snapshot: entry count %d exceeds limit %d", entryCount, maxCatalogEntries)
+	}
+	if uint64(entryCount)*4 > uint64(payloadLength) {
+		return Snapshot{}, fmt.Errorf("unmarshal snapshot: entry count %d cannot fit payload", entryCount)
+	}
 	entries, err := unmarshalEntries(encoded[22:22+payloadLength], entryCount)
 	if err != nil {
 		return Snapshot{}, err
@@ -98,23 +113,29 @@ func marshalEntries(entries []Entry) ([]byte, error) {
 }
 
 func unmarshalEntries(data []byte, expectedCount int) ([]Entry, error) {
+	if expectedCount < 0 || expectedCount > maxCatalogEntries {
+		return nil, fmt.Errorf("unmarshal entries: entry count %d exceeds limit %d", expectedCount, maxCatalogEntries)
+	}
+	if uint64(expectedCount)*4 > uint64(len(data)) {
+		return nil, fmt.Errorf("unmarshal entries: entry count %d cannot fit payload", expectedCount)
+	}
 	offset := 0
 	entries := make([]Entry, 0, expectedCount)
 	for offset < len(data) {
 		if offset+4 > len(data) {
 			return nil, fmt.Errorf("unmarshal entries: truncated entry length")
 		}
-		length := int(binary.LittleEndian.Uint32(data[offset : offset+4]))
+		length := uint64(binary.LittleEndian.Uint32(data[offset : offset+4]))
 		offset += 4
-		if offset+length > len(data) {
+		if length > uint64(len(data)-offset) {
 			return nil, fmt.Errorf("unmarshal entries: truncated entry payload")
 		}
-		entry, err := unmarshalEntry(data[offset : offset+length])
+		entry, err := unmarshalEntry(data[offset : offset+int(length)])
 		if err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
-		offset += length
+		offset += int(length)
 	}
 	if len(entries) != expectedCount {
 		return nil, fmt.Errorf("unmarshal entries: expected %d entries, got %d", expectedCount, len(entries))
@@ -198,17 +219,17 @@ func unmarshalEntry(data []byte) (Entry, error) {
 	if offset+4 > len(data) {
 		return Entry{}, fmt.Errorf("unmarshal entry: truncated identity length")
 	}
-	identityLength := int(binary.LittleEndian.Uint32(data[offset : offset+4]))
+	identityLength := uint64(binary.LittleEndian.Uint32(data[offset : offset+4]))
 	offset += 4
-	if offset+identityLength > len(data) {
+	if identityLength > maxCatalogPayloadBytes || identityLength > uint64(len(data)-offset) {
 		return Entry{}, fmt.Errorf("unmarshal entry: truncated identity payload")
 	}
-	identity, err := unmarshalContentIdentity(data[offset : offset+identityLength])
+	identity, err := unmarshalContentIdentity(data[offset : offset+int(identityLength)])
 	if err != nil {
 		return Entry{}, err
 	}
 	entry.Identity = identity
-	offset += identityLength
+	offset += int(identityLength)
 	if offset+2+8+8+1+8+2 > len(data) {
 		return Entry{}, fmt.Errorf("unmarshal entry: truncated fixed fields")
 	}
@@ -230,44 +251,50 @@ func unmarshalEntry(data []byte) (Entry, error) {
 	offset += 8
 	captureCount := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
 	offset += 2
+	if captureCount > maxCatalogCapturesPerEntry || uint64(captureCount)*4 > uint64(len(data)-offset) {
+		return Entry{}, fmt.Errorf("unmarshal entry: capture count %d exceeds bounds", captureCount)
+	}
 	entry.Captures = make([]CaptureIdentity, 0, captureCount)
 	for i := 0; i < captureCount; i++ {
 		if offset+4 > len(data) {
 			return Entry{}, fmt.Errorf("unmarshal entry: truncated capture length")
 		}
-		length := int(binary.LittleEndian.Uint32(data[offset : offset+4]))
+		length := uint64(binary.LittleEndian.Uint32(data[offset : offset+4]))
 		offset += 4
-		if offset+length > len(data) {
+		if length > uint64(len(data)-offset) {
 			return Entry{}, fmt.Errorf("unmarshal entry: truncated capture payload")
 		}
-		capture, err := unmarshalCaptureIdentity(data[offset : offset+length])
+		capture, err := unmarshalCaptureIdentity(data[offset : offset+int(length)])
 		if err != nil {
 			return Entry{}, err
 		}
 		entry.Captures = append(entry.Captures, capture)
-		offset += length
+		offset += int(length)
 	}
 	if offset+2 > len(data) {
 		return Entry{}, fmt.Errorf("unmarshal entry: truncated job reference count")
 	}
 	jobCount := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
 	offset += 2
+	if jobCount > maxCatalogJobsPerEntry || uint64(jobCount)*4 > uint64(len(data)-offset) {
+		return Entry{}, fmt.Errorf("unmarshal entry: job reference count %d exceeds bounds", jobCount)
+	}
 	entry.JobReferences = make([]JobReference, 0, jobCount)
 	for i := 0; i < jobCount; i++ {
 		if offset+4 > len(data) {
 			return Entry{}, fmt.Errorf("unmarshal entry: truncated job reference length")
 		}
-		length := int(binary.LittleEndian.Uint32(data[offset : offset+4]))
+		length := uint64(binary.LittleEndian.Uint32(data[offset : offset+4]))
 		offset += 4
-		if offset+length > len(data) {
+		if length > uint64(len(data)-offset) {
 			return Entry{}, fmt.Errorf("unmarshal entry: truncated job reference payload")
 		}
-		reference, err := unmarshalJobReference(data[offset : offset+length])
+		reference, err := unmarshalJobReference(data[offset : offset+int(length)])
 		if err != nil {
 			return Entry{}, err
 		}
 		entry.JobReferences = append(entry.JobReferences, reference)
-		offset += length
+		offset += int(length)
 	}
 	if offset+16+1 > len(data) {
 		return Entry{}, fmt.Errorf("unmarshal entry: truncated preferred job or hidden flag")
@@ -351,6 +378,9 @@ func unmarshalContentIdentity(data []byte) (ContentIdentity, error) {
 	offset += 2
 	trackCount := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
 	offset += 2
+	if trackCount > maxCatalogTracks || uint64(trackCount)*30 > uint64(len(data)-offset) {
+		return ContentIdentity{}, fmt.Errorf("unmarshal content identity: track count %d exceeds bounds", trackCount)
+	}
 	identity.Tracks = make([]TrackLayout, 0, trackCount)
 	for i := 0; i < trackCount; i++ {
 		if offset+2+8+8+2+2+8 > len(data) {
@@ -376,6 +406,9 @@ func unmarshalContentIdentity(data []byte) (ContentIdentity, error) {
 	}
 	hintCount := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
 	offset += 2
+	if hintCount > maxCatalogHints || uint64(hintCount)*2 > uint64(len(data)-offset) {
+		return ContentIdentity{}, fmt.Errorf("unmarshal content identity: volume hint count %d exceeds bounds", hintCount)
+	}
 	identity.VolumeHints = make([]VolumeHint, 0, hintCount)
 	for i := 0; i < hintCount; i++ {
 		if offset+2 > len(data) {
@@ -394,6 +427,9 @@ func unmarshalContentIdentity(data []byte) (ContentIdentity, error) {
 	}
 	sampleCount := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
 	offset += 2
+	if sampleCount > maxCatalogSamples || uint64(sampleCount)*45 > uint64(len(data)-offset) {
+		return ContentIdentity{}, fmt.Errorf("unmarshal content identity: sample count %d exceeds bounds", sampleCount)
+	}
 	identity.Samples = make([]SectorFingerprint, 0, sampleCount)
 	for i := 0; i < sampleCount; i++ {
 		if offset+2+8+1+32+2 > len(data) {
@@ -584,6 +620,8 @@ func processingStateCode(state ProcessingState) uint16 {
 		return 5
 	case ProcessingMerged:
 		return 6
+	case ProcessingCompleted:
+		return 7
 	default:
 		return 0xffff
 	}
@@ -605,6 +643,8 @@ func decodeProcessingState(code uint16) (ProcessingState, error) {
 		return ProcessingFailed, nil
 	case 6:
 		return ProcessingMerged, nil
+	case 7:
+		return ProcessingCompleted, nil
 	default:
 		return "", fmt.Errorf("decode processing state: unsupported code %d", code)
 	}

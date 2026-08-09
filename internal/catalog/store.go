@@ -191,6 +191,7 @@ func validProcessingState(state ProcessingState) bool {
 	case ProcessingObserved,
 		ProcessingInProgress,
 		ProcessingStoppedResumable,
+		ProcessingCompleted,
 		ProcessingCompletedVerified,
 		ProcessingCompletedWithGaps,
 		ProcessingFailed,
