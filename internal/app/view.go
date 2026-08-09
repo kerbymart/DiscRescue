@@ -107,6 +107,8 @@ func pageTitle(m Model) string {
 		return "Recovery paused"
 	case PageStopConfirm:
 		return "Stop recovery?"
+	case PageEjectConfirm:
+		return "Confirm force eject"
 	case PageSummary:
 		return "Recovery summary"
 	case PageResumeJobs:
@@ -164,6 +166,8 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 		return renderPausedPage(m, width)
 	case PageStopConfirm:
 		return renderStopConfirmPage(m, width)
+	case PageEjectConfirm:
+		return renderEjectConfirmPage(m, width)
 	case PageSummary:
 		return renderSummaryPage(m, width, tier)
 	case PageResumeJobs:
@@ -872,6 +876,22 @@ func renderStopConfirmPage(m Model, width int) []string {
 	return cardLines(theme, "Confirm stop", lines, width, true)
 }
 
+func renderEjectConfirmPage(m Model, width int) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	options := []string{"Force eject", "Cancel"}
+	drive := firstNonEmpty(m.SelectedDrive.DisplayName, m.SelectedDrive.Path, "selected drive")
+	lines := []string{
+		theme.Warning.Render("△ Force eject is an exceptional action."),
+		"",
+		"Normal eject failed or was not available for " + drive + ".",
+		"Recovery must already be stopped; unsaved device work may be abandoned.",
+		"DiscRescue will refresh the drive state after the native request.",
+		"",
+	}
+	lines = append(lines, choiceMenu(theme, options, m.Cursor, width-4)...)
+	return cardLines(theme, "Confirm force eject", lines, width, true)
+}
+
 func renderAboutPage(m Model, width int) []string {
 	theme := newTheme(m.Monochrome, m.DarkBackground)
 	lines := []string{
@@ -965,6 +985,8 @@ func renderFooter(page Page, width int, tier layoutTier) string {
 		footer = "j/k select  -  enter choose  -  d details"
 	case PageStopConfirm:
 		footer = "j/k select  -  enter choose  -  esc continue"
+	case PageEjectConfirm:
+		footer = "j/k select  -  enter choose  -  esc cancel"
 	case PageResumeJobs:
 		if tier == layoutCompact {
 			footer = "enter select  esc back"

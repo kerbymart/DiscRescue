@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
+	"discrescue/internal/device"
 	"discrescue/internal/platform"
 )
 
@@ -45,7 +46,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		resizeCompactLists(componentWidth, listHeight, &m.DriveList, &m.ActionList, &m.ResumeList, &m.HistoryList)
 		return m, nil
 	case tea.KeyPressMsg:
-		if m.Page == PageChooseDrive && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Refresh) {
+		if m.Page == PageChooseDrive && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Select) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Back) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Quit) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Refresh) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().Eject) && !matchesKey(strings.ToLower(typed.String()), DefaultKeys().ForceEject) {
 			var cmd tea.Cmd
 			m.DriveList, cmd = updateCompactList(m.DriveList, typed)
 			m.Cursor = m.DriveList.Index()
@@ -351,6 +352,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Page = PageSummary
 		return m, nil
+	case EjectCompletedMsg:
+		if typed.Err != nil {
+			m.LastError = typed.Err
+			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			if typed.Request.Mode == device.EjectNormal {
+				m.PendingEject = device.EjectRequest{Mode: device.EjectForce, ExplicitConfirm: true}
+				m.Page = PageEjectConfirm
+				m.Cursor = 0
+			}
+			return m, nil
+		}
+		m.PendingEject = device.EjectRequest{}
+		m.Notice = &NoticeModel{Text: firstNonEmpty(typed.Result.Detail, "Eject request accepted; refreshing drive state."), Severity: SeverityInfo}
+		return m.beginDiscovery()
 	case EffectRequestedMsg:
 		return m, nil
 	}
@@ -406,6 +421,23 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m.beginDiscovery()
 		}
 		return m, nil
+	case matchesKey(key, DefaultKeys().Eject):
+		if m.Page == PageChooseDrive {
+			drive := m.ejectTargetDrive()
+			if drive.Path != "" {
+				return m, ejectEffect(drive.Path, device.EjectRequest{Mode: device.EjectNormal})
+			}
+		}
+		return m, nil
+	case matchesKey(key, DefaultKeys().ForceEject):
+		if m.Page == PageChooseDrive && m.ejectTargetDrive().Path != "" {
+			m.SelectedDrive = m.ejectTargetDrive()
+			m.PendingEject = device.EjectRequest{Mode: device.EjectForce, ExplicitConfirm: true}
+			m.Page = PageEjectConfirm
+			m.Cursor = 0
+			return m, nil
+		}
+		return m, nil
 	case matchesKey(key, DefaultKeys().Up):
 		m.moveCursor(-1)
 		return m, nil
@@ -447,6 +479,16 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m Model) ejectTargetDrive() DeviceSummary {
+	if m.SelectedDrive.Path != "" {
+		return m.SelectedDrive
+	}
+	if m.Cursor >= 0 && m.Cursor < len(m.Devices) {
+		return m.Devices[m.Cursor]
+	}
+	return DeviceSummary{}
+}
+
 func (m Model) handleBack() (tea.Model, tea.Cmd) {
 	switch m.Page {
 	case PageDetails, PageAdvanced, PageAbout, PageHistory, PageResumeJobs:
@@ -462,6 +504,10 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 		} else {
 			m.Page = PageRecovering
 		}
+		m.Cursor = 0
+	case PageEjectConfirm:
+		m.Page = PageChooseDrive
+		m.PendingEject = device.EjectRequest{}
 		m.Cursor = 0
 	case PageChooseAction:
 		m.Page = PageChooseDrive
@@ -718,6 +764,14 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		default:
 			return m, nil
 		}
+	case PageEjectConfirm:
+		if m.Cursor == 0 && m.SelectedDrive.Path != "" {
+			return m, ejectEffect(m.SelectedDrive.Path, m.PendingEject)
+		}
+		m.Page = PageChooseDrive
+		m.PendingEject = device.EjectRequest{}
+		m.Cursor = 0
+		return m, nil
 	case PageSummary:
 		switch m.Cursor {
 		case 0:
@@ -834,6 +888,12 @@ func discoverDevicesEffect(requestID int) tea.Cmd {
 func identifyMediaEffect(devicePath string, requestID int) tea.Cmd {
 	return func() tea.Msg {
 		return EffectRequestedMsg{Kind: EffectIdentifyMedia, DevicePath: devicePath, RequestID: requestID}
+	}
+}
+
+func ejectEffect(devicePath string, request device.EjectRequest) tea.Cmd {
+	return func() tea.Msg {
+		return EffectRequestedMsg{Kind: EffectEject, DevicePath: devicePath, Eject: request}
 	}
 }
 
