@@ -133,6 +133,32 @@ func TestGoFilesAreSortedAndSkipBuildOutput(t *testing.T) {
 	}
 }
 
+func TestCgoEnabledReadsGoToolchainValue(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		output  []byte
+		enabled bool
+	}{
+		{name: "enabled", output: []byte("1\r\n"), enabled: true},
+		{name: "disabled", output: []byte("0\n"), enabled: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &fakeRunner{outputs: [][]byte{test.output}}
+			app := newApp(t.TempDir(), runner, io.Discard, io.Discard)
+			got, err := app.cgoEnabled(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.enabled {
+				t.Fatalf("enabled = %v, want %v", got, test.enabled)
+			}
+			if !reflect.DeepEqual(runner.commands[0].args, []string{"env", "CGO_ENABLED"}) {
+				t.Fatalf("command = %#v", runner.commands[0].args)
+			}
+		})
+	}
+}
+
 func gotArgIndex(args []string, value string) int {
 	for i, arg := range args {
 		if arg == value {
