@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"os"
 )
 
 func (a *App) runRelease(ctx context.Context, args []string) error {
@@ -60,7 +59,10 @@ func (a *App) runRelease(ctx context.Context, args []string) error {
 			return err
 		}
 	default:
-		if os.Getenv("CGO_ENABLED") == "0" {
+		cgoEnabled, err := a.cgoEnabled(ctx)
+		if err != nil {
+			a.log("race: SKIPPED (%v)", err)
+		} else if !cgoEnabled {
 			a.log("race: SKIPPED (CGO_ENABLED=0)")
 		} else {
 			a.log("race: running")
@@ -72,4 +74,19 @@ func (a *App) runRelease(ctx context.Context, args []string) error {
 
 	a.log("throughput and cpu benchmarks: running")
 	return a.runGo(ctx, "test", "-run", "^$", "-bench", "Benchmark(BuildPlan|VerifyExternal|VerifyImage)", "./internal/merge", "./internal/integrity")
+}
+
+func (a *App) cgoEnabled(ctx context.Context) (bool, error) {
+	output, err := runOutput(ctx, a.runner, Command{Name: "go", Args: []string{"env", "CGO_ENABLED"}, Dir: a.root})
+	if err != nil {
+		return false, fmt.Errorf("unable to query Go CGO_ENABLED: %w", err)
+	}
+	switch string(output) {
+	case "1\n", "1\r\n", "1":
+		return true, nil
+	case "0\n", "0\r\n", "0":
+		return false, nil
+	default:
+		return false, fmt.Errorf("Go reported unexpected CGO_ENABLED value %q", string(output))
+	}
 }
