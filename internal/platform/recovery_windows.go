@@ -20,8 +20,9 @@ import (
 type OSRecovery struct{}
 
 type mountedRecoveryJob struct {
-	cancel context.CancelFunc
-	state  *recoverymap.Store
+	cancel  context.CancelFunc
+	state   *recoverymap.Store
+	startup *recoverymap.StartupTransaction
 
 	mu       sync.Mutex
 	snapshot RecoverySnapshot
@@ -76,6 +77,15 @@ func (j *mountedRecoveryJob) finish(canceled bool, err error) {
 			}
 		}
 	}
+	if j.startup != nil {
+		if rollbackErr := j.startup.Rollback(); rollbackErr != nil {
+			if j.snapshot.ErrText == "" {
+				j.snapshot.ErrText = rollbackErr.Error()
+			} else {
+				j.snapshot.ErrText += "; rollback startup artifacts: " + rollbackErr.Error()
+			}
+		}
+	}
 }
 
 func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
@@ -127,6 +137,10 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 			LastIssue:         lastIssue,
 		},
 	}
+	if !resumed {
+		job.startup = &recoverymap.StartupTransaction{}
+		job.startup.TrackCreated(state.Path())
+	}
 
 	go job.run(ctx, input)
 	return job, nil
@@ -158,10 +172,19 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 			return
 		}
 	}
-	output, err := os.OpenFile(input.OutputPath, os.O_CREATE|os.O_RDWR, 0o644)
+	flags := os.O_RDWR
+	if j.startup != nil {
+		flags |= os.O_CREATE | os.O_EXCL
+	} else {
+		flags |= os.O_CREATE
+	}
+	output, err := os.OpenFile(input.OutputPath, flags, 0o644)
 	if err != nil {
 		j.finish(false, fmt.Errorf("create output image %s: %w", input.OutputPath, err))
 		return
+	}
+	if j.startup != nil {
+		j.startup.TrackCreated(input.OutputPath)
 	}
 	defer output.Close()
 
@@ -169,6 +192,9 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	if err := output.Truncate(int64(totalBytes)); err != nil {
 		j.finish(false, fmt.Errorf("prepare output image %s: %w", input.OutputPath, err))
 		return
+	}
+	if j.startup != nil {
+		j.startup.Commit()
 	}
 
 	err = runPassBasedRecovery(

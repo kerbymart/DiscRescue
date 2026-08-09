@@ -19,8 +19,9 @@ import (
 type OSRecovery struct{}
 
 type darwinRecoveryJob struct {
-	cancel context.CancelFunc
-	state  *recoverymap.Store
+	cancel  context.CancelFunc
+	state   *recoverymap.Store
+	startup *recoverymap.StartupTransaction
 
 	mu       sync.Mutex
 	snapshot RecoverySnapshot
@@ -62,6 +63,15 @@ func (j *darwinRecoveryJob) finish(canceled bool, err error) {
 			}
 		}
 	}
+	if j.startup != nil {
+		if rollbackErr := j.startup.Rollback(); rollbackErr != nil {
+			if j.snapshot.ErrText == "" {
+				j.snapshot.ErrText = rollbackErr.Error()
+			} else {
+				j.snapshot.ErrText += "; rollback startup artifacts: " + rollbackErr.Error()
+			}
+		}
+	}
 }
 
 func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
@@ -85,6 +95,10 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 			CopiedBytes: recovered * uint64(input.LogicalSectorSize), ScannedSectors: recovered + deferred + unreadable,
 			DeferredSectors: deferred, UnreadableSectors: unreadable, Pass: "Fast acquisition", MapPath: state.Path(), Resumed: resumed,
 		},
+	}
+	if !resumed {
+		job.startup = &recoverymap.StartupTransaction{}
+		job.startup.TrackCreated(state.Path())
 	}
 	go job.run(ctx, input)
 	return job, nil
@@ -152,15 +166,27 @@ func (j *darwinRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 			return
 		}
 	}
-	output, err := os.OpenFile(input.OutputPath, os.O_CREATE|os.O_RDWR, 0o644)
+	flags := os.O_RDWR
+	if j.startup != nil {
+		flags |= os.O_CREATE | os.O_EXCL
+	} else {
+		flags |= os.O_CREATE
+	}
+	output, err := os.OpenFile(input.OutputPath, flags, 0o644)
 	if err != nil {
 		j.finish(false, fmt.Errorf("create output image %s: %w", input.OutputPath, err))
 		return
+	}
+	if j.startup != nil {
+		j.startup.TrackCreated(input.OutputPath)
 	}
 	defer output.Close()
 	if err := output.Truncate(int64(input.CapacitySectors) * int64(input.LogicalSectorSize)); err != nil {
 		j.finish(false, fmt.Errorf("prepare output image %s: %w", input.OutputPath, err))
 		return
+	}
+	if j.startup != nil {
+		j.startup.Commit()
 	}
 	err = runPassBasedRecovery(ctx, source, output, input.LogicalSectorSize, input.CapacitySectors, j.state, func(progress recoveryPassProgress) { j.setProgress(progress, input.LogicalSectorSize) })
 	if errors.Is(err, context.Canceled) {
