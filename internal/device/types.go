@@ -146,10 +146,11 @@ func ValidateCommandKind(kind CommandKind) error {
 }
 
 type CommandRequest struct {
-	ID       uint64
-	Command  CommandKind
-	StartLBA uint64
-	Sectors  uint32
+	ID        uint64
+	Command   CommandKind
+	StartLBA  uint64
+	Sectors   uint32
+	SpeedKbps uint32
 }
 
 func (r CommandRequest) Validate() error {
