@@ -25,6 +25,7 @@ type Store struct {
 	file           *os.File
 	header         mapfile.Header
 	extents        []mapfile.Extent
+	durableExtents []mapfile.Extent
 	nextSequence   uint64
 	pendingBytes   uint64
 	pendingRecords uint32
@@ -91,11 +92,12 @@ func Open(path string, geometry Geometry) (*Store, error) {
 		return nil, fmt.Errorf("open recovery map %s: %w", path, err)
 	}
 	store := &Store{
-		path:         path,
-		file:         file,
-		header:       header,
-		extents:      append([]mapfile.Extent(nil), replayed.Extents...),
-		nextSequence: replayed.LastSequence + 1,
+		path:           path,
+		file:           file,
+		header:         header,
+		extents:        append([]mapfile.Extent(nil), replayed.Extents...),
+		durableExtents: append([]mapfile.Extent(nil), replayed.Extents...),
+		nextSequence:   replayed.LastSequence + 1,
 	}
 	if _, err := file.Seek(0, io.SeekEnd); err != nil {
 		return nil, store.abort(fmt.Errorf("seek recovery map journal %s: %w", path, err))
@@ -149,6 +151,15 @@ func (s *Store) Extents() []mapfile.Extent {
 	return append([]mapfile.Extent(nil), s.extents...)
 }
 
+// DurableExtents returns the last extent snapshot confirmed by a journal
+// sync. It may lag Extents while a bounded durability batch is pending.
+func (s *Store) DurableExtents() []mapfile.Extent {
+	if s == nil {
+		return nil
+	}
+	return append([]mapfile.Extent(nil), s.durableExtents...)
+}
+
 // ApplyExtent durably appends one extent transition using explicit EOF
 // positioning. The map is never opened with O_APPEND so header WriteAt remains
 // valid during finalization.
@@ -190,6 +201,7 @@ func (s *Store) Flush() error {
 	}
 	s.pendingBytes = 0
 	s.pendingRecords = 0
+	s.durableExtents = append([]mapfile.Extent(nil), s.extents...)
 	return nil
 }
 
@@ -233,6 +245,9 @@ func (s *Store) appendExtent(extent mapfile.Extent, sync bool) error {
 	}
 	s.extents = nextExtents
 	s.nextSequence++
+	if sync {
+		s.durableExtents = append([]mapfile.Extent(nil), s.extents...)
+	}
 	return nil
 }
 
