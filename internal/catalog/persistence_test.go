@@ -236,6 +236,19 @@ func TestTruncateJournalAfterSnapshotDropsCoveredRecords(t *testing.T) {
 	}
 }
 
+func TestUnmarshalSnapshotRejectsUntrustedEntryCountBeforeAllocation(t *testing.T) {
+	snapshot := Snapshot{LastSequence: 1, Entries: []Entry{testCatalogEntry(8, 1, 1)}}
+	encoded, err := MarshalSnapshot(snapshot)
+	if err != nil {
+		t.Fatalf("MarshalSnapshot() error = %v", err)
+	}
+	// Keep the payload and CRC valid enough to reach the count bounds check.
+	encoded[18], encoded[19], encoded[20], encoded[21] = 0xff, 0xff, 0xff, 0x7f
+	if _, err := UnmarshalSnapshot(encoded); err == nil {
+		t.Fatal("UnmarshalSnapshot() accepted an oversized entry count")
+	}
+}
+
 func testCatalogEntry(idByte byte, firstSeen, lastSeen int64) Entry {
 	recordID := RecordID{idByte}
 	preferredJobID := RecordID{idByte + 32}

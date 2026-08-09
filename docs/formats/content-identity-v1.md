@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft for implementation
+Implemented for Epic 4 identity collection and map binding.
 
 ## Scope
 
@@ -94,22 +94,26 @@ Each sample record contains:
 
 If `available == 0`, the `sha256` field must be all zero bytes and the sample remains explicitly unavailable.
 
-## Recommended Sample Slots
+## Version 1 Sample Plan and Bounds
 
-For data media:
+The active version-1 plan contains eight logical-sector slots:
 
-- first readable data sector
-- ISO9660 or UDF descriptor region when present
-- deterministic positions near 12.5%, 25%, 50%, 75%, and 87.5%
-- final readable data sector
-- one extra deterministic slot derived from the canonical layout hash
+```text
+slot 0: floor((sector_count - 1) * 0 / 8)
+slot 1: floor((sector_count - 1) * 1 / 8)
+slot 2: floor((sector_count - 1) * 2 / 8)
+slot 3: floor((sector_count - 1) * 3 / 8)
+slot 4: floor((sector_count - 1) * 4 / 8)
+slot 5: floor((sector_count - 1) * 5 / 8)
+slot 6: floor((sector_count - 1) * 6 / 8)
+slot 7: sector_count - 1
+```
 
-For audio or mixed-mode CD:
-
-- canonical TOC and lead-out layout
-- beginning and end samples from each track where practical
-- deterministic samples across the program area
-- main-channel data only unless a later identity version expands scope
+Duplicate LBAs on very small media are removed while preserving the original
+slot numbers. Collection performs at most eight one-sector requests and reads
+at most `8 * logical_block_size` content bytes. Each request has a three-second
+deadline and the complete collection has a ten-second budget. Remaining slots
+after budget exhaustion are explicitly unavailable.
 
 ## Stable Identifiers
 
@@ -169,6 +173,8 @@ These may be stored as provenance alongside the content identity.
 - Reject impossible track ranges.
 - Reject `quick_content_id_present` or `full_content_sha256_present` values other than `0` or `1`.
 - Reject unknown mandatory fields missing for the declared version.
+- The `.drmap` binding stores the first 16 bytes of the decoded 32-byte
+  `quick_content_id` digest; it does not hash a second input.
 
 ## Compatibility
 

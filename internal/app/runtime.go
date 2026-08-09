@@ -28,6 +28,18 @@ type programState struct {
 	pendingPause   bool
 }
 
+func identityViewModel(media platform.OpticalMedia, observation *catalog.IdentityObservation) ContentIdentityViewModel {
+	view := ContentIdentityViewModel{Summary: media.Summary, Detail: media.Detail}
+	if observation == nil {
+		return view
+	}
+	view.IdentityStatus = string(observation.Status)
+	if observation.AttemptedSamples > 0 {
+		view.Evidence = fmt.Sprintf("%d of %d fingerprint samples readable", observation.AvailableSamples, observation.AttemptedSamples)
+	}
+	return view
+}
+
 func NewProgramModel(runtime platform.Runtime) ProgramModel {
 	return ProgramModel{
 		Model:   NewModel(),
@@ -81,7 +93,7 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 		}
 		return MediaIdentifiedMsg{
 			RequestID:           request.RequestID,
-			Identity:            ContentIdentityViewModel{Summary: media.Summary, Detail: media.Detail},
+			Identity:            identityViewModel(media, media.IdentityObservation),
 			FileSystem:          media.FileSystem,
 			VolumeLabel:         media.VolumeLabel,
 			LogicalSectorSize:   media.LogicalSectorSize,
@@ -89,6 +101,8 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			SuggestedOutputPath: media.SuggestedOutputPath,
 			Recoverable:         media.Recoverable,
 			RecoverabilityNote:  media.RecoverabilityNote,
+			IdentityObservation: media.IdentityObservation,
+			PriorProcessing:     media.PriorProcessing,
 		}
 	case EffectLookupHistory:
 		view, records, jobs, err := m.lookupPriorProcessing(request.BasePath)

@@ -378,12 +378,11 @@ func prepareDarwinOutput(input RecoveryInput, transaction *recoverymap.StartupTr
 }
 
 func createDarwinRecoveryMap(input RecoveryInput, mapPath string) (*recoverymap.Store, bool, error) {
-	store, err := recoverymap.Create(mapPath, mapfile.Header{
-		LogicalSectorSize:   input.LogicalSectorSize,
-		ExpectedSectorCount: input.CapacitySectors,
-		OutputFormat:        1,
-		CreationUnixNano:    time.Now().UnixNano(),
-	})
+	header, err := recoveryMapHeader(input)
+	if err != nil {
+		return nil, false, err
+	}
+	store, err := recoverymap.Create(mapPath, header)
 	return store, false, err
 }
 
