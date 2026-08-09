@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"discrescue/internal/catalog"
+	"discrescue/internal/device"
 	"discrescue/internal/platform"
 	"discrescue/internal/recovery"
 )
@@ -105,6 +106,13 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 			IdentityObservation: media.IdentityObservation,
 			PriorProcessing:     media.PriorProcessing,
 		}
+	case EffectEject:
+		ejector, ok := m.runtime.Optical.(platform.OpticalEjector)
+		if !ok {
+			return EjectCompletedMsg{Request: request.Eject, Err: &device.OperationError{Code: device.ErrorUnsupported, Op: "eject optical drive", Device: device.DeviceRef{Path: request.DevicePath}, Detail: "the current platform adapter does not expose eject"}}
+		}
+		result, err := ejector.EjectOpticalDrive(request.DevicePath, request.Eject)
+		return EjectCompletedMsg{Request: request.Eject, Result: result, Err: err}
 	case EffectLookupHistory:
 		view, records, jobs, err := m.lookupPriorProcessing(request.BasePath)
 		return PriorProcessingLookupMsg{

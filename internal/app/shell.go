@@ -79,7 +79,7 @@ func pageSubtitle(page Page) string {
 		return "Confirm the drive, logical contents, and destination."
 	case PageRecovering, PagePausing, PagePaused:
 		return "Progress reflects durable recovery state."
-	case PageStopConfirm:
+	case PageStopConfirm, PageEjectConfirm:
 		return "Saving progress keeps this recovery resumable."
 	case PageSummary:
 		return "Review what was recovered and the safest next action."

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"discrescue/internal/catalog"
+	"discrescue/internal/device"
 	"discrescue/internal/platform"
 )
 
@@ -116,6 +117,12 @@ type FatalMsg struct {
 	Err error
 }
 
+type EjectCompletedMsg struct {
+	Request device.EjectRequest
+	Result  device.EjectResult
+	Err     error
+}
+
 type EffectKind string
 
 const (
@@ -130,6 +137,7 @@ const (
 	EffectResumeJob       EffectKind = "resume_job"
 	EffectStopJob         EffectKind = "stop_job"
 	EffectStopNow         EffectKind = "stop_now"
+	EffectEject           EffectKind = "eject"
 )
 
 type EffectRequestedMsg struct {
@@ -138,4 +146,5 @@ type EffectRequestedMsg struct {
 	OutputPath string
 	BasePath   string
 	RequestID  int
+	Eject      device.EjectRequest
 }
