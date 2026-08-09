@@ -7,6 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"discrescue/internal/catalog"
 )
 
 func TestEveryPageFitsSupportedTerminalSizes(t *testing.T) {
@@ -519,7 +521,7 @@ func TestViewIncompleteSummaryAvoidsCleanSuccessTreatment(t *testing.T) {
 	model.Summary = JobSummary{
 		ImagePath:     "D:/Archives/archive-disc.iso",
 		MapPath:       "D:/Archives/archive-disc.drmap",
-		CatalogStatus: "Recorded in local processed-media catalog",
+		CatalogStatus: catalog.CatalogWriteStatus{State: catalog.CatalogWriteRecorded},
 	}
 	model.Recovery = RecoveryViewModel{
 		Status:            "Recovery finished with unreadable sectors",
@@ -541,6 +543,29 @@ func TestViewIncompleteSummaryAvoidsCleanSuccessTreatment(t *testing.T) {
 	}
 	if !strings.Contains(view, "Choose another drive") {
 		t.Fatalf("expected real follow-up action, got %q", view)
+	}
+}
+
+func TestViewIncompleteSummaryOmitsHistoryWhenCatalogWriteWasNotAttempted(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageSummary
+	model.Summary = JobSummary{
+		ImagePath: "D:/Archives/archive-disc.iso",
+		MapPath:   "D:/Archives/archive-disc.drmap",
+	}
+	model.Recovery = RecoveryViewModel{
+		Status:            "Recovery finished with unreadable sectors",
+		OutputPath:        "D:/Archives/archive-disc.iso",
+		RecoveredSectors:  2295067,
+		TotalSectors:      2295104,
+		UnreadableSectors: 37,
+	}
+
+	view := ansi.Strip(model.View().Content)
+	if strings.Contains(view, "Recorded in local processed-media catalog") {
+		t.Fatalf("summary invented a catalog write: %q", view)
 	}
 }
 
