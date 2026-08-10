@@ -34,6 +34,26 @@ func TestEveryPageFitsSupportedTerminalSizes(t *testing.T) {
 	}
 }
 
+func TestResponsiveShellHandlesUnicodeAndMonochrome(t *testing.T) {
+	model := representativeViewModel(PageDetails)
+	model.Monochrome = true
+	model.Details = DetailsViewModel{Lines: []string{
+		"Drive: /archive/光学ディスク/семейные-фильмы-第七巻",
+		"Media: Café · naïve · é · 漢字",
+		strings.Repeat("long technical detail ", 12),
+	}}
+	for _, size := range []struct{ width, height int }{{120, 36}, {80, 24}, {60, 18}, {40, 12}} {
+		updated, _ := model.Update(tea.WindowSizeMsg{Width: size.width, Height: size.height})
+		content := strings.TrimSuffix(updated.View().Content, "\n")
+		if got := lipgloss.Width(content); got > size.width {
+			t.Errorf("unicode monochrome view at %dx%d is %d columns wide", size.width, size.height, got)
+		}
+		if got := lipgloss.Height(content); got > size.height {
+			t.Errorf("unicode monochrome view at %dx%d is %d rows tall", size.width, size.height, got)
+		}
+	}
+}
+
 func representativeViewModel(page Page) Model {
 	model := NewModel()
 	model.Page = page
