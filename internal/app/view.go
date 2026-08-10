@@ -211,6 +211,16 @@ func renderTightPageBody(m Model, width int, tier layoutTier) ([]string, bool) {
 			fitToWidth("Drive  "+selectedDriveLabel(m), width),
 			"Checking capacity, layout, and matching work.",
 		}, true
+	case PageDetails:
+		preview := "No technical detail is available."
+		if content := strings.TrimSpace(m.DetailsViewport.View()); content != "" {
+			preview = strings.Split(content, "\n")[0]
+		}
+		return []string{
+			theme.Accent.Render("Recovery details"),
+			fitToWidth(preview, width),
+			theme.Muted.Render("Use up/down to scroll; esc to return."),
+		}, true
 	case PagePriorProcessing:
 		lines := []string{fitToWidth(theme.Accent.Render(firstNonEmpty(m.PriorView.Title, "Matching contents")), width)}
 		if len(m.PriorView.Body) > 0 {
