@@ -795,9 +795,7 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 	case PageSummary:
 		switch m.Cursor {
 		case 0:
-			m.Page = PageChooseAction
-			m.Cursor = 0
-			return m, nil
+			return m, tea.Quit
 		case 1:
 			m.Page = PageChooseDrive
 			m.Cursor = 0
