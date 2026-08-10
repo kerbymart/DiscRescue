@@ -20,6 +20,26 @@ Before making a change:
 
 Do not silently settle an item in TDD Section 26 when it affects safety, identity matching, confidence, a persisted format, or a user-visible guarantee. Record the decision in `docs/adr/`, reference the applicable TDD requirement, and update format documentation and tests with the code. Small reversible implementation details may use a documented assumption.
 
+## Commit messages
+
+Every commit, including a squash or merge commit created for a pull request, MUST follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):
+
+```text
+<type>[optional scope][optional !]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+- Use `feat` for a new user-facing capability and `fix` for a defect correction.
+- Use `docs` when the primary change is documentation, including contributor guidance and issue templates.
+- Use `test` for test-only changes, `refactor` for behavior-preserving code restructuring, and `chore` for repository maintenance that does not fit a more specific type.
+- Other precise Conventional Commit types such as `build`, `ci`, `perf`, `revert`, and `style` MAY be used when appropriate.
+- Write the description as a concise imperative summary. An optional scope MUST be a noun naming the affected area, such as `device` or `mapfile`.
+- Mark a breaking change with `!` before the colon or a `BREAKING CHANGE: <description>` footer. Do not label a change as breaking unless it changes a supported contract.
+- Keep each commit focused on one coherent change. If a commit needs more than one type, split it when practical.
+
 ## Non-negotiable invariants
 
 - Source media is read-only. Production code may issue only the enumerated non-destructive commands. Never add burn, blank, format, close-session, reserve-track, controller-reset, arbitrary-shell, or automatic-unmount behavior.
