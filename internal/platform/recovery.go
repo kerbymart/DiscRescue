@@ -28,11 +28,15 @@ type RecoveryInput struct {
 	LogicalSectorSize uint32
 	CapacitySectors   uint64
 	Method            RecoveryMethod
-	ReadSpeed         device.ReadSpeedRequest
-	Identity          *catalog.ContentIdentity
-	CaptureID         catalog.RecordID
-	JobID             catalog.RecordID
-	CatalogRecordID   catalog.RecordID
+	// RetryUnresolved starts one additional bounded recovery cycle for the
+	// unresolved extents already recorded in the map. It never revisits
+	// recovered extents or replaces the durable attempt history.
+	RetryUnresolved bool
+	ReadSpeed       device.ReadSpeedRequest
+	Identity        *catalog.ContentIdentity
+	CaptureID       catalog.RecordID
+	JobID           catalog.RecordID
+	CatalogRecordID catalog.RecordID
 }
 
 func recoveryMapHeader(input RecoveryInput) (mapfile.Header, error) {

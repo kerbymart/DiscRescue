@@ -198,7 +198,7 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 		if err := job.ForceStop(); err != nil {
 			return StatusMsg{Text: "Could not force stop recovery: " + err.Error(), Severity: SeverityWarning}
 		}
-		return StatusMsg{Text: "Force-stopping the recovery worker; durable state is preserved.", Severity: SeverityWarning}
+		return StatusMsg{Text: "Force-stopping the active device request; durable state is preserved.", Severity: SeverityWarning}
 	default:
 		return FatalMsg{Err: fmt.Errorf("unsupported effect: %s", request.Kind)}
 	}
@@ -212,6 +212,7 @@ func (m ProgramModel) startRecoveryJob() tea.Msg {
 		LogicalSectorSize: m.MediaLogicalSectorSize,
 		CapacitySectors:   m.MediaCapacitySectors,
 		Method:            m.Setup.Method,
+		RetryUnresolved:   m.Setup.RetryUnresolved,
 		ReadSpeed:         m.Setup.ReadSpeed,
 	})
 	if err != nil {
@@ -238,6 +239,8 @@ func (m ProgramModel) startRecoveryJob() tea.Msg {
 		Status:            status,
 		TotalSectors:      m.MediaCapacitySectors,
 		RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
+		ScannedSectors:    snapshot.ScannedSectors,
+		DeferredSectors:   snapshot.DeferredSectors,
 		UnreadableSectors: snapshot.UnreadableSectors,
 	}
 }
@@ -420,7 +423,8 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						MapPath:           snapshot.MapPath,
 						RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
 						TotalSectors:      totalSectors,
-						UnresolvedSectors: snapshot.UnreadableSectors,
+						UnresolvedSectors: snapshot.DeferredSectors + snapshot.UnreadableSectors,
+						DeferredSectors:   snapshot.DeferredSectors,
 						Duration:          time.Since(snapshot.StartedAt).Round(time.Second).String(),
 						CatalogStatus:     catalog.CatalogWriteStatus{State: catalog.CatalogWriteNotAttempted},
 					}
@@ -433,7 +437,10 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 						return JobStoppedMsg{Summary: summary, Err: errors.New(snapshot.ErrText)}
 					} else if snapshot.UnreadableSectors > 0 {
 						summary.Outcome = "Recovery finished with unreadable sectors"
-						summary.NextAction = "Review unreadable sectors before deciding whether to retry."
+						summary.NextAction = "Retry unresolved sectors or inspect the saved recovery image."
+					} else if snapshot.DeferredSectors > 0 {
+						summary.Outcome = "Recovery finished with deferred sectors"
+						summary.NextAction = "Retry deferred sectors with the saved recovery image and map."
 					} else {
 						summary.Outcome = "Recovery complete"
 						summary.NextAction = "Recovery image is ready."
@@ -448,18 +455,22 @@ func (m ProgramModel) followUp(msg tea.Msg) tea.Cmd {
 				}
 				return ProgressMsg{
 					Snapshot: ProgressSnapshot{
-						Phase:             phase,
-						RecoveredSectors:  snapshot.CopiedBytes / logicalSectorSize,
-						TotalSectors:      totalSectors,
-						UnreadableSectors: snapshot.UnreadableSectors,
-						Status:            status,
-						Elapsed:           elapsedLabel(snapshot.StartedAt),
-						Remaining:         humanBytes(snapshot.TotalBytes-snapshot.CopiedBytes) + " remaining",
-						ETA:               telemetryETA(snapshot.Telemetry),
-						Throughput:        telemetryThroughput(snapshot.Telemetry),
-						LastIssue:         append([]string(nil), snapshot.LastIssue...),
-						OutputPath:        m.Setup.OutputPath,
-						PausePending:      m.state.pendingPause,
+						Phase:              phase,
+						RecoveredSectors:   snapshot.CopiedBytes / logicalSectorSize,
+						ScannedSectors:     snapshot.ScannedSectors,
+						DeferredSectors:    snapshot.DeferredSectors,
+						TotalSectors:       totalSectors,
+						UnreadableSectors:  snapshot.UnreadableSectors,
+						Status:             status,
+						Elapsed:            elapsedLabel(snapshot.StartedAt),
+						Remaining:          humanBytes(snapshot.TotalBytes-snapshot.CopiedBytes) + " remaining",
+						ETA:                telemetryETA(snapshot.Telemetry),
+						Throughput:         telemetryThroughput(snapshot.Telemetry),
+						LastIssue:          append([]string(nil), snapshot.LastIssue...),
+						OutputPath:         m.Setup.OutputPath,
+						PausePending:       m.state.pendingPause,
+						StopPending:        snapshot.StopIntent == recovery.StopIntentStop,
+						ForceStopAvailable: snapshot.CanForceStop,
 					},
 				}
 			})
