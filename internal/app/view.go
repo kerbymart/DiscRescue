@@ -66,8 +66,10 @@ func renderPage(m Model, tier layoutTier) string {
 	return renderShell(m, renderPageBody(m, width, tier), tier)
 }
 
-func usesAltScreen(page Page) bool {
-	return page == PageRecovering || page == PagePausing || page == PageDetails
+func usesAltScreen(_ Page) bool {
+	// DiscRescue owns one interactive terminal session. Keep every page in the
+	// alternate screen so discovery and setup do not leak into shell history.
+	return true
 }
 
 func pageTitle(m Model) string {
