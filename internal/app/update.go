@@ -392,7 +392,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func isLoadingPage(page Page) bool {
 	switch page {
-	case PageDiscover, PageInspectingMedia, PagePausing:
+	case PageDiscover, PageInspectingMedia, PagePriorProcessing, PagePausing:
 		return true
 	default:
 		return false
@@ -465,6 +465,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch m.Page {
 		case PageRecovering:
 			m.Page = PagePausing
+			m.RestartLoadingSpinner = true
 			m.Recovery.PausePending = true
 			m.Cursor = 0
 			m.Notice = &NoticeModel{Text: "Pausing recovery after the current read completes.", Severity: SeverityInfo}
@@ -564,6 +565,7 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		selected := m.Devices[m.Cursor]
 		m.SelectedDrive = selected
 		m.Page = PageInspectingMedia
+		m.RestartLoadingSpinner = true
 		m.Identity.Summary = "Identifying logical contents for " + selected.DisplayName
 		m.Identity.Detail = selected.Path
 		requestID := m.nextRequestID()
@@ -576,6 +578,7 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		requestID := m.nextRequestID()
 		m.ActiveMediaRequest = requestID
 		m.Notice = &NoticeModel{Text: "Inspecting the selected media.", Severity: SeverityInfo}
+		m.RestartLoadingSpinner = true
 		return m, identifyMediaEffect(m.SelectedDrive.Path, requestID)
 	case PagePriorProcessing:
 		switch m.PriorView.Kind {
@@ -879,6 +882,7 @@ func (m *Model) nextRequestID() int {
 
 func (m Model) beginDiscovery() (tea.Model, tea.Cmd) {
 	m.Page = PageDiscover
+	m.RestartLoadingSpinner = true
 	m.LastError = nil
 	m.Notice = &NoticeModel{Text: "Finding usable optical drives.", Severity: SeverityInfo}
 	requestID := m.nextRequestID()
