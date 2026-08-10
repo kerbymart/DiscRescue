@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"discrescue/internal/mapfile"
@@ -295,32 +297,101 @@ func TestPassBasedRecoveryHandlesIntermittentRead(t *testing.T) {
 	}
 }
 
-func TestPassBasedRecoveryPreservesDeferredStateAcrossRestart(t *testing.T) {
-	const sectors = 640
+func TestPassBasedRecoveryCompletesCoverageAcrossLargeDamagedBand(t *testing.T) {
+	const sectors = 704
+	permanentBad := make(map[int]bool, 576)
+	for sector := 0; sector < 576; sector++ {
+		permanentBad[sector] = true
+	}
 	reader := &scriptedRecoveryReader{
 		data:         newRecoveryTestData(sectors),
-		permanentBad: map[int]bool{},
-		failAll:      true,
+		permanentBad: permanentBad,
 	}
 	writer := &memoryRecoveryWriter{data: make([]byte, sectors)}
 	store := &memoryRecoveryStore{}
 
-	err := runPassBasedRecovery(context.Background(), reader, writer, 1, sectors, store, nil)
-	if !errors.Is(err, errRecoveryConsecutiveFailures) {
-		t.Fatalf("expected systemic-read guard to stop the run, got %v", err)
-	}
-	scanned, recovered, unresolved := summarizeRecoveryExtents(store.Extents())
-	if scanned != 512 || recovered != 0 || unresolved != 512 {
-		t.Fatalf("expected eight failed fast blocks to be durable, got scanned=%d recovered=%d unresolved=%d extents=%+v", scanned, recovered, unresolved, store.Extents())
-	}
-
-	reader.failAll = false
-	reader.calls = nil
 	if err := runPassBasedRecovery(context.Background(), reader, writer, 1, sectors, store, nil); err != nil {
-		t.Fatalf("resume recovery: %v", err)
+		t.Fatalf("run recovery: %v", err)
 	}
-	_, recovered, unresolved = summarizeRecoveryExtents(store.Extents())
-	if recovered != sectors || unresolved != 0 {
-		t.Fatalf("expected resumed recovery to finish all sectors, got recovered=%d unresolved=%d", recovered, unresolved)
+	scanned, recovered, deferred, unreadable := summarizeRecoveryExtentStates(store.Extents())
+	if scanned != sectors || recovered != 128 || deferred != 0 || unreadable != 576 {
+		t.Fatalf("unexpected final coverage: scanned=%d recovered=%d deferred=%d unreadable=%d extents=%+v", scanned, recovered, deferred, unreadable, store.Extents())
 	}
+	if recovered+unreadable != sectors {
+		t.Fatalf("finalized coverage invariant failed: recovered=%d unreadable=%d capacity=%d", recovered, unreadable, sectors)
+	}
+	if !recoveryReaderCalledRange(reader.calls, 576, 64) {
+		t.Fatalf("fast pass never reached readable sectors after the damaged band: %+v", reader.calls)
+	}
+}
+
+func TestPassBasedRecoveryCompletesEntireUnreadableMedium(t *testing.T) {
+	const sectors = 640
+	reader := &scriptedRecoveryReader{data: newRecoveryTestData(sectors), failAll: true}
+	writer := &memoryRecoveryWriter{data: make([]byte, sectors)}
+	store := &memoryRecoveryStore{}
+
+	if err := runPassBasedRecovery(context.Background(), reader, writer, 1, sectors, store, nil); err != nil {
+		t.Fatalf("run recovery: %v", err)
+	}
+	scanned, recovered, deferred, unreadable := summarizeRecoveryExtentStates(store.Extents())
+	if scanned != sectors || recovered != 0 || deferred != 0 || unreadable != sectors {
+		t.Fatalf("unexpected final coverage: scanned=%d recovered=%d deferred=%d unreadable=%d extents=%+v", scanned, recovered, deferred, unreadable, store.Extents())
+	}
+}
+
+func TestPassBasedRecoveryReportsNativeReadFailureWithoutAbortingCoverage(t *testing.T) {
+	const sectors = 128
+	reader := &scriptedRecoveryReader{
+		data:         newRecoveryTestData(sectors),
+		permanentBad: map[int]bool{0: true},
+	}
+	writer := &memoryRecoveryWriter{data: make([]byte, sectors)}
+	store := &memoryRecoveryStore{}
+	var issues []string
+
+	if err := runPassBasedRecovery(context.Background(), reader, writer, 1, sectors, store, func(progress recoveryPassProgress) {
+		issues = append(issues, progress.LastIssue...)
+	}); err != nil {
+		t.Fatalf("run recovery: %v", err)
+	}
+	if !containsRecoveryIssue(issues, "unreadable sector") {
+		t.Fatalf("expected native read error in progress diagnostics, got %v", issues)
+	}
+}
+
+type permissionDeniedRecoveryReader struct{}
+
+func (permissionDeniedRecoveryReader) ReadAt([]byte, int64) (int, error) {
+	return 0, os.ErrPermission
+}
+
+func TestPassBasedRecoveryFailsWhenSourceAccessIsRevoked(t *testing.T) {
+	writer := &memoryRecoveryWriter{data: make([]byte, 64)}
+	store := &memoryRecoveryStore{}
+	err := runPassBasedRecovery(context.Background(), permissionDeniedRecoveryReader{}, writer, 1, 64, store, nil)
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("expected permission failure to remain fatal, got %v", err)
+	}
+	if len(store.Extents()) != 0 {
+		t.Fatalf("fatal source failure must not claim coverage, got %+v", store.Extents())
+	}
+}
+
+func containsRecoveryIssue(issues []string, want string) bool {
+	for _, issue := range issues {
+		if strings.Contains(issue, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func recoveryReaderCalledRange(calls []recoveryReadCall, start, sectors int) bool {
+	for _, call := range calls {
+		if call.start == start && call.sectors == sectors {
+			return true
+		}
+	}
+	return false
 }

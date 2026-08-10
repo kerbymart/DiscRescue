@@ -149,8 +149,13 @@ Unknown record types make the file incompatible with a v1 reader.
 | ---: | --- | --- |
 | 0 | `unknown` | not yet classified |
 | 1 | `queued` | transient scheduling state |
-| 2 | `recovered` | durable data exists in the image |
-| 3 | `missing` | retry work confirmed the sector is still unreadable |
+| 2 | `read_unverified` | durable data exists after one read |
+| 3 | `verified` | durable data has stronger verification evidence |
+| 4 | `missing` | retry work confirmed the sector is still unreadable |
+| 5 | `io_error` | a read failed; the range remains retryable until policy finalization |
+| 6 | `checksum_error` | data exists but checksum verification failed |
+| 7 | `conflicting` | data exists but competing evidence conflicts |
+| 8 | `reconstructed` | data was reconstructed with checksum evidence |
 | 9 | `skipped` | deferred for a later bounded retry pass |
 
 On replay, any persisted `queued` extent is downgraded to `unknown`.
@@ -183,7 +188,7 @@ For failed data:
 1. Append the failed-attempt record.
 2. Append the resulting extent-state transition.
 3. Commit the journal.
-4. During a fast pass, prefer `skipped` for a deferred retry range instead of immediately promoting the whole failed block to `missing`.
+4. During a fast pass, record a failed read as `io_error` and defer it for bounded retry passes instead of immediately promoting the whole failed block to `missing`.
 5. Queue a later pass only if policy allows.
 
 ## Replay and Crash Recovery

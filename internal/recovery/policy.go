@@ -6,9 +6,8 @@ import (
 )
 
 type FastPassPolicy struct {
-	Enabled                bool
-	BlockSectors           uint32
-	MaxConsecutiveFailures uint32
+	Enabled      bool
+	BlockSectors uint32
 }
 
 type TrimPassPolicy struct {
@@ -38,15 +37,13 @@ type ReadDeadlinePolicy struct {
 // RecoveryPolicy is immutable after validation and controls scheduler passes,
 // not physical optical-drive speed.
 type RecoveryPolicy struct {
-	Method                      RecoveryMethod
-	Fast                        FastPassPolicy
-	Trim                        TrimPassPolicy
-	Adaptive                    []AdaptivePassPolicy
-	Targeted                    TargetedPassPolicy
-	MaxConsecutiveFailures      uint32
-	RetryMaxConsecutiveFailures uint32
-	FinalizeUnresolved          bool
-	ReadDeadlines               ReadDeadlinePolicy
+	Method             RecoveryMethod
+	Fast               FastPassPolicy
+	Trim               TrimPassPolicy
+	Adaptive           []AdaptivePassPolicy
+	Targeted           TargetedPassPolicy
+	FinalizeUnresolved bool
+	ReadDeadlines      ReadDeadlinePolicy
 }
 
 func PolicyForMethod(method RecoveryMethod) (RecoveryPolicy, error) {
@@ -57,24 +54,24 @@ func PolicyForMethod(method RecoveryMethod) (RecoveryPolicy, error) {
 	switch method {
 	case RecoveryMethodFast:
 		policy = RecoveryPolicy{Method: method,
-			Fast:                   FastPassPolicy{Enabled: true, BlockSectors: 64, MaxConsecutiveFailures: 8},
-			Trim:                   TrimPassPolicy{Enabled: true, AttemptsLimit: 1},
-			Adaptive:               []AdaptivePassPolicy{{Enabled: true, BlockSectors: 16, AttemptsLimit: 2}},
-			MaxConsecutiveFailures: 8, RetryMaxConsecutiveFailures: 128, FinalizeUnresolved: false}
+			Fast:               FastPassPolicy{Enabled: true, BlockSectors: 64},
+			Trim:               TrimPassPolicy{Enabled: true, AttemptsLimit: 1},
+			Adaptive:           []AdaptivePassPolicy{{Enabled: true, BlockSectors: 16, AttemptsLimit: 2}},
+			FinalizeUnresolved: false}
 	case RecoveryMethodBalanced:
 		policy = RecoveryPolicy{Method: method,
-			Fast:                   FastPassPolicy{Enabled: true, BlockSectors: 64, MaxConsecutiveFailures: 8},
-			Trim:                   TrimPassPolicy{Enabled: true, AttemptsLimit: 2},
-			Adaptive:               []AdaptivePassPolicy{{Enabled: true, BlockSectors: 16, AttemptsLimit: 3}, {Enabled: true, BlockSectors: 4, AttemptsLimit: 4}},
-			Targeted:               TargetedPassPolicy{Enabled: true, BlockSectors: 1, AttemptsLimit: 6},
-			MaxConsecutiveFailures: 8, RetryMaxConsecutiveFailures: 128, FinalizeUnresolved: true}
+			Fast:               FastPassPolicy{Enabled: true, BlockSectors: 64},
+			Trim:               TrimPassPolicy{Enabled: true, AttemptsLimit: 2},
+			Adaptive:           []AdaptivePassPolicy{{Enabled: true, BlockSectors: 16, AttemptsLimit: 3}, {Enabled: true, BlockSectors: 4, AttemptsLimit: 4}},
+			Targeted:           TargetedPassPolicy{Enabled: true, BlockSectors: 1, AttemptsLimit: 6},
+			FinalizeUnresolved: true}
 	case RecoveryMethodGentle:
 		policy = RecoveryPolicy{Method: method,
-			Fast:                   FastPassPolicy{Enabled: true, BlockSectors: 32, MaxConsecutiveFailures: 8},
-			Trim:                   TrimPassPolicy{Enabled: true, AttemptsLimit: 1},
-			Adaptive:               []AdaptivePassPolicy{{Enabled: true, BlockSectors: 8, AttemptsLimit: 2}},
-			Targeted:               TargetedPassPolicy{Enabled: true, BlockSectors: 1, AttemptsLimit: 3},
-			MaxConsecutiveFailures: 8, RetryMaxConsecutiveFailures: 64, FinalizeUnresolved: false}
+			Fast:               FastPassPolicy{Enabled: true, BlockSectors: 32},
+			Trim:               TrimPassPolicy{Enabled: true, AttemptsLimit: 1},
+			Adaptive:           []AdaptivePassPolicy{{Enabled: true, BlockSectors: 8, AttemptsLimit: 2}},
+			Targeted:           TargetedPassPolicy{Enabled: true, BlockSectors: 1, AttemptsLimit: 3},
+			FinalizeUnresolved: false}
 	default:
 		return RecoveryPolicy{}, fmt.Errorf("policy for method: unknown recovery method %q", method)
 	}
@@ -91,17 +88,8 @@ func (p RecoveryPolicy) Validate() error {
 	if p.Fast.Enabled && p.Fast.BlockSectors == 0 {
 		return fmt.Errorf("validate recovery policy: fast block size must be greater than zero")
 	}
-	if p.Fast.Enabled && p.Fast.MaxConsecutiveFailures == 0 {
-		return fmt.Errorf("validate recovery policy: fast failure budget must be greater than zero")
-	}
 	if p.Trim.Enabled && p.Trim.AttemptsLimit == 0 {
 		return fmt.Errorf("validate recovery policy: trim attempts limit must be greater than zero")
-	}
-	if p.MaxConsecutiveFailures == 0 {
-		return fmt.Errorf("validate recovery policy: failure budget must be greater than zero")
-	}
-	if p.RetryMaxConsecutiveFailures == 0 {
-		return fmt.Errorf("validate recovery policy: retry failure budget must be greater than zero")
 	}
 	for i, pass := range p.Adaptive {
 		if !pass.Enabled {
