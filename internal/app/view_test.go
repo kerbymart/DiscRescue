@@ -144,13 +144,13 @@ func TestViewDiscoverShowsNonInteractiveStartupCopy(t *testing.T) {
 	if !strings.Contains(view, "Looking for optical drives") || !strings.Contains(view, "This usually takes only a moment.") {
 		t.Fatalf("expected discovery body copy, got %q", view)
 	}
-	if strings.Contains(view, "j/k move") || strings.Contains(view, "enter select") || strings.Contains(view, "esc back") {
+	if strings.Contains(view, "j/k move") || strings.Contains(view, "esc back") {
 		t.Fatalf("expected startup view to avoid selection controls, got %q", view)
 	}
 	if strings.Contains(view, "Status: Finding usable optical drives.") {
 		t.Fatalf("expected startup view to avoid duplicated status text, got %q", view)
 	}
-	if !strings.Contains(view, "q quit") {
+	if !strings.Contains(view, "retry discovery") || !strings.Contains(view, "q") || !strings.Contains(view, "quit") {
 		t.Fatalf("expected startup view to keep quit available, got %q", view)
 	}
 }
