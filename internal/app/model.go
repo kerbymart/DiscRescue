@@ -231,6 +231,7 @@ type Model struct {
 	// PreserveEjectedDrive keeps the physical drive selectable when a tray
 	// opening removes its /dev node or media record during refresh.
 	PreserveEjectedDrive bool
+	EjectedDrive         DeviceSummary
 	ActiveMediaRequest   int
 	ActiveLookupRequest  int
 	ActiveTargetRequest  int
