@@ -57,7 +57,12 @@ func (m ProgramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.Model.Update(msg)
 	model := next.(Model)
 	nextModel := ProgramModel{Model: model, runtime: m.runtime, state: m.state}
-	return nextModel, tea.Batch(nextModel.resolve(cmd), nextModel.followUp(msg))
+	spinnerCmd := tea.Cmd(nil)
+	if model.RestartLoadingSpinner {
+		nextModel.RestartLoadingSpinner = false
+		spinnerCmd = nextModel.LoadingSpinner.Tick
+	}
+	return nextModel, tea.Batch(nextModel.resolve(cmd), spinnerCmd, nextModel.followUp(msg))
 }
 
 func (m ProgramModel) View() tea.View {
