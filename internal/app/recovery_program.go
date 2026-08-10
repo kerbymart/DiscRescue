@@ -66,10 +66,10 @@ func (m RecoveryProgramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case JobStoppedMsg:
 		switch typed.Summary.Outcome {
-		case "Recovery complete", "Recovery finished with unreadable sectors":
+		case "Recovery complete", "Recovery finished with deferred sectors", "Recovery finished with unreadable sectors":
 			program.Recovery.ScannedSectors = program.Recovery.TotalSectors
-			program.Recovery.DeferredSectors = 0
-			program.Summary.DeferredSectors = 0
+			program.Recovery.DeferredSectors = typed.Summary.DeferredSectors
+			program.Summary.DeferredSectors = typed.Summary.DeferredSectors
 		default:
 			program.Recovery.ScannedSectors = previousScanned
 			program.Recovery.DeferredSectors = previousDeferred

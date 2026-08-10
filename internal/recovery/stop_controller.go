@@ -96,13 +96,13 @@ func (c *StopController) ForceStop() error {
 	}
 	c.mu.Unlock()
 	if c.hooks.ForceStop == nil {
-		return fmt.Errorf("force stop: worker termination hook is unavailable")
+		return fmt.Errorf("force stop: device cancellation hook is unavailable")
 	}
 	if err := c.hooks.ForceStop(); err != nil {
 		c.mu.Lock()
 		c.life.Fail()
 		c.mu.Unlock()
-		return fmt.Errorf("force stop worker: %w", err)
+		return fmt.Errorf("force stop active device request: %w", err)
 	}
 	return nil
 }

@@ -733,11 +733,33 @@ func TestStopConfirmationDefaultRequestsCheckpointedStop(t *testing.T) {
 	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := next.(Model)
 	requested := cmd().(EffectRequestedMsg)
-	if updated.Page != PageStopConfirm {
-		t.Fatalf("expected stop-confirm page to remain active until result, got %v", updated.Page)
+	if updated.Page != PagePausing || !updated.Recovery.StopPending {
+		t.Fatalf("expected visible checkpointing stop state, got %+v", updated)
 	}
 	if requested.Kind != EffectStopJob {
 		t.Fatalf("unexpected stop request: %+v", requested)
+	}
+}
+
+func TestForceStopIsAvailableOnlyAfterGraceWarning(t *testing.T) {
+	model := NewModel()
+	model.Page = PagePausing
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	if cmd != nil || next.(Model).Page != PagePausing {
+		t.Fatalf("force stop must remain unavailable before the grace warning: %+v", next)
+	}
+
+	model.Recovery.ForceStopAvailable = true
+	next, cmd = model.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	if next.(Model).Page != PagePausing {
+		t.Fatalf("force stop changed checkpointing page: %v", next.(Model).Page)
+	}
+	if cmd == nil {
+		t.Fatal("expected force-stop effect after grace warning")
+	}
+	if requested := cmd().(EffectRequestedMsg); requested.Kind != EffectStopNow {
+		t.Fatalf("force-stop effect = %+v", requested)
 	}
 }
 
@@ -812,6 +834,32 @@ func TestSummaryExitReturnsQuitCommand(t *testing.T) {
 	}
 	if _, ok := cmd().(tea.QuitMsg); !ok {
 		t.Fatalf("expected quit message, got %T", cmd())
+	}
+}
+
+func TestSummaryRetryStartsBoundedUnresolvedRecovery(t *testing.T) {
+	model := NewModel()
+	model.Page = PageSummary
+	model.SelectedDrive = DeviceSummary{Path: "/dev/optical"}
+	model.MediaLogicalSectorSize = 2048
+	model.MediaCapacitySectors = 100
+	model.Setup.OutputPath = "archive.iso"
+	model.Summary = JobSummary{MapPath: "archive.drmap"}
+	model.Recovery = RecoveryViewModel{DeferredSectors: 3, TotalSectors: 100}
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := next.(Model)
+	if !updated.Setup.RetryUnresolved {
+		t.Fatal("expected summary retry to request a bounded unresolved retry cycle")
+	}
+	if updated.Setup.Method != platform.RecoveryMethodBalanced {
+		t.Fatalf("retry method = %q, want balanced", updated.Setup.Method)
+	}
+	if updated.Setup.ResumeMapPath != "archive.drmap" {
+		t.Fatalf("retry map = %q, want archive.drmap", updated.Setup.ResumeMapPath)
+	}
+	if cmd == nil {
+		t.Fatal("expected retry to start a recovery effect")
 	}
 }
 

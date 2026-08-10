@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"time"
 
 	"discrescue/internal/mapfile"
 	"discrescue/internal/recovery"
@@ -96,7 +97,7 @@ func runPassBasedRecoveryWithPolicy(
 	}
 
 	if policy.Fast.Enabled {
-		if err := runFastAcquisitionPass(ctx, source, output, logicalSectorSize, capacitySectors, store, policy.Fast.BlockSectors, report); err != nil {
+		if err := runFastAcquisitionPass(ctx, source, output, logicalSectorSize, capacitySectors, store, policy.Fast.BlockSectors, policy.ReadDeadlines, report); err != nil {
 			return err
 		}
 	}
@@ -112,7 +113,7 @@ func runPassBasedRecoveryWithPolicy(
 		return err
 	}
 	if policy.Trim.Enabled {
-		if err := runTrimPass(ctx, source, output, logicalSectorSize, store, policy.Trim.AttemptsLimit, report); err != nil {
+		if err := runTrimPass(ctx, source, output, logicalSectorSize, store, policy.Trim.AttemptsLimit, policy.ReadDeadlines, report); err != nil {
 			return err
 		}
 	}
@@ -123,7 +124,7 @@ func runPassBasedRecoveryWithPolicy(
 		if !adaptive.Enabled {
 			continue
 		}
-		if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, uint64(adaptive.BlockSectors), adaptive.AttemptsLimit, fmt.Sprintf("Adaptive recovery (%d-sector reads)", adaptive.BlockSectors), report); err != nil {
+		if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, uint64(adaptive.BlockSectors), adaptive.AttemptsLimit, fmt.Sprintf("Adaptive recovery (%d-sector reads)", adaptive.BlockSectors), policy.ReadDeadlines, report); err != nil {
 			return err
 		}
 		if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
@@ -131,7 +132,7 @@ func runPassBasedRecoveryWithPolicy(
 		}
 	}
 	if policy.Targeted.Enabled {
-		if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, uint64(policy.Targeted.BlockSectors), policy.Targeted.AttemptsLimit, "Targeted retry", report); err != nil {
+		if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, uint64(policy.Targeted.BlockSectors), policy.Targeted.AttemptsLimit, "Targeted retry", policy.ReadDeadlines, report); err != nil {
 			return err
 		}
 		if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
@@ -154,6 +155,35 @@ func runPassBasedRecoveryWithPolicy(
 	return nil
 }
 
+// retryPolicyWithCurrentAttempts gives an explicit user-initiated retry cycle
+// its own finite budget while retaining the cumulative attempts written to the
+// recovery map. The maximum existing attempt count becomes the cycle offset,
+// so no unresolved extent can receive more than one additional policy budget.
+func retryPolicyWithCurrentAttempts(policy recovery.RecoveryPolicy, extents []mapfile.Extent) recovery.RecoveryPolicy {
+	var offset uint16
+	for _, extent := range extents {
+		if isRetryableState(extent.State) && extent.Attempts > offset {
+			offset = extent.Attempts
+		}
+	}
+	if offset == 0 {
+		return policy
+	}
+	policy.Trim.AttemptsLimit = addRetryAttemptOffset(policy.Trim.AttemptsLimit, offset)
+	for i := range policy.Adaptive {
+		policy.Adaptive[i].AttemptsLimit = addRetryAttemptOffset(policy.Adaptive[i].AttemptsLimit, offset)
+	}
+	policy.Targeted.AttemptsLimit = addRetryAttemptOffset(policy.Targeted.AttemptsLimit, offset)
+	return policy
+}
+
+func addRetryAttemptOffset(limit, offset uint16) uint16 {
+	if ^uint16(0)-limit < offset {
+		return ^uint16(0)
+	}
+	return limit + offset
+}
+
 func runFastAcquisitionPass(
 	ctx context.Context,
 	source io.ReaderAt,
@@ -162,6 +192,7 @@ func runFastAcquisitionPass(
 	capacitySectors uint64,
 	store recoveryExtentStore,
 	blockSectors uint32,
+	deadlines recovery.ReadDeadlinePolicy,
 	report func(recoveryPassProgress),
 ) error {
 	if blockSectors == 0 {
@@ -198,7 +229,7 @@ func runFastAcquisitionPass(
 
 		readSize := int(sectorsToRead * sectorSize)
 		offset := int64(lba * sectorSize)
-		n, readErr := source.ReadAt(buffer[:readSize], offset)
+		n, readErr := readAtWithDeadline(ctx, source, buffer[:readSize], offset, deadlines.HealthyHard)
 		if readSucceeded(n, readSize, readErr) {
 			if err := persistRecoveredRead(output, store, buffer[:readSize], offset, mapfile.Extent{
 				StartLBA:   lba,
@@ -246,6 +277,7 @@ func runTrimPass(
 	logicalSectorSize uint32,
 	store recoveryExtentStore,
 	attemptLimit uint16,
+	deadlines recovery.ReadDeadlinePolicy,
 	report func(recoveryPassProgress),
 ) error {
 	reportRecoveryProgress(report, "Trimming deferred ranges", progressExtents(store), nil)
@@ -263,7 +295,7 @@ func runTrimPass(
 			if !ok || !isRetryableState(current.State) || current.Attempts >= attemptLimit {
 				continue
 			}
-			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, 1, "Trimming deferred ranges", report); err != nil {
+			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, 1, "Trimming deferred ranges", deadlines, report); err != nil {
 				return err
 			}
 		}
@@ -280,6 +312,7 @@ func runAdaptivePass(
 	blockSectors uint64,
 	attemptLimit uint16,
 	passName string,
+	deadlines recovery.ReadDeadlinePolicy,
 	report func(recoveryPassProgress),
 ) error {
 	reportRecoveryProgress(report, passName, progressExtents(store), nil)
@@ -303,7 +336,7 @@ func runAdaptivePass(
 			if remaining := current.EndLBA() - lba; remaining < sectorsToRead {
 				sectorsToRead = remaining
 			}
-			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, sectorsToRead, passName, report); err != nil {
+			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, sectorsToRead, passName, deadlines, report); err != nil {
 				return err
 			}
 			lba += sectorsToRead
@@ -321,6 +354,7 @@ func attemptDeferredBlock(
 	lba uint64,
 	sectorsToRead uint64,
 	passName string,
+	deadlines recovery.ReadDeadlinePolicy,
 	report func(recoveryPassProgress),
 ) error {
 	if err := ctx.Err(); err != nil {
@@ -353,7 +387,7 @@ func attemptDeferredBlock(
 	readSize := int(sectorsToRead * sectorSize)
 	buffer := make([]byte, readSize)
 	offset := int64(lba * sectorSize)
-	n, readErr := source.ReadAt(buffer, offset)
+	n, readErr := readAtWithDeadline(ctx, source, buffer, offset, deadlines.DamagedHard)
 	if readSucceeded(n, readSize, readErr) {
 		if err := persistRecoveredRead(output, store, buffer, offset, mapfile.Extent{
 			StartLBA:   lba,
@@ -384,6 +418,21 @@ func attemptDeferredBlock(
 		"The range remains deferred until its bounded retry budget is exhausted.",
 	})
 	return nil
+}
+
+func readAtWithDeadline(ctx context.Context, source io.ReaderAt, buffer []byte, offset int64, deadline time.Duration) (int, error) {
+	if deadline <= 0 {
+		return source.ReadAt(buffer, offset)
+	}
+	readCtx, cancel := context.WithTimeout(ctx, deadline)
+	defer cancel()
+	if reader, ok := source.(recovery.ContextReaderAt); ok {
+		return reader.ReadAtContext(readCtx, buffer, offset)
+	}
+	// Test and in-memory sources are already bounded by their implementation.
+	// Native device adapters must implement ContextReaderAt so a timeout can
+	// close and safely reopen the physical source instead of leaking a read.
+	return source.ReadAt(buffer, offset)
 }
 
 func fatalRecoveryReadError(readErr error) error {

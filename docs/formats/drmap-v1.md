@@ -99,7 +99,7 @@ Extent payload entry:
 | sector_count | uint32 | must be greater than zero |
 | state | uint8 | see sector-state table |
 | confidence | uint8 | see confidence table |
-| attempts | uint16 | bounded retry-attempt count |
+| attempts | uint16 | cumulative bounded retry-attempt count |
 | capture_id | uint32 | extent capture identifier |
 | sense_key | uint8 | last device sense key |
 | asc | uint8 | last device ASC |

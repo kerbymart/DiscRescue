@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"discrescue/internal/mapfile"
 	"discrescue/internal/recovery"
@@ -113,6 +115,28 @@ type scriptedRecoveryReader struct {
 	calls            []recoveryReadCall
 }
 
+type deadlineRecoveryReader struct {
+	data  []byte
+	mu    sync.Mutex
+	calls []int64
+}
+
+func (r *deadlineRecoveryReader) ReadAt(p []byte, off int64) (int, error) {
+	return r.ReadAtContext(context.Background(), p, off)
+}
+
+func (r *deadlineRecoveryReader) ReadAtContext(ctx context.Context, p []byte, off int64) (int, error) {
+	r.mu.Lock()
+	r.calls = append(r.calls, off)
+	r.mu.Unlock()
+	if off == 0 {
+		<-ctx.Done()
+		return 0, ctx.Err()
+	}
+	copy(p, r.data[int(off):int(off)+len(p)])
+	return len(p), nil
+}
+
 func (r *scriptedRecoveryReader) ReadAt(p []byte, off int64) (int, error) {
 	start := int(off)
 	r.calls = append(r.calls, recoveryReadCall{start: start, sectors: len(p)})
@@ -175,6 +199,42 @@ func TestPassBasedRecoveryCompletesFastCoverageBeforeTargetedRetry(t *testing.T)
 	_, recovered, unresolved := summarizeRecoveryExtents(store.Extents())
 	if recovered != 128 || unresolved != 64 {
 		t.Fatalf("unexpected fast-pass state: recovered=%d unresolved=%d extents=%+v", recovered, unresolved, store.Extents())
+	}
+}
+
+func TestPassBasedRecoveryTimeoutDefersRangeAndContinuesForward(t *testing.T) {
+	reader := &deadlineRecoveryReader{data: newRecoveryTestData(128)}
+	writer := &memoryRecoveryWriter{data: make([]byte, 128)}
+	store := &memoryRecoveryStore{}
+	policy, err := recovery.PolicyForMethod(recovery.RecoveryMethodFast)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy.ReadDeadlines = recovery.ReadDeadlinePolicy{
+		HealthySoft: time.Millisecond,
+		HealthyHard: 5 * time.Millisecond,
+		DamagedSoft: time.Millisecond,
+		DamagedHard: 5 * time.Millisecond,
+	}
+	var sawTimeout bool
+	err = runPassBasedRecoveryWithPolicy(context.Background(), reader, writer, 1, 128, store, policy, func(progress recoveryPassProgress) {
+		for _, issue := range progress.LastIssue {
+			if strings.Contains(issue, "deadline exceeded") {
+				sawTimeout = true
+			}
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sawTimeout {
+		t.Fatal("expected the blocked fast-pass read to be reported as a timeout")
+	}
+	if len(reader.calls) < 2 || reader.calls[1] != 64 {
+		t.Fatalf("expected recovery to continue to LBA 64 after timeout, calls=%v", reader.calls)
+	}
+	if extent, _, ok := mapfile.LookupExtent(store.Extents(), 64); !ok || !recoveryStateHasData(extent.State) {
+		t.Fatalf("expected later readable range to recover, got %+v", extent)
 	}
 }
 
@@ -375,6 +435,46 @@ func TestPassBasedRecoveryFailsWhenSourceAccessIsRevoked(t *testing.T) {
 	}
 	if len(store.Extents()) != 0 {
 		t.Fatalf("fatal source failure must not claim coverage, got %+v", store.Extents())
+	}
+}
+
+func TestRetryPolicyAddsOneBoundedBudgetAboveDurableAttempts(t *testing.T) {
+	policy, err := recovery.PolicyForMethod(recovery.RecoveryMethodBalanced)
+	if err != nil {
+		t.Fatalf("policy: %v", err)
+	}
+	retry := retryPolicyWithCurrentAttempts(policy, []mapfile.Extent{
+		{StartLBA: 0, Sectors: 1, State: mapfile.SectorStateMissing, Attempts: 6},
+		{StartLBA: 1, Sectors: 1, State: mapfile.SectorStateReadUnverified, Attempts: 99},
+	})
+	if retry.Trim.AttemptsLimit != 8 {
+		t.Fatalf("trim retry limit = %d, want 8", retry.Trim.AttemptsLimit)
+	}
+	if retry.Adaptive[0].AttemptsLimit != 9 || retry.Adaptive[1].AttemptsLimit != 10 {
+		t.Fatalf("adaptive retry limits = %+v, want [9 10]", retry.Adaptive)
+	}
+	if retry.Targeted.AttemptsLimit != 12 {
+		t.Fatalf("targeted retry limit = %d, want 12", retry.Targeted.AttemptsLimit)
+	}
+}
+
+func TestRetryPolicyRevisitsPreviouslyExhaustedMissingExtent(t *testing.T) {
+	policy, err := recovery.PolicyForMethod(recovery.RecoveryMethodBalanced)
+	if err != nil {
+		t.Fatalf("policy: %v", err)
+	}
+	store := &memoryRecoveryStore{extents: []mapfile.Extent{
+		{StartLBA: 0, Sectors: 1, State: mapfile.SectorStateMissing, Confidence: mapfile.ConfidenceNone, Attempts: 6},
+	}}
+	reader := &scriptedRecoveryReader{data: []byte{0x5A}}
+	writer := &memoryRecoveryWriter{data: make([]byte, 1)}
+
+	if err := runPassBasedRecoveryWithPolicy(context.Background(), reader, writer, 1, 1, store, retryPolicyWithCurrentAttempts(policy, store.Extents()), nil); err != nil {
+		t.Fatalf("retry recovery: %v", err)
+	}
+	_, recovered, deferred, unreadable := summarizeRecoveryExtentStates(store.Extents())
+	if recovered != 1 || deferred != 0 || unreadable != 0 {
+		t.Fatalf("retry did not recover exhausted extent: recovered=%d deferred=%d unreadable=%d extents=%+v", recovered, deferred, unreadable, store.Extents())
 	}
 }
 
