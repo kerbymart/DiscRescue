@@ -80,6 +80,24 @@ func TestAcceptedEjectRefreshesDevices(t *testing.T) {
 	}
 }
 
+func TestAcceptedEjectRefreshRestoresDriveWhenSelectionWasCleared(t *testing.T) {
+	model := NewModel()
+	model.Page = PageChooseDrive
+	model.Devices = []DeviceSummary{{ID: "drive-a", Path: "/dev/disk4", DisplayName: "Transcend"}}
+	model.SelectedDrive = model.Devices[0]
+	next, _ := model.Update(EjectCompletedMsg{
+		Request: device.EjectRequest{Mode: device.EjectNormal},
+		Result:  device.EjectResult{Status: device.OperationAccepted},
+	})
+	updated := next.(Model)
+	updated.SelectedDrive = DeviceSummary{}
+	refreshed, _ := updated.Update(DevicesDiscoveredMsg{RequestID: updated.ActiveDiscoveryRequest})
+	afterRefresh := refreshed.(Model)
+	if afterRefresh.Page != PageChooseDrive || len(afterRefresh.Devices) != 1 || afterRefresh.Devices[0].Path != "/dev/disk4" {
+		t.Fatalf("drive was not restored after empty refresh: page=%v devices=%+v", afterRefresh.Page, afterRefresh.Devices)
+	}
+}
+
 func TestRuntimeEjectUsesPlatformAdapter(t *testing.T) {
 	runtime := platform.Runtime{Optical: ejectingOpticalStub{result: device.EjectResult{Status: device.OperationAccepted}}}
 	program := NewProgramModel(runtime)
