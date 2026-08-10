@@ -85,7 +85,7 @@ func representativeViewModel(page Page) Model {
 	return model
 }
 
-func TestViewTooSmall(t *testing.T) {
+func TestViewTooSmallKeepsAlternateScreen(t *testing.T) {
 	model := NewModel()
 	model.Width = 39
 	model.Height = 11
@@ -95,8 +95,19 @@ func TestViewTooSmall(t *testing.T) {
 	if !strings.Contains(view, "Resize to at least 40x12") {
 		t.Fatalf("unexpected small-window view: %q", view)
 	}
-	if rendered.AltScreen {
-		t.Fatal("expected non-recovery small-window view to stay out of the alternate screen")
+	if !rendered.AltScreen {
+		t.Fatal("expected small-window view to remain in the application alternate screen")
+	}
+}
+
+func TestViewChooseDriveUsesApplicationAlternateScreen(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageChooseDrive
+
+	if view := model.View(); !view.AltScreen {
+		t.Fatal("expected drive selection to use the application alternate screen")
 	}
 }
 
