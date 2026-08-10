@@ -32,5 +32,10 @@ func discoverHostOpticalDrives() ([]OpticalDrive, error) {
 }
 
 func identifyHostOpticalMedia(path string) (OpticalMedia, error) {
-	return OpticalMedia{}, fmt.Errorf("inspect media: mounted optical media inspection is not implemented for this platform")
+	return OpticalMedia{}, &MediaInspectionError{
+		Path:      path,
+		Operation: "native media probe",
+		State:     MediaProbeFailure,
+		Err:       fmt.Errorf("mounted optical media inspection is not implemented for this platform"),
+	}
 }
