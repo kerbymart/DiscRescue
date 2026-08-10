@@ -41,22 +41,35 @@ func nativeDarwinDiscover() ([]darwinNativeDrive, error) {
 	if err != nil {
 		return nil, err
 	}
+	configured := darwinOpticalDevicesConfigured()
 	var drives []darwinNativeDrive
 	for _, path := range paths {
 		drive, err := inspectDarwinDisk(path)
-		if err == nil {
+		if shouldRetainDarwinCandidate(configured, err) {
 			drives = append(drives, drive)
 			continue
 		}
-		var probeErr *MediaInspectionError
-		if errors.As(err, &probeErr) && probeErr.State != MediaProbeUnavailable {
-			drive.Path = path
-			drive.DisplayName = filepath.Base(path)
-			drive.State = probeErr.State
-			drives = append(drives, drive)
-		}
 	}
 	return drives, nil
+}
+
+func shouldRetainDarwinCandidate(configured bool, err error) bool {
+	if err == nil {
+		// Geometry was read from the node, which is the positive device evidence
+		// available to automatic, pure-Go discovery.
+		return true
+	}
+	if !configured {
+		// /dev/diskN includes every storage device. A permission or I/O failure
+		// cannot establish that an automatically discovered node is optical.
+		return false
+	}
+	var probeErr *MediaInspectionError
+	return errors.As(err, &probeErr) && probeErr.State != MediaProbeUnavailable
+}
+
+func darwinOpticalDevicesConfigured() bool {
+	return strings.TrimSpace(os.Getenv("DISKRESCUE_DARWIN_OPTICAL_DEVICES")) != ""
 }
 
 func darwinDeviceCandidates() ([]string, error) {
