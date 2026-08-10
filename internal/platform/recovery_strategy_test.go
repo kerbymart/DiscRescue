@@ -378,6 +378,46 @@ func TestPassBasedRecoveryFailsWhenSourceAccessIsRevoked(t *testing.T) {
 	}
 }
 
+func TestRetryPolicyAddsOneBoundedBudgetAboveDurableAttempts(t *testing.T) {
+	policy, err := recovery.PolicyForMethod(recovery.RecoveryMethodBalanced)
+	if err != nil {
+		t.Fatalf("policy: %v", err)
+	}
+	retry := retryPolicyWithCurrentAttempts(policy, []mapfile.Extent{
+		{StartLBA: 0, Sectors: 1, State: mapfile.SectorStateMissing, Attempts: 6},
+		{StartLBA: 1, Sectors: 1, State: mapfile.SectorStateReadUnverified, Attempts: 99},
+	})
+	if retry.Trim.AttemptsLimit != 8 {
+		t.Fatalf("trim retry limit = %d, want 8", retry.Trim.AttemptsLimit)
+	}
+	if retry.Adaptive[0].AttemptsLimit != 9 || retry.Adaptive[1].AttemptsLimit != 10 {
+		t.Fatalf("adaptive retry limits = %+v, want [9 10]", retry.Adaptive)
+	}
+	if retry.Targeted.AttemptsLimit != 12 {
+		t.Fatalf("targeted retry limit = %d, want 12", retry.Targeted.AttemptsLimit)
+	}
+}
+
+func TestRetryPolicyRevisitsPreviouslyExhaustedMissingExtent(t *testing.T) {
+	policy, err := recovery.PolicyForMethod(recovery.RecoveryMethodBalanced)
+	if err != nil {
+		t.Fatalf("policy: %v", err)
+	}
+	store := &memoryRecoveryStore{extents: []mapfile.Extent{
+		{StartLBA: 0, Sectors: 1, State: mapfile.SectorStateMissing, Confidence: mapfile.ConfidenceNone, Attempts: 6},
+	}}
+	reader := &scriptedRecoveryReader{data: []byte{0x5A}}
+	writer := &memoryRecoveryWriter{data: make([]byte, 1)}
+
+	if err := runPassBasedRecoveryWithPolicy(context.Background(), reader, writer, 1, 1, store, retryPolicyWithCurrentAttempts(policy, store.Extents()), nil); err != nil {
+		t.Fatalf("retry recovery: %v", err)
+	}
+	_, recovered, deferred, unreadable := summarizeRecoveryExtentStates(store.Extents())
+	if recovered != 1 || deferred != 0 || unreadable != 0 {
+		t.Fatalf("retry did not recover exhausted extent: recovered=%d deferred=%d unreadable=%d extents=%+v", recovered, deferred, unreadable, store.Extents())
+	}
+}
+
 func containsRecoveryIssue(issues []string, want string) bool {
 	for _, issue := range issues {
 		if strings.Contains(issue, want) {

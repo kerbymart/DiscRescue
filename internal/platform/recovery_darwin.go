@@ -293,6 +293,9 @@ func (j *darwinRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 		j.finish(false, policyErr)
 		return
 	}
+	if input.RetryUnresolved {
+		policy = retryPolicyWithCurrentAttempts(policy, j.state.Extents())
+	}
 	err = runPassBasedRecoveryWithPolicy(ctx, lifecycleSource, output, input.LogicalSectorSize, input.CapacitySectors, persistence, policy, func(progress recoveryPassProgress) { j.setProgress(progress, input.LogicalSectorSize) })
 	if errors.Is(err, context.Canceled) {
 		j.finish(true, nil)

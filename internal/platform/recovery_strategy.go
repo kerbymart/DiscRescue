@@ -154,6 +154,35 @@ func runPassBasedRecoveryWithPolicy(
 	return nil
 }
 
+// retryPolicyWithCurrentAttempts gives an explicit user-initiated retry cycle
+// its own finite budget while retaining the cumulative attempts written to the
+// recovery map. The maximum existing attempt count becomes the cycle offset,
+// so no unresolved extent can receive more than one additional policy budget.
+func retryPolicyWithCurrentAttempts(policy recovery.RecoveryPolicy, extents []mapfile.Extent) recovery.RecoveryPolicy {
+	var offset uint16
+	for _, extent := range extents {
+		if isRetryableState(extent.State) && extent.Attempts > offset {
+			offset = extent.Attempts
+		}
+	}
+	if offset == 0 {
+		return policy
+	}
+	policy.Trim.AttemptsLimit = addRetryAttemptOffset(policy.Trim.AttemptsLimit, offset)
+	for i := range policy.Adaptive {
+		policy.Adaptive[i].AttemptsLimit = addRetryAttemptOffset(policy.Adaptive[i].AttemptsLimit, offset)
+	}
+	policy.Targeted.AttemptsLimit = addRetryAttemptOffset(policy.Targeted.AttemptsLimit, offset)
+	return policy
+}
+
+func addRetryAttemptOffset(limit, offset uint16) uint16 {
+	if ^uint16(0)-limit < offset {
+		return ^uint16(0)
+	}
+	return limit + offset
+}
+
 func runFastAcquisitionPass(
 	ctx context.Context,
 	source io.ReaderAt,

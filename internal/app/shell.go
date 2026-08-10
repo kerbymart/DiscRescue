@@ -25,11 +25,11 @@ func renderShell(m Model, body []string, tier layoutTier) string {
 		status = flattenLines([]string{renderNotice(theme, *m.Notice, layout.Width)})
 	}
 
-	footer := renderFooter(m.Page, layout.Width, tier)
-	if m.Width > 0 && (m.DriveList.Width() > 0 || m.ActionList.Width() > 0 || m.DetailsViewport.Width() > 1) {
+	footer := renderFooter(m, layout.Width, tier)
+	if m.Page != PageRecovering && m.Width > 0 && (m.DriveList.Width() > 0 || m.ActionList.Width() > 0 || m.DetailsViewport.Width() > 1) {
 		helpView := FooterHelp(false)
 		helpView.SetWidth(layout.Width)
-		footer = helpView.View(pageHelp(m.Page))
+		footer = helpView.View(pageHelpForModel(m))
 	}
 	suffix := append(status, divider, footer)
 	suffix = flattenLines(suffix)
@@ -93,7 +93,7 @@ func pageSubtitle(page Page) string {
 }
 
 func renderNotice(theme Theme, notice NoticeModel, width int) string {
-	marker, style := "•", theme.AccentSoft
+	marker, style := "i", theme.AccentSoft
 	switch notice.Severity {
 	case SeverityWarning:
 		marker, style = "△", theme.Warning

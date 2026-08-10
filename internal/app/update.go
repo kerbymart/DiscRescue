@@ -283,9 +283,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.OutputPath = typed.OutputPath
 		m.Recovery.Phase = typed.Phase
 		m.Recovery.TotalSectors = typed.TotalSectors
+		m.Recovery.ScannedSectors = typed.ScannedSectors
 		m.Recovery.RecoveredSectors = typed.RecoveredSectors
+		m.Recovery.DeferredSectors = typed.DeferredSectors
 		m.Recovery.UnreadableSectors = typed.UnreadableSectors
+		m.Setup.RetryUnresolved = false
 		m.Recovery.PausePending = false
+		m.Recovery.StopPending = false
+		m.Recovery.ForceStopAvailable = false
 		m.Details.Lines = buildRecoveryDetails(m)
 		m.Notice = nil
 		return m, nil
@@ -297,6 +302,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.TotalSectors = typed.TotalSectors
 		m.Recovery.UnreadableSectors = typed.UnreadableSectors
 		m.Recovery.PausePending = false
+		m.Recovery.StopPending = false
+		m.Recovery.ForceStopAvailable = false
 		if typed.MapPath != "" {
 			m.Setup.ResumeMapPath = typed.MapPath
 		}
@@ -312,7 +319,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case ProgressMsg:
 		m.Recovery.Phase = typed.Snapshot.Phase
+		m.Recovery.ScannedSectors = typed.Snapshot.ScannedSectors
 		m.Recovery.RecoveredSectors = typed.Snapshot.RecoveredSectors
+		m.Recovery.DeferredSectors = typed.Snapshot.DeferredSectors
 		m.Recovery.TotalSectors = typed.Snapshot.TotalSectors
 		m.Recovery.UnreadableSectors = typed.Snapshot.UnreadableSectors
 		m.Recovery.Status = typed.Snapshot.Status
@@ -322,6 +331,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Recovery.Throughput = typed.Snapshot.Throughput
 		m.Recovery.LastIssue = append([]string(nil), typed.Snapshot.LastIssue...)
 		m.Recovery.PausePending = typed.Snapshot.PausePending
+		m.Recovery.StopPending = typed.Snapshot.StopPending
+		m.Recovery.ForceStopAvailable = typed.Snapshot.ForceStopAvailable
 		if typed.Snapshot.OutputPath != "" {
 			m.Recovery.OutputPath = typed.Snapshot.OutputPath
 		}
@@ -350,7 +361,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Recovery.RecoveredSectors = typed.Summary.RecoveredSectors
 		m.Recovery.TotalSectors = typed.Summary.TotalSectors
-		m.Recovery.UnreadableSectors = typed.Summary.UnresolvedSectors
+		m.Recovery.DeferredSectors = typed.Summary.DeferredSectors
+		m.Recovery.UnreadableSectors = 0
+		if typed.Summary.UnresolvedSectors > typed.Summary.DeferredSectors {
+			m.Recovery.UnreadableSectors = typed.Summary.UnresolvedSectors - typed.Summary.DeferredSectors
+		}
+		m.Recovery.PausePending = false
+		m.Recovery.StopPending = false
+		m.Recovery.ForceStopAvailable = false
 		m.Details.Lines = buildSummaryDetails(m, typed)
 		m.Cursor = 0
 		return m, nil
@@ -409,7 +427,13 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case matchesKey(key, DefaultKeys().Force):
 		switch m.Page {
-		case PageRecovering, PagePausing, PagePaused:
+		case PagePausing:
+			if m.Recovery.ForceStopAvailable {
+				m.Notice = &NoticeModel{Text: "Force-stopping the blocked drive request; saved progress is preserved.", Severity: SeverityWarning}
+				return m, stopImmediatelyEffect()
+			}
+			return m, nil
+		case PageRecovering, PagePaused:
 			m.PreviousPage = m.Page
 			m.Page = PageStopConfirm
 			m.Cursor = 0
@@ -769,6 +793,12 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 	case PageStopConfirm:
 		switch m.Cursor {
 		case 0:
+			m.Page = PagePausing
+			m.Recovery.PausePending = false
+			m.Recovery.StopPending = true
+			m.Recovery.ForceStopAvailable = false
+			m.RestartLoadingSpinner = true
+			m.Notice = &NoticeModel{Text: "Saving progress and stopping after the current drive request.", Severity: SeverityInfo}
 			return m, stopAfterCheckpointEffect()
 		case 1:
 			if m.PreviousPage == PagePaused || m.PreviousPage == PagePausing {
@@ -793,15 +823,33 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 		m.Cursor = 0
 		return m, nil
 	case PageSummary:
-		switch m.Cursor {
-		case 0:
+		options := summaryOptions(m)
+		if m.Cursor >= len(options) {
+			m.Cursor = 0
+		}
+		switch options[m.Cursor] {
+		case "Retry deferred sectors", "Retry unreadable sectors", "Retry unresolved sectors":
+			if m.SelectedDrive.Path == "" || m.Setup.OutputPath == "" {
+				m.Notice = &NoticeModel{Text: "Select the original drive and recovery output before retrying unresolved sectors.", Severity: SeverityWarning}
+				return m, nil
+			}
+			m.Setup.Method = platform.RecoveryMethodBalanced
+			m.Setup.MethodLabel = "Balanced recovery"
+			m.Setup.ActionLabel = "Retry unresolved sectors"
+			m.Setup.RetryUnresolved = true
+			m.Setup.ResumeReady = true
+			m.Setup.ResumeMapPath = firstNonEmpty(m.Summary.MapPath, replaceExtension(m.Setup.OutputPath, ".drmap"))
+			m.Setup.ResumeDetail = "Retrying only unresolved sectors from the saved recovery map."
+			m.Notice = &NoticeModel{Text: "Retrying unresolved sectors with a fresh bounded retry cycle.", Severity: SeverityInfo}
+			return m, startJobEffect()
+		case "Exit":
 			return m, tea.Quit
-		case 1:
+		case "Choose another drive":
 			m.Page = PageChooseDrive
 			m.Cursor = 0
 			m.Notice = &NoticeModel{Text: "Choose one optical drive.", Severity: SeverityInfo}
 			return m, nil
-		case 2:
+		case "View details":
 			m.PreviousPage = m.Page
 			m.Page = PageDetails
 			m.syncDetailsViewport()
@@ -863,7 +911,7 @@ func (m Model) cursorLimit() int {
 	case PageStopConfirm:
 		return 2
 	case PageSummary:
-		return 3
+		return len(summaryOptions(m))
 	default:
 		return 0
 	}

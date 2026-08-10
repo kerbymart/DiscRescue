@@ -392,14 +392,49 @@ func TestViewRecoveringUsesAltScreenAndNoTelemetryTable(t *testing.T) {
 	if !strings.Contains(view.Content, "Reading healthy areas") || !strings.Contains(view.Content, "about 7 minutes") {
 		t.Fatalf("expected recovery summary fields, got %q", view.Content)
 	}
-	if !strings.Contains(view.Content, "1.42 GiB of 4.38 GiB remaining • about 7 minutes") {
-		t.Fatalf("expected combined remaining and ETA summary, got %q", view.Content)
-	}
 	if !strings.Contains(view.Content, "Rate") || !strings.Contains(view.Content, "Elapsed") {
 		t.Fatalf("expected richer progress details, got %q", view.Content)
 	}
 	if strings.Contains(strings.ToLower(view.Content), "chart") {
 		t.Fatalf("unexpected telemetry content: %q", view.Content)
+	}
+}
+
+func TestFullRecoveryDashboardUsesCoverageAndMetricZones(t *testing.T) {
+	model := representativeViewModel(PageRecovering)
+	model.Width = 120
+	model.Height = 36
+
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Coverage", "Recovered", "Deferred", "Unreadable", "Remaining", "Rate", "Elapsed"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("full recovery dashboard missing %q: %q", want, view)
+		}
+	}
+	if !strings.Contains(view, "├") || !strings.Contains(view, "┼") {
+		t.Fatalf("full recovery dashboard should use one divided status panel: %q", view)
+	}
+}
+
+func TestRecoveryDashboardUsesOrganizedCardsAtEightyByTwentyFour(t *testing.T) {
+	model := representativeViewModel(PageRecovering)
+	model.Width = 80
+	model.Height = 24
+
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Coverage", "Recovered", "Deferred", "Unreadable", "Remaining"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("80x24 recovery dashboard missing %q: %q", want, view)
+		}
+	}
+	if !strings.Contains(view, "├") || !strings.Contains(view, "┼") {
+		t.Fatalf("80x24 recovery dashboard should use one divided status panel: %q", view)
+	}
+	if strings.Contains(view, "Coverage  66%") {
+		t.Fatalf("80x24 recovery dashboard still uses the legacy flat progress layout: %q", view)
+	}
+	if got := lipgloss.Height(strings.TrimSuffix(model.View().Content, "\n")); got > model.Height {
+		t.Fatalf("80x24 recovery dashboard is %d rows tall", got)
 	}
 }
 
@@ -424,8 +459,8 @@ func TestViewRecoveringUsesCompactLayoutAtFortyByTwelve(t *testing.T) {
 	if !strings.Contains(view, "Recovering") {
 		t.Fatalf("expected recovery title, got %q", view)
 	}
-	if !strings.Contains(view, "[") || !strings.Contains(view, "]") {
-		t.Fatalf("expected compact progress bar, got %q", view)
+	if !strings.Contains(view, "Coverage") || !strings.Contains(view, "67%") {
+		t.Fatalf("expected compact coverage rail, got %q", view)
 	}
 	if strings.Contains(view, "Last issue: sector 1,891,840 could not be read.") {
 		t.Fatalf("expected compact layout to omit issue detail, got %q", view)
@@ -488,11 +523,26 @@ func TestRecoveryProgressShowsThickOverallCoverage(t *testing.T) {
 	}
 
 	progress := ansi.Strip(recoveryProgressLine(model, 70, layoutMedium))
-	if strings.Count(progress, "\n") != 2 {
-		t.Fatalf("expected two-row progress rail and coverage label, got %q", progress)
+	if strings.Count(progress, "\n") != 1 {
+		t.Fatalf("expected compact one-row progress rail and coverage label, got %q", progress)
 	}
-	if !strings.Contains(progress, "Coverage 70 / 100 sectors · 70%") {
+	if !strings.Contains(progress, "Coverage  70%   70 / 100 sectors") {
 		t.Fatalf("expected overall coverage label, got %q", progress)
+	}
+}
+
+func TestSegmentedRecoveryBarUsesDistinctMonochromeStates(t *testing.T) {
+	model := NewModel()
+	model.Monochrome = true
+	model.Recovery = RecoveryViewModel{
+		RecoveredSectors:  10,
+		DeferredSectors:   4,
+		UnreadableSectors: 2,
+		TotalSectors:      20,
+	}
+
+	if got, want := segmentedRecoveryBar(model, 20), "[==========~~~~xx....]"; got != want {
+		t.Fatalf("segmented monochrome rail = %q, want %q", got, want)
 	}
 }
 
@@ -509,7 +559,7 @@ func TestViewRecoveringShowsEstimatingTextWhenETANotReady(t *testing.T) {
 	}
 
 	view := ansi.Strip(model.View().Content)
-	if !strings.Contains(view, "Estimating time remaining...") {
+	if !strings.Contains(view, "ETA estimating") {
 		t.Fatalf("expected ETA fallback copy, got %q", view)
 	}
 }
@@ -530,6 +580,21 @@ func TestViewPausingShowsPendingPauseLanguage(t *testing.T) {
 	}
 	if strings.Contains(view, "Continue recovery") {
 		t.Fatalf("did not expect resume action while pause is still pending, got %q", view)
+	}
+}
+
+func TestViewStoppingShowsCheckpointAndForceStopGuidance(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PagePausing
+	model.Recovery = RecoveryViewModel{StopPending: true, ForceStopAvailable: true}
+
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"Saving progress and stopping", "Stop requested.", "Press x to force-stop"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("stopping view missing %q: %q", want, view)
+		}
 	}
 }
 
@@ -588,8 +653,8 @@ func TestViewIncompleteSummaryAvoidsCleanSuccessTreatment(t *testing.T) {
 	if !strings.Contains(view, "37 sectors could not be recovered.") {
 		t.Fatalf("expected incomplete-result explanation, got %q", view)
 	}
-	if !strings.Contains(view, "> Exit") {
-		t.Fatalf("expected exit-first choice, got %q", view)
+	if !strings.Contains(view, "> Retry unreadable sectors") {
+		t.Fatalf("expected retry-first choice, got %q", view)
 	}
 	if !strings.Contains(view, "D:/Archives/archive-disc.drmap") {
 		t.Fatalf("expected explicit map path, got %q", view)

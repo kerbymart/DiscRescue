@@ -304,6 +304,9 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 		j.finish(false, policyErr)
 		return
 	}
+	if input.RetryUnresolved {
+		policy = retryPolicyWithCurrentAttempts(policy, j.state.Extents())
+	}
 	err = runPassBasedRecoveryWithPolicy(
 		ctx,
 		lifecycleSource,
