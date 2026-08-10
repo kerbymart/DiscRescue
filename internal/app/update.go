@@ -429,7 +429,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch m.Page {
 		case PagePausing:
 			if m.Recovery.ForceStopAvailable {
-				m.Notice = &NoticeModel{Text: "Force-stopping the blocked drive request; saved progress is preserved.", Severity: SeverityWarning}
+				m.Notice = &NoticeModel{Text: "Force-stopping the active device request; saved progress is preserved.", Severity: SeverityWarning}
 				return m, stopImmediatelyEffect()
 			}
 			return m, nil

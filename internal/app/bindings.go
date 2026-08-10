@@ -20,7 +20,7 @@ func NewKeyMapV2() KeyMapV2 {
 	return KeyMapV2{
 		Up: bind([]string{"up", "k"}, "move up"), Down: bind([]string{"down", "j"}, "move down"), PageUp: bind([]string{"pgup"}, "page up"), PageDown: bind([]string{"pgdown"}, "page down"),
 		Select: bind([]string{"enter"}, "select"), Tab: bind([]string{"tab"}, "next field"), Back: bind([]string{"esc"}, "back"), Quit: bind([]string{"q"}, "quit"),
-		Details: bind([]string{"d"}, "details"), Advanced: bind([]string{"a"}, "advanced"), Pause: bind([]string{"space"}, "pause"), Force: bind([]string{"x", "ctrl+c"}, "stop now"),
+		Details: bind([]string{"d"}, "details"), Advanced: bind([]string{"a"}, "advanced"), Pause: bind([]string{"space"}, "pause"), Force: bind([]string{"x", "ctrl+c"}, "stop request"),
 		Refresh: bind([]string{"r"}, "refresh drives"), Eject: bind([]string{"e"}, "eject"), ForceEject: bind([]string{"f"}, "force eject"),
 	}
 }

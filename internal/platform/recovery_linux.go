@@ -57,7 +57,7 @@ func (j *linuxRecoveryJob) RequestStop(intent recovery.StopIntent) error {
 		return err
 	}
 	if j.lifecycle.State() == recovery.JobCancelingRead {
-		j.stopTimer = time.AfterFunc(5*time.Second, func() {
+		j.stopTimer = time.AfterFunc(recovery.DefaultStopGracePeriod, func() {
 			j.mu.Lock()
 			_ = j.lifecycle.GraceExpired()
 			j.snapshot.State = j.lifecycle.State()
@@ -90,7 +90,7 @@ func (j *linuxRecoveryJob) ForceStop() error {
 	j.mu.Unlock()
 	if source != nil {
 		if err := source.Close(); err != nil {
-			return fmt.Errorf("force stop close source: %w", err)
+			return fmt.Errorf("force stop active device request: %w", err)
 		}
 	}
 	cancel()

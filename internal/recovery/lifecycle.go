@@ -6,9 +6,14 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 var ErrStopRequested = fmt.Errorf("recovery stop requested")
+
+// DefaultStopGracePeriod is the bounded cooperative window before the UI
+// offers escalation for an active device request.
+const DefaultStopGracePeriod = 5 * time.Second
 
 // JobState is the monotonic lifecycle state of one recovery session.
 type JobState string

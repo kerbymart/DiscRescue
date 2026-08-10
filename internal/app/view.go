@@ -1072,7 +1072,7 @@ func renderPausingPage(m Model, width int) []string {
 	lines = append(lines, wrapText(checkpoint, width-4)...)
 	if m.Recovery.ForceStopAvailable {
 		lines = append(lines, "", theme.Warning.Render("The current drive request has not returned."))
-		lines = append(lines, theme.Muted.Render("Press x to force-stop the worker; ctrl+c also works."))
+		lines = append(lines, theme.Muted.Render("Press x to force-stop the active device request; ctrl+c also works."))
 	}
 	if m.Recovery.OutputPath != "" && m.Recovery.OutputPath != "Not chosen yet" {
 		lines = append(lines, "")

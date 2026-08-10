@@ -198,7 +198,7 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 		if err := job.ForceStop(); err != nil {
 			return StatusMsg{Text: "Could not force stop recovery: " + err.Error(), Severity: SeverityWarning}
 		}
-		return StatusMsg{Text: "Force-stopping the recovery worker; durable state is preserved.", Severity: SeverityWarning}
+		return StatusMsg{Text: "Force-stopping the active device request; durable state is preserved.", Severity: SeverityWarning}
 	default:
 		return FatalMsg{Err: fmt.Errorf("unsupported effect: %s", request.Kind)}
 	}

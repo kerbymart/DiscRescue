@@ -591,7 +591,7 @@ func TestViewStoppingShowsCheckpointAndForceStopGuidance(t *testing.T) {
 	model.Recovery = RecoveryViewModel{StopPending: true, ForceStopAvailable: true}
 
 	view := ansi.Strip(model.View().Content)
-	for _, want := range []string{"Saving progress and stopping", "Stop requested.", "Press x to force-stop"} {
+	for _, want := range []string{"Saving progress and stopping", "Stop requested.", "Press x to force-stop the active device request"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("stopping view missing %q: %q", want, view)
 		}
