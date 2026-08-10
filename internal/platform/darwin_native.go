@@ -7,6 +7,7 @@ package platform
 // cross-compiling does not require Xcode, a macOS SDK, or cgo.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +33,7 @@ type darwinNativeDrive struct {
 	CapacityBytes     uint64
 	RegistryID        uint64
 	Media             bool
+	State             MediaProbeState
 }
 
 func nativeDarwinDiscover() ([]darwinNativeDrive, error) {
@@ -41,8 +43,16 @@ func nativeDarwinDiscover() ([]darwinNativeDrive, error) {
 	}
 	var drives []darwinNativeDrive
 	for _, path := range paths {
-		drive, ok := inspectDarwinDisk(path)
-		if ok {
+		drive, err := inspectDarwinDisk(path)
+		if err == nil {
+			drives = append(drives, drive)
+			continue
+		}
+		var probeErr *MediaInspectionError
+		if errors.As(err, &probeErr) && probeErr.State != MediaProbeUnavailable {
+			drive.Path = path
+			drive.DisplayName = filepath.Base(path)
+			drive.State = probeErr.State
 			drives = append(drives, drive)
 		}
 	}
@@ -78,28 +88,50 @@ func darwinDeviceCandidates() ([]string, error) {
 	return paths, nil
 }
 
-func inspectDarwinDisk(path string) (darwinNativeDrive, bool) {
+func inspectDarwinDisk(path string) (darwinNativeDrive, error) {
 	whole, err := normalizeDarwinOpticalDevice(path)
 	if err != nil {
-		return darwinNativeDrive{}, false
+		return darwinNativeDrive{}, &MediaInspectionError{Path: path, Operation: "normalize device", State: MediaProbeFailure, Err: err}
 	}
+	drive := darwinNativeDrive{Path: whole, DisplayName: filepath.Base(path)}
 	f, err := os.OpenFile(whole, os.O_RDONLY, 0)
 	if err != nil {
-		return darwinNativeDrive{}, false
+		return drive, darwinProbeError(path, "open", err)
 	}
 	defer f.Close()
 	var block uint32
-	if err := darwinIoctl(f, dkioGetBlockSize, uintptr(unsafe.Pointer(&block))); err != nil || block == 0 {
-		return darwinNativeDrive{}, false
+	if err := darwinIoctl(f, dkioGetBlockSize, uintptr(unsafe.Pointer(&block))); err != nil {
+		return drive, darwinProbeError(path, "DKIOCGETBLOCKSIZE", err)
+	}
+	if block == 0 {
+		return drive, &MediaInspectionError{Path: path, Operation: "DKIOCGETBLOCKSIZE", State: MediaProbeFailure, Err: fmt.Errorf("reported zero block size")}
 	}
 	var count uint64
 	if err := darwinIoctl(f, dkioGetBlockCount, uintptr(unsafe.Pointer(&count))); err != nil {
-		count = 0
+		return drive, darwinProbeError(path, "DKIOCGETBLOCKCOUNT", err)
 	}
-	return darwinNativeDrive{
-		Path: whole, DisplayName: filepath.Base(path), LogicalSectorSize: block,
-		CapacityBytes: count * uint64(block), Media: count > 0,
-	}, true
+	drive.LogicalSectorSize = block
+	drive.CapacityBytes = count * uint64(block)
+	drive.Media = count > 0
+	if !drive.Media {
+		drive.State = MediaProbeNoMedia
+	}
+	return drive, nil
+}
+
+func darwinProbeError(path, operation string, err error) error {
+	state := MediaProbeFailure
+	switch {
+	case errors.Is(err, syscall.ENOENT), errors.Is(err, syscall.ENODEV):
+		state = MediaProbeUnavailable
+	case errors.Is(err, syscall.ENXIO), errors.Is(err, syscall.EIO):
+		state = MediaProbeNotReady
+	case errors.Is(err, syscall.EACCES), errors.Is(err, syscall.EPERM):
+		state = MediaProbePermission
+	case errors.Is(err, syscall.EBUSY):
+		state = MediaProbeBusy
+	}
+	return &MediaInspectionError{Path: path, Operation: operation, State: state, Err: err}
 }
 
 func nativeDarwinEject(path string, _ bool) error {
