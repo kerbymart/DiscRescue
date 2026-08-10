@@ -230,21 +230,22 @@ type Model struct {
 	ActiveDiscoveryRequest  int
 	// PreserveEjectedDrive keeps the physical drive selectable when a tray
 	// opening removes its /dev node or media record during refresh.
-	PreserveEjectedDrive bool
-	EjectedDrive         DeviceSummary
-	ActiveMediaRequest   int
-	ActiveLookupRequest  int
-	ActiveTargetRequest  int
-	ActiveResumeRequest  int
-	ActiveHistoryRequest int
-	DirectoryInput       textinput.Model
-	FileNameInput        textinput.Model
-	DetailsViewport      viewport.Model
-	DriveList            list.Model
-	ActionList           list.Model
-	ResumeList           list.Model
-	HistoryList          list.Model
-	LoadingSpinner       spinner.Model
+	PreserveEjectedDrive  bool
+	EjectedDrive          DeviceSummary
+	ActiveMediaRequest    int
+	ActiveLookupRequest   int
+	ActiveTargetRequest   int
+	ActiveResumeRequest   int
+	ActiveHistoryRequest  int
+	DirectoryInput        textinput.Model
+	FileNameInput         textinput.Model
+	DetailsViewport       viewport.Model
+	DriveList             list.Model
+	ActionList            list.Model
+	ResumeList            list.Model
+	HistoryList           list.Model
+	LoadingSpinner        spinner.Model
+	RestartLoadingSpinner bool
 }
 
 func NewModel() Model {
