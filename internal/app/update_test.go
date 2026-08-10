@@ -798,6 +798,23 @@ func TestJobStoppedMovesToSummaryWithPrimaryChoiceFocused(t *testing.T) {
 	}
 }
 
+func TestSummaryExitReturnsQuitCommand(t *testing.T) {
+	model := NewModel()
+	model.Page = PageSummary
+	model.Cursor = 0
+
+	next, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if next.(Model).Page != PageSummary {
+		t.Fatalf("summary exit changed page: %v", next.(Model).Page)
+	}
+	if cmd == nil {
+		t.Fatal("expected quit command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("expected quit message, got %T", cmd())
+	}
+}
+
 func TestRecoveryTargetInspectionKeepsChooseOutputForOccupiedTarget(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseOutput
