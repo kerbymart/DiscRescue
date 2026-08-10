@@ -27,31 +27,29 @@ func discoverHostOpticalDrives() ([]OpticalDrive, error) {
 }
 
 func identifyHostOpticalMedia(path string) (OpticalMedia, error) {
-	nativeDrives, err := nativeDarwinDiscover()
-	if err != nil {
-		return OpticalMedia{}, fmt.Errorf("inspect macOS optical media: native discovery: %w", err)
+	// Probe the selected node directly. A reinserted disc can recreate or
+	// settle its /dev entry between drive refresh and the user's Enter press;
+	// requiring a second directory scan creates a false "no longer available"
+	// result during that window.
+	native, ok := inspectDarwinDisk(path)
+	if !ok {
+		return OpticalMedia{}, fmt.Errorf("inspect macOS optical media: drive %q is no longer available or has no readable geometry", path)
 	}
-	for _, native := range nativeDrives {
-		if native.Path != path {
-			continue
-		}
-		if !native.Media || native.LogicalSectorSize == 0 || native.CapacityBytes == 0 {
-			return OpticalMedia{}, fmt.Errorf("inspect macOS optical media: %s is present but has no readable media geometry", native.DisplayName)
-		}
-		name := strings.TrimSpace(native.DisplayName)
-		if name == "" {
-			name = filepath.Base(path)
-		}
-		return OpticalMedia{
-			Summary:             "Optical media detected.",
-			Detail:              fmt.Sprintf("%s - %d-byte sectors - %d bytes", name, native.LogicalSectorSize, native.CapacityBytes),
-			LogicalSectorSize:   native.LogicalSectorSize,
-			CapacitySectors:     native.CapacityBytes / uint64(native.LogicalSectorSize),
-			SuggestedOutputPath: filepath.Join(".", "discrescue-"+sanitizeDarwinName(name)+".iso"),
-			Recoverable:         true,
-		}, nil
+	if !native.Media || native.LogicalSectorSize == 0 || native.CapacityBytes == 0 {
+		return OpticalMedia{}, fmt.Errorf("inspect macOS optical media: %s is present but has no readable media geometry", native.DisplayName)
 	}
-	return OpticalMedia{}, fmt.Errorf("inspect macOS optical media: drive %q is no longer available", path)
+	name := strings.TrimSpace(native.DisplayName)
+	if name == "" {
+		name = filepath.Base(path)
+	}
+	return OpticalMedia{
+		Summary:             "Optical media detected.",
+		Detail:              fmt.Sprintf("%s - %d-byte sectors - %d bytes", name, native.LogicalSectorSize, native.CapacityBytes),
+		LogicalSectorSize:   native.LogicalSectorSize,
+		CapacitySectors:     native.CapacityBytes / uint64(native.LogicalSectorSize),
+		SuggestedOutputPath: filepath.Join(".", "discrescue-"+sanitizeDarwinName(name)+".iso"),
+		Recoverable:         true,
+	}, nil
 }
 
 func sanitizeDarwinName(name string) string {
