@@ -61,7 +61,7 @@ func (j *darwinRecoveryJob) RequestStop(intent recovery.StopIntent) error {
 		return err
 	}
 	if j.lifecycle.State() == recovery.JobCancelingRead {
-		j.stopTimer = time.AfterFunc(5*time.Second, func() {
+		j.stopTimer = time.AfterFunc(recovery.DefaultStopGracePeriod, func() {
 			j.mu.Lock()
 			_ = j.lifecycle.GraceExpired()
 			j.snapshot.State = j.lifecycle.State()
@@ -95,7 +95,7 @@ func (j *darwinRecoveryJob) ForceStop() error {
 	j.mu.Unlock()
 	if source != nil {
 		if err := source.Close(); err != nil {
-			return fmt.Errorf("force stop close source: %w", err)
+			return fmt.Errorf("force stop active device request: %w", err)
 		}
 	}
 	cancel()
@@ -249,9 +249,17 @@ func (j *darwinRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 		j.finish(false, fmt.Errorf("open macOS optical source: %w", err))
 		return
 	}
-	source, err := os.Open(rawPath)
+	sourceFile, err := os.Open(rawPath)
 	if err != nil {
 		j.finish(false, fmt.Errorf("open macOS optical source %s read-only: %w", rawPath, err))
+		return
+	}
+	source, err := recovery.NewReopenableReaderAt(sourceFile, sourceFile.Close, func() (io.ReaderAt, error) {
+		return os.Open(rawPath)
+	})
+	if err != nil {
+		_ = sourceFile.Close()
+		j.finish(false, fmt.Errorf("prepare macOS optical source %s: %w", rawPath, err))
 		return
 	}
 	defer source.Close()
@@ -292,6 +300,9 @@ func (j *darwinRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	if policyErr != nil {
 		j.finish(false, policyErr)
 		return
+	}
+	if input.RetryUnresolved {
+		policy = retryPolicyWithCurrentAttempts(policy, j.state.Extents())
 	}
 	err = runPassBasedRecoveryWithPolicy(ctx, lifecycleSource, output, input.LogicalSectorSize, input.CapacitySectors, persistence, policy, func(progress recoveryPassProgress) { j.setProgress(progress, input.LogicalSectorSize) })
 	if errors.Is(err, context.Canceled) {

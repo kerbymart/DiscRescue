@@ -24,6 +24,11 @@ func TestPolicyRegistryDefinesDistinctMethodSemantics(t *testing.T) {
 	if gentle.Fast.BlockSectors != 32 || gentle.Adaptive[0].BlockSectors != 8 || gentle.Targeted.AttemptsLimit != 3 || gentle.FinalizeUnresolved {
 		t.Fatalf("unexpected gentle policy: %+v", gentle)
 	}
+	for name, policy := range map[string]RecoveryPolicy{"fast": fast, "balanced": balanced, "gentle": gentle} {
+		if policy.ReadDeadlines.HealthySoft <= 0 || policy.ReadDeadlines.HealthyHard < policy.ReadDeadlines.HealthySoft || policy.ReadDeadlines.DamagedSoft <= 0 || policy.ReadDeadlines.DamagedHard < policy.ReadDeadlines.DamagedSoft {
+			t.Fatalf("%s policy has invalid read deadlines: %+v", name, policy.ReadDeadlines)
+		}
+	}
 }
 
 func TestPolicyRegistryRejectsUnknownMethod(t *testing.T) {

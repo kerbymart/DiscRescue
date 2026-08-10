@@ -57,7 +57,7 @@ func (j *linuxRecoveryJob) RequestStop(intent recovery.StopIntent) error {
 		return err
 	}
 	if j.lifecycle.State() == recovery.JobCancelingRead {
-		j.stopTimer = time.AfterFunc(5*time.Second, func() {
+		j.stopTimer = time.AfterFunc(recovery.DefaultStopGracePeriod, func() {
 			j.mu.Lock()
 			_ = j.lifecycle.GraceExpired()
 			j.snapshot.State = j.lifecycle.State()
@@ -90,7 +90,7 @@ func (j *linuxRecoveryJob) ForceStop() error {
 	j.mu.Unlock()
 	if source != nil {
 		if err := source.Close(); err != nil {
-			return fmt.Errorf("force stop close source: %w", err)
+			return fmt.Errorf("force stop active device request: %w", err)
 		}
 	}
 	cancel()
@@ -211,9 +211,17 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 }
 
 func (j *linuxRecoveryJob) run(ctx context.Context, input RecoveryInput) {
-	source, err := os.OpenFile(input.DevicePath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	sourceFile, err := os.OpenFile(input.DevicePath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		j.finish(false, fmt.Errorf("open Linux optical source %s read-only: %w", input.DevicePath, err))
+		return
+	}
+	source, err := recovery.NewReopenableReaderAt(sourceFile, sourceFile.Close, func() (io.ReaderAt, error) {
+		return os.OpenFile(input.DevicePath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	})
+	if err != nil {
+		_ = sourceFile.Close()
+		j.finish(false, fmt.Errorf("prepare Linux optical source %s: %w", input.DevicePath, err))
 		return
 	}
 	defer source.Close()
@@ -251,6 +259,9 @@ func (j *linuxRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	if err != nil {
 		j.finish(false, err)
 		return
+	}
+	if input.RetryUnresolved {
+		policy = retryPolicyWithCurrentAttempts(policy, j.state.Extents())
 	}
 	err = runPassBasedRecoveryWithPolicy(ctx, lifecycleSource, output, input.LogicalSectorSize, input.CapacitySectors, persistence, policy, func(progress recoveryPassProgress) { j.report(progress, input.LogicalSectorSize) })
 	if errors.Is(err, context.Canceled) {

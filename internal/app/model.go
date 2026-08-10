@@ -71,6 +71,7 @@ type JobSetupModel struct {
 	FreeSpace         string
 	MethodLabel       string
 	Method            platform.RecoveryMethod
+	RetryUnresolved   bool
 	ReadSpeed         device.ReadSpeedRequest
 	CopyLabel         string
 	ResumeReady       bool
@@ -134,20 +135,22 @@ type PriorProcessingViewModel struct {
 }
 
 type RecoveryViewModel struct {
-	Phase             string
-	ScannedSectors    uint64
-	RecoveredSectors  uint64
-	DeferredSectors   uint64
-	TotalSectors      uint64
-	UnreadableSectors uint64
-	Status            string
-	OutputPath        string
-	Elapsed           string
-	Remaining         string
-	ETA               string
-	Throughput        string
-	LastIssue         []string
-	PausePending      bool
+	Phase              string
+	ScannedSectors     uint64
+	RecoveredSectors   uint64
+	DeferredSectors    uint64
+	TotalSectors       uint64
+	UnreadableSectors  uint64
+	Status             string
+	OutputPath         string
+	Elapsed            string
+	Remaining          string
+	ETA                string
+	Throughput         string
+	LastIssue          []string
+	PausePending       bool
+	StopPending        bool
+	ForceStopAvailable bool
 }
 
 type DetailsViewModel struct {
@@ -167,20 +170,22 @@ type NoticeModel struct {
 }
 
 type ProgressSnapshot struct {
-	Phase             string
-	ScannedSectors    uint64
-	RecoveredSectors  uint64
-	DeferredSectors   uint64
-	TotalSectors      uint64
-	UnreadableSectors uint64
-	Status            string
-	Elapsed           string
-	Remaining         string
-	ETA               string
-	Throughput        string
-	LastIssue         []string
-	OutputPath        string
-	PausePending      bool
+	Phase              string
+	ScannedSectors     uint64
+	RecoveredSectors   uint64
+	DeferredSectors    uint64
+	TotalSectors       uint64
+	UnreadableSectors  uint64
+	Status             string
+	Elapsed            string
+	Remaining          string
+	ETA                string
+	Throughput         string
+	LastIssue          []string
+	OutputPath         string
+	PausePending       bool
+	StopPending        bool
+	ForceStopAvailable bool
 }
 
 type JobSummary struct {

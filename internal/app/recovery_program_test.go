@@ -23,10 +23,10 @@ func TestRenderPassRecoveryBodyDistinguishesRecoveryStates(t *testing.T) {
 	body := ansi.Strip(strings.Join(renderPassRecoveryBody(model, 76, layoutFull), "\n"))
 	for _, want := range []string{
 		"80%",
-		"Coverage 80 / 100 sectors",
-		"RECOVERED",
-		"DEFERRED",
-		"UNREADABLE",
+		"80 / 100 sectors",
+		"Recovered",
+		"Deferred",
+		"Unreadable",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("recovery body missing %q:\n%s", want, body)

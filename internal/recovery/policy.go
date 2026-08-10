@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+const (
+	defaultHealthySoftDeadline = 5 * time.Second
+	defaultHealthyHardDeadline = 30 * time.Second
+	defaultDamagedSoftDeadline = 2 * time.Second
+	defaultDamagedHardDeadline = 10 * time.Second
+)
+
 type FastPassPolicy struct {
 	Enabled      bool
 	BlockSectors uint32
@@ -57,21 +64,24 @@ func PolicyForMethod(method RecoveryMethod) (RecoveryPolicy, error) {
 			Fast:               FastPassPolicy{Enabled: true, BlockSectors: 64},
 			Trim:               TrimPassPolicy{Enabled: true, AttemptsLimit: 1},
 			Adaptive:           []AdaptivePassPolicy{{Enabled: true, BlockSectors: 16, AttemptsLimit: 2}},
-			FinalizeUnresolved: false}
+			FinalizeUnresolved: false,
+			ReadDeadlines:      defaultReadDeadlinePolicy()}
 	case RecoveryMethodBalanced:
 		policy = RecoveryPolicy{Method: method,
 			Fast:               FastPassPolicy{Enabled: true, BlockSectors: 64},
 			Trim:               TrimPassPolicy{Enabled: true, AttemptsLimit: 2},
 			Adaptive:           []AdaptivePassPolicy{{Enabled: true, BlockSectors: 16, AttemptsLimit: 3}, {Enabled: true, BlockSectors: 4, AttemptsLimit: 4}},
 			Targeted:           TargetedPassPolicy{Enabled: true, BlockSectors: 1, AttemptsLimit: 6},
-			FinalizeUnresolved: true}
+			FinalizeUnresolved: true,
+			ReadDeadlines:      defaultReadDeadlinePolicy()}
 	case RecoveryMethodGentle:
 		policy = RecoveryPolicy{Method: method,
 			Fast:               FastPassPolicy{Enabled: true, BlockSectors: 32},
 			Trim:               TrimPassPolicy{Enabled: true, AttemptsLimit: 1},
 			Adaptive:           []AdaptivePassPolicy{{Enabled: true, BlockSectors: 8, AttemptsLimit: 2}},
 			Targeted:           TargetedPassPolicy{Enabled: true, BlockSectors: 1, AttemptsLimit: 3},
-			FinalizeUnresolved: false}
+			FinalizeUnresolved: false,
+			ReadDeadlines:      defaultReadDeadlinePolicy()}
 	default:
 		return RecoveryPolicy{}, fmt.Errorf("policy for method: unknown recovery method %q", method)
 	}
@@ -107,6 +117,31 @@ func (p RecoveryPolicy) Validate() error {
 		if last.Enabled && p.Targeted.BlockSectors > last.BlockSectors {
 			return fmt.Errorf("validate recovery policy: targeted block size exceeds final adaptive block size")
 		}
+	}
+	if err := p.ReadDeadlines.Validate(); err != nil {
+		return fmt.Errorf("validate recovery policy: %w", err)
+	}
+	return nil
+}
+
+func defaultReadDeadlinePolicy() ReadDeadlinePolicy {
+	return ReadDeadlinePolicy{
+		HealthySoft: defaultHealthySoftDeadline,
+		HealthyHard: defaultHealthyHardDeadline,
+		DamagedSoft: defaultDamagedSoftDeadline,
+		DamagedHard: defaultDamagedHardDeadline,
+	}
+}
+
+func (p ReadDeadlinePolicy) Validate() error {
+	if p.HealthySoft <= 0 || p.HealthyHard <= 0 || p.DamagedSoft <= 0 || p.DamagedHard <= 0 {
+		return fmt.Errorf("read deadlines must all be positive")
+	}
+	if p.HealthySoft > p.HealthyHard {
+		return fmt.Errorf("healthy soft deadline exceeds hard deadline")
+	}
+	if p.DamagedSoft > p.DamagedHard {
+		return fmt.Errorf("damaged soft deadline exceeds hard deadline")
 	}
 	return nil
 }
