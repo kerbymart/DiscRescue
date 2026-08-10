@@ -7,9 +7,10 @@ import (
 )
 
 // KeyMapV2 is the authoritative interactive vocabulary for the TUI. The
-// legacy string map remains available to keep the transition incremental.
+// legacy string map is derived from these bindings for transition code.
 type KeyMapV2 struct {
 	Up, Down, PageUp, PageDown, Select, Tab, Back, Quit, Details, Advanced, Pause, Force key.Binding
+	Refresh, Eject, ForceEject                                                           key.Binding
 }
 
 func NewKeyMapV2() KeyMapV2 {
@@ -20,6 +21,7 @@ func NewKeyMapV2() KeyMapV2 {
 		Up: bind([]string{"up", "k"}, "move up"), Down: bind([]string{"down", "j"}, "move down"), PageUp: bind([]string{"pgup"}, "page up"), PageDown: bind([]string{"pgdown"}, "page down"),
 		Select: bind([]string{"enter"}, "select"), Tab: bind([]string{"tab"}, "next field"), Back: bind([]string{"esc"}, "back"), Quit: bind([]string{"q"}, "quit"),
 		Details: bind([]string{"d"}, "details"), Advanced: bind([]string{"a"}, "advanced"), Pause: bind([]string{"space"}, "pause"), Force: bind([]string{"ctrl+c"}, "stop now"),
+		Refresh: bind([]string{"r"}, "refresh drives"), Eject: bind([]string{"e"}, "eject"), ForceEject: bind([]string{"f"}, "force eject"),
 	}
 }
 
@@ -51,7 +53,11 @@ func pageHelp(page Page) pageHelpMap {
 	common := []key.Binding{k.Up, k.Down, k.Select, k.Back, k.Quit}
 	switch page {
 	case PageDiscover:
-		return pageHelpMap{groups: [][]key.Binding{{k.Quit}}}
+		retry := k.Select
+		retry.SetHelp("enter", "retry discovery")
+		return pageHelpMap{groups: [][]key.Binding{{retry, k.Quit}}}
+	case PageNoDrives, PageDiscoveryError, PageInspectingMedia:
+		return pageHelpMap{groups: [][]key.Binding{{k.Select, k.Back, k.Quit}}}
 	case PageRecovering:
 		stop := k.Quit
 		stop.SetHelp("q", "stop")
@@ -62,15 +68,18 @@ func pageHelp(page Page) pageHelpMap {
 		return pageHelpMap{groups: [][]key.Binding{{k.Details, stop}}}
 	case PageDetails:
 		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.PageUp, k.PageDown, k.Back}}}
+	case PageChooseDrive:
+		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, k.Refresh, k.Eject, k.ForceEject, k.Back, k.Quit}}}
+	case PageChooseAction:
+		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, k.Advanced, k.Back, k.Quit}}}
+	case PagePriorProcessing, PageReview, PageResumeJobs, PageHistory, PageSummary:
+		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, k.Back, k.Quit}}}
 	case PageChooseOutput:
 		edit := k.Select
 		edit.SetHelp("enter", "edit / accept")
-		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, edit, k.Tab, k.Back}}}
-	case PageChooseDrive:
-		refresh := key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh drives"))
-		eject := key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "eject"))
-		force := key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "force eject"))
-		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, refresh, eject, force, k.Back, k.Quit}}}
+		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, edit, k.Tab, k.Back, k.Quit}}}
+	case PagePaused:
+		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, k.Details, k.Back, k.Quit}}}
 	case PageEjectConfirm:
 		return pageHelpMap{groups: [][]key.Binding{{k.Up, k.Down, k.Select, k.Back}}}
 	default:
