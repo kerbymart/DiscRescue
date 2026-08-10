@@ -18,6 +18,24 @@ violet-to-magenta progress, muted empty rails, bright selected rows, rounded
 shell framing, and explicit text/markers for deferred and unreadable sectors.
 Color is never the sole status signal.
 
+## Completion contracts
+
+`internal/app/bindings.go` is the authoritative key vocabulary. `DefaultKeys`
+is derived from those Bubbles bindings, and the footer renders the same
+page-specific binding groups. A visible action therefore cannot acquire a
+different help label without changing the binding source.
+
+The spinner is also state-transition owned. Entering discovery, media
+inspection, or pause marks a restart boundary; `ProgramModel` schedules the
+next spinner tick alongside the operation effect. A tick received on a
+non-loading page does not permanently disable later loading screens.
+
+Lists own keyboard navigation, one focused text input owns output editing at a
+time, and the Details viewport owns scrolling. The compact Details fallback
+renders a bounded preview when the viewport frame cannot fit, preserving the
+shell height contract at 40x12. Responsive tests cover 120x36, 80x24, 60x18,
+and 40x12 with long Unicode content and monochrome styling.
+
 Sources:
 
 - <https://github.com/charmbracelet/bubbletea/tree/main/examples>
