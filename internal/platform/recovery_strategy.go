@@ -5,19 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 
 	"discrescue/internal/mapfile"
 	"discrescue/internal/recovery"
 )
 
 const (
-	fastPassSectors             = uint64(64)
-	maxFastConsecutiveFailures  = 8
-	maxRetryConsecutiveFailures = 128
-	maxTargetedAttempts         = uint16(6)
+	fastPassSectors     = uint64(64)
+	maxTargetedAttempts = uint16(6)
 )
-
-var errRecoveryConsecutiveFailures = errors.New("recovery stopped after too many consecutive read failures")
 
 type recoveryExtentStore interface {
 	Extents() []mapfile.Extent
@@ -52,11 +49,6 @@ type recoveryPassProgress struct {
 	DeferredSectors   uint64
 	UnreadableSectors uint64
 	LastIssue         []string
-}
-
-type retryBudget struct {
-	consecutiveFailures    int
-	maxConsecutiveFailures int
 }
 
 func runPassBasedRecovery(
@@ -104,7 +96,7 @@ func runPassBasedRecoveryWithPolicy(
 	}
 
 	if policy.Fast.Enabled {
-		if err := runFastAcquisitionPass(ctx, source, output, logicalSectorSize, capacitySectors, store, policy.Fast.BlockSectors, policy.Fast.MaxConsecutiveFailures, report); err != nil {
+		if err := runFastAcquisitionPass(ctx, source, output, logicalSectorSize, capacitySectors, store, policy.Fast.BlockSectors, report); err != nil {
 			return err
 		}
 	}
@@ -119,9 +111,8 @@ func runPassBasedRecoveryWithPolicy(
 	if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
 		return err
 	}
-	budget := &retryBudget{maxConsecutiveFailures: int(policy.RetryMaxConsecutiveFailures)}
 	if policy.Trim.Enabled {
-		if err := runTrimPass(ctx, source, output, logicalSectorSize, store, budget, policy.Trim.AttemptsLimit, report); err != nil {
+		if err := runTrimPass(ctx, source, output, logicalSectorSize, store, policy.Trim.AttemptsLimit, report); err != nil {
 			return err
 		}
 	}
@@ -132,7 +123,7 @@ func runPassBasedRecoveryWithPolicy(
 		if !adaptive.Enabled {
 			continue
 		}
-		if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, uint64(adaptive.BlockSectors), adaptive.AttemptsLimit, fmt.Sprintf("Adaptive recovery (%d-sector reads)", adaptive.BlockSectors), budget, report); err != nil {
+		if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, uint64(adaptive.BlockSectors), adaptive.AttemptsLimit, fmt.Sprintf("Adaptive recovery (%d-sector reads)", adaptive.BlockSectors), report); err != nil {
 			return err
 		}
 		if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
@@ -140,7 +131,7 @@ func runPassBasedRecoveryWithPolicy(
 		}
 	}
 	if policy.Targeted.Enabled {
-		if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, uint64(policy.Targeted.BlockSectors), policy.Targeted.AttemptsLimit, "Targeted retry", budget, report); err != nil {
+		if err := runAdaptivePass(ctx, source, output, logicalSectorSize, store, uint64(policy.Targeted.BlockSectors), policy.Targeted.AttemptsLimit, "Targeted retry", report); err != nil {
 			return err
 		}
 		if err := forceRecoveryCheckpoint(store, CheckpointReasonPassTransition); err != nil {
@@ -171,15 +162,13 @@ func runFastAcquisitionPass(
 	capacitySectors uint64,
 	store recoveryExtentStore,
 	blockSectors uint32,
-	maxFailures uint32,
 	report func(recoveryPassProgress),
 ) error {
-	if blockSectors == 0 || maxFailures == 0 {
+	if blockSectors == 0 {
 		return fmt.Errorf("run fast acquisition pass: invalid policy limits")
 	}
 	sectorSize := uint64(logicalSectorSize)
 	buffer := make([]byte, uint64(blockSectors)*sectorSize)
-	consecutiveFailures := 0
 
 	reportRecoveryProgress(report, "Fast acquisition", progressExtents(store), nil)
 	for lba := uint64(0); lba < capacitySectors; {
@@ -220,31 +209,32 @@ func runFastAcquisitionPass(
 			}); err != nil {
 				return err
 			}
-			consecutiveFailures = 0
 			reportRecoveryProgress(report, "Fast acquisition", progressExtents(store), nil)
 			lba += sectorsToRead
 			continue
 		}
 
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := fatalRecoveryReadError(readErr); err != nil {
+			return fmt.Errorf("read fast acquisition range [%d,%d): %w", lba, lba+sectorsToRead, err)
+		}
 		deferred := mapfile.Extent{
 			StartLBA:   lba,
 			Sectors:    uint32(sectorsToRead),
-			State:      mapfile.SectorStateUnknown,
+			State:      mapfile.SectorStateIOError,
 			Confidence: mapfile.ConfidenceNone,
 			Attempts:   1,
 		}
 		if err := store.ApplyExtent(deferred); err != nil {
 			return fmt.Errorf("defer failed range [%d,%d): %w", lba, lba+sectorsToRead, err)
 		}
-		consecutiveFailures++
 		reportRecoveryProgress(report, "Fast acquisition", progressExtents(store), []string{
-			fmt.Sprintf("Deferred LBA %d-%d after the first block read failed.", lba, lba+sectorsToRead-1),
+			readFailureDetail("Deferred", lba, sectorsToRead, n, readSize, readErr),
 			"Continuing forward; smaller bounded reads will revisit this range later.",
 		})
 		lba += sectorsToRead
-		if uint32(consecutiveFailures) >= maxFailures {
-			return fmt.Errorf("%w during fast acquisition (%d failed blocks)", errRecoveryConsecutiveFailures, consecutiveFailures)
-		}
 	}
 	return nil
 }
@@ -255,7 +245,6 @@ func runTrimPass(
 	output recoverySyncWriter,
 	logicalSectorSize uint32,
 	store recoveryExtentStore,
-	budget *retryBudget,
 	attemptLimit uint16,
 	report func(recoveryPassProgress),
 ) error {
@@ -274,7 +263,7 @@ func runTrimPass(
 			if !ok || !isRetryableState(current.State) || current.Attempts >= attemptLimit {
 				continue
 			}
-			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, 1, budget, "Trimming deferred ranges", report); err != nil {
+			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, 1, "Trimming deferred ranges", report); err != nil {
 				return err
 			}
 		}
@@ -291,7 +280,6 @@ func runAdaptivePass(
 	blockSectors uint64,
 	attemptLimit uint16,
 	passName string,
-	budget *retryBudget,
 	report func(recoveryPassProgress),
 ) error {
 	reportRecoveryProgress(report, passName, progressExtents(store), nil)
@@ -315,7 +303,7 @@ func runAdaptivePass(
 			if remaining := current.EndLBA() - lba; remaining < sectorsToRead {
 				sectorsToRead = remaining
 			}
-			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, sectorsToRead, budget, passName, report); err != nil {
+			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, sectorsToRead, passName, report); err != nil {
 				return err
 			}
 			lba += sectorsToRead
@@ -332,7 +320,6 @@ func attemptDeferredBlock(
 	store recoveryExtentStore,
 	lba uint64,
 	sectorsToRead uint64,
-	budget *retryBudget,
 	passName string,
 	report func(recoveryPassProgress),
 ) error {
@@ -377,25 +364,50 @@ func attemptDeferredBlock(
 		}); err != nil {
 			return err
 		}
-		budget.consecutiveFailures = 0
 		reportRecoveryProgress(report, passName, progressExtents(store), nil)
 		return nil
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	deferred := queued
-	deferred.State = mapfile.SectorStateUnknown
+	if err := fatalRecoveryReadError(readErr); err != nil {
+		return fmt.Errorf("read %s range [%d,%d): %w", passName, lba, lba+sectorsToRead, err)
+	}
+	deferred.State = mapfile.SectorStateIOError
 	if err := store.ApplyExtent(deferred); err != nil {
 		return fmt.Errorf("restore deferred range [%d,%d): %w", lba, lba+sectorsToRead, err)
 	}
-	budget.consecutiveFailures++
 	reportRecoveryProgress(report, passName, progressExtents(store), []string{
-		fmt.Sprintf("Retry %d failed for LBA %d-%d.", attempts, lba, lba+sectorsToRead-1),
+		fmt.Sprintf("Retry %d: %s", attempts, readFailureDetail("failed", lba, sectorsToRead, n, readSize, readErr)),
 		"The range remains deferred until its bounded retry budget is exhausted.",
 	})
-	if budget.maxConsecutiveFailures > 0 && uint32(budget.consecutiveFailures) >= uint32(budget.maxConsecutiveFailures) {
-		return fmt.Errorf("%w during error recovery (%d failed reads)", errRecoveryConsecutiveFailures, budget.consecutiveFailures)
+	return nil
+}
+
+func fatalRecoveryReadError(readErr error) error {
+	if readErr == nil {
+		return nil
+	}
+	if errors.Is(readErr, recovery.ErrStopRequested) {
+		return context.Canceled
+	}
+	if errors.Is(readErr, io.ErrClosedPipe) || errors.Is(readErr, io.ErrUnexpectedEOF) {
+		return nil
+	}
+	if errors.Is(readErr, fs.ErrPermission) || errors.Is(readErr, fs.ErrNotExist) || platformFatalSourceReadError(readErr) {
+		return readErr
 	}
 	return nil
+}
+
+func readFailureDetail(action string, lba, sectors uint64, n, expected int, readErr error) string {
+	rangeText := fmt.Sprintf("LBA %d-%d", lba, lba+sectors-1)
+	if readErr != nil {
+		return fmt.Sprintf("%s %s after read error: %v.", action, rangeText, readErr)
+	}
+	return fmt.Sprintf("%s %s after a short read (%d of %d bytes).", action, rangeText, n, expected)
 }
 
 func persistRecoveredRead(output recoverySyncWriter, store recoveryExtentStore, data []byte, offset int64, extent mapfile.Extent) error {
