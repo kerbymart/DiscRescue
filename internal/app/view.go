@@ -963,48 +963,9 @@ func contentWidth(width int) int {
 }
 
 func renderFooter(page Page, width int, tier layoutTier) string {
-	var footer string
-	switch page {
-	case PageDiscover:
-		footer = "q quit"
-	case PageChooseOutput:
-		if tier == layoutCompact {
-			footer = "j/k move  enter edit/select"
-		} else {
-			footer = "j/k move  -  enter edit/select  -  type edit  -  backspace delete  -  tab switch field  -  esc back"
-		}
-	case PageRecovering:
-		if tier == layoutCompact {
-			footer = "space pause  d details"
-		} else {
-			footer = "space pause  -  d details  -  q stop"
-		}
-	case PagePausing:
-		footer = "d details  -  q stop"
-	case PagePaused:
-		footer = "j/k select  -  enter choose  -  d details"
-	case PageStopConfirm:
-		footer = "j/k select  -  enter choose  -  esc continue"
-	case PageEjectConfirm:
-		footer = "j/k select  -  enter choose  -  esc cancel"
-	case PageResumeJobs:
-		if tier == layoutCompact {
-			footer = "enter select  esc back"
-		} else {
-			footer = "j/k move  -  enter select  -  esc back"
-		}
-	case PageDetails:
-		footer = "esc back  -  up/down scroll"
-	case PageNoDrives, PageDiscoveryError, PageInspectingMedia:
-		footer = "enter retry  -  esc back  -  q quit"
-	default:
-		if tier == layoutCompact {
-			footer = "enter select  esc back"
-		} else {
-			footer = "j/k move  enter select  esc back  q quit"
-		}
-	}
-	return fitToWidth(footer, width)
+	helpView := FooterHelp(tier == layoutFull)
+	helpView.SetWidth(width)
+	return fitToWidth(helpView.View(pageHelp(page)), width)
 }
 
 func showStatusLine(page Page, tier layoutTier) bool {

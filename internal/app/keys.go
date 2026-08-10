@@ -16,18 +16,10 @@ type KeyMap struct {
 }
 
 func DefaultKeys() KeyMap {
+	k := NewKeyMapV2()
 	return KeyMap{
-		Up:         []string{"up", "k"},
-		Down:       []string{"down", "j"},
-		Select:     []string{"enter"},
-		Back:       []string{"esc"},
-		Quit:       []string{"q"},
-		Details:    []string{"d"},
-		Advanced:   []string{"a"},
-		Pause:      []string{"space"},
-		Force:      []string{"ctrl+c"},
-		Refresh:    []string{"r"},
-		Eject:      []string{"e"},
-		ForceEject: []string{"f"},
+		Up: k.Up.Keys(), Down: k.Down.Keys(), Select: k.Select.Keys(), Back: k.Back.Keys(), Quit: k.Quit.Keys(),
+		Details: k.Details.Keys(), Advanced: k.Advanced.Keys(), Pause: k.Pause.Keys(), Force: k.Force.Keys(),
+		Refresh: k.Refresh.Keys(), Eject: k.Eject.Keys(), ForceEject: k.ForceEject.Keys(),
 	}
 }
