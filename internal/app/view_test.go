@@ -474,6 +474,28 @@ func TestViewRecoveringUsesUnicodeProgressBarWhenAllowed(t *testing.T) {
 	}
 }
 
+func TestRecoveryProgressShowsThickOverallCoverage(t *testing.T) {
+	model := NewModel()
+	model.Width = 80
+	model.Height = 24
+	model.Page = PageRecovering
+	model.Recovery = RecoveryViewModel{
+		RecoveredSectors:  40,
+		DeferredSectors:   20,
+		UnreadableSectors: 10,
+		ScannedSectors:    70,
+		TotalSectors:      100,
+	}
+
+	progress := ansi.Strip(recoveryProgressLine(model, 70, layoutMedium))
+	if strings.Count(progress, "\n") != 2 {
+		t.Fatalf("expected two-row progress rail and coverage label, got %q", progress)
+	}
+	if !strings.Contains(progress, "Coverage 70 / 100 sectors · 70%") {
+		t.Fatalf("expected overall coverage label, got %q", progress)
+	}
+}
+
 func TestViewRecoveringShowsEstimatingTextWhenETANotReady(t *testing.T) {
 	model := NewModel()
 	model.Width = 80

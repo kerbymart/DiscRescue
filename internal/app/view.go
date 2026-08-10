@@ -660,7 +660,7 @@ func renderRecoveryDashboard(m Model, width int, tier layoutTier) []string {
 		}
 		lines := []string{theme.Accent.Render(phase), fitToWidth(theme.Muted.Render(status), width), recoveryProgressLine(m, width, tier)}
 		if m.Recovery.TotalSectors > 0 {
-			lines = append(lines, fmt.Sprintf("Scanned      %s of %s sectors", formatCount(m.Recovery.ScannedSectors), formatCount(m.Recovery.TotalSectors)))
+			lines = append(lines, fmt.Sprintf("Coverage     %s of %s sectors", formatCount(recoveryCoveredSectors(m)), formatCount(m.Recovery.TotalSectors)))
 		}
 		lines = append(lines,
 			fmt.Sprintf("Recovered    %s sectors", formatCount(m.Recovery.RecoveredSectors)),
@@ -681,7 +681,7 @@ func renderRecoveryDashboard(m Model, width int, tier layoutTier) []string {
 
 	lines := []string{theme.Badge.Render(phase), theme.Muted.Render(status), "", recoveryProgressLine(m, width, tier)}
 	if m.Recovery.TotalSectors > 0 {
-		lines = append(lines, theme.Muted.Render(fmt.Sprintf("%s / %s sectors covered", formatCount(m.Recovery.ScannedSectors), formatCount(m.Recovery.TotalSectors))))
+		lines = append(lines, theme.Muted.Render(fmt.Sprintf("Coverage  %s / %s sectors", formatCount(recoveryCoveredSectors(m)), formatCount(m.Recovery.TotalSectors))))
 	}
 	lines = append(lines, "")
 	metrics := [][2]string{
@@ -719,19 +719,19 @@ func recoveryProgressView(m Model, width int) string {
 	}
 	p := progress.New(
 		progress.WithoutPercentage(),
-		progress.WithFillCharacters('━', '┈'),
+		progress.WithFillCharacters('█', '░'),
 	)
 	if !m.Monochrome {
 		p = progress.New(
 			progress.WithoutPercentage(),
-			progress.WithFillCharacters('━', '┈'),
+			progress.WithFillCharacters('█', '░'),
 			progress.WithColors(lipgloss.Color("#6155F5"), lipgloss.Color("#FF4FD8")),
 		)
 	}
 	p.SetWidth(barWidth)
 	percent := 0.0
 	if m.Recovery.TotalSectors > 0 {
-		percent = float64(m.Recovery.ScannedSectors) / float64(m.Recovery.TotalSectors)
+		percent = float64(recoveryCoveredSectors(m)) / float64(m.Recovery.TotalSectors)
 		if percent > 1 {
 			percent = 1
 		}
@@ -740,30 +740,35 @@ func recoveryProgressView(m Model, width int) string {
 }
 
 func recoveryProgressLine(m Model, width int, tier layoutTier) string {
-	// Older snapshots can contain only cumulative recovery counts. Keep their
-	// established bar until pass coverage is known; active recovery snapshots
-	// always provide ScannedSectors and use the new thin gradient rail.
-	if tier == layoutCompact || m.Monochrome || (m.Recovery.ScannedSectors == 0 && m.Recovery.RecoveredSectors > 0) {
-		bar := progressBarFor(m, tier)
-		percent := 0
-		if m.Recovery.TotalSectors > 0 {
-			covered := m.Recovery.ScannedSectors
-			if covered == 0 {
-				covered = m.Recovery.RecoveredSectors
-			}
-			percent = int((covered * 100) / m.Recovery.TotalSectors)
-		}
-		return fitToWidth(fmt.Sprintf("%s %d%%", bar, percent), width)
-	}
+	covered := recoveryCoveredSectors(m)
 	percent := 0
 	if m.Recovery.TotalSectors > 0 {
-		percent = int((m.Recovery.ScannedSectors * 100) / m.Recovery.TotalSectors)
+		percent = int((covered * 100) / m.Recovery.TotalSectors)
 		if percent > 100 {
 			percent = 100
 		}
 	}
+	if tier == layoutCompact || m.Height < 24 || m.Monochrome || (m.Recovery.ScannedSectors == 0 && m.Recovery.RecoveredSectors > 0) {
+		bar := progressBarFor(m, tier)
+		return fitToWidth(fmt.Sprintf("%s %d%% coverage", bar, percent), width)
+	}
 	bar := recoveryProgressView(m, width)
-	return lipgloss.JoinHorizontal(lipgloss.Bottom, bar, " ", fmt.Sprintf("%d%%", percent))
+	label := fmt.Sprintf("Coverage %s / %s sectors · %d%%", formatCount(covered), formatCount(m.Recovery.TotalSectors), percent)
+	return bar + "\n" + bar + "\n" + fitToWidth(label, width)
+}
+
+func recoveryCoveredSectors(m Model) uint64 {
+	if m.Recovery.TotalSectors == 0 {
+		return 0
+	}
+	covered := m.Recovery.RecoveredSectors + m.Recovery.DeferredSectors + m.Recovery.UnreadableSectors
+	if m.Recovery.ScannedSectors > covered {
+		covered = m.Recovery.ScannedSectors
+	}
+	if covered > m.Recovery.TotalSectors {
+		return m.Recovery.TotalSectors
+	}
+	return covered
 }
 
 func renderSummaryPage(m Model, width int, tier layoutTier) []string {
@@ -1081,14 +1086,14 @@ func progressBarFor(m Model, tier layoutTier) string {
 	}
 
 	if m.Monochrome || tier == layoutCompact {
-		filled := int((m.Recovery.RecoveredSectors * uint64(width)) / m.Recovery.TotalSectors)
+		filled := int((recoveryCoveredSectors(m) * uint64(width)) / m.Recovery.TotalSectors)
 		if filled > width {
 			filled = width
 		}
 		return "[" + strings.Repeat("=", filled) + strings.Repeat(".", width-filled) + "]"
 	}
 
-	return renderUnicodeProgressBar(width, m.Recovery.RecoveredSectors, m.Recovery.TotalSectors)
+	return renderUnicodeProgressBar(width, recoveryCoveredSectors(m), m.Recovery.TotalSectors)
 }
 
 func renderUnicodeProgressBar(width int, recovered, total uint64) string {
