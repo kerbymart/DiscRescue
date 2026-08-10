@@ -249,9 +249,17 @@ func (j *darwinRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 		j.finish(false, fmt.Errorf("open macOS optical source: %w", err))
 		return
 	}
-	source, err := os.Open(rawPath)
+	sourceFile, err := os.Open(rawPath)
 	if err != nil {
 		j.finish(false, fmt.Errorf("open macOS optical source %s read-only: %w", rawPath, err))
+		return
+	}
+	source, err := recovery.NewReopenableReaderAt(sourceFile, sourceFile.Close, func() (io.ReaderAt, error) {
+		return os.Open(rawPath)
+	})
+	if err != nil {
+		_ = sourceFile.Close()
+		j.finish(false, fmt.Errorf("prepare macOS optical source %s: %w", rawPath, err))
 		return
 	}
 	defer source.Close()

@@ -256,9 +256,17 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 
 func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 	rawPath := rawVolumePath(input.DevicePath)
-	source, err := os.Open(rawPath)
+	sourceFile, err := os.Open(rawPath)
 	if err != nil {
 		j.finish(false, fmt.Errorf("open source volume %s: %w", rawPath, err))
+		return
+	}
+	source, err := recovery.NewReopenableReaderAt(sourceFile, sourceFile.Close, func() (io.ReaderAt, error) {
+		return os.Open(rawPath)
+	})
+	if err != nil {
+		_ = sourceFile.Close()
+		j.finish(false, fmt.Errorf("prepare source volume %s: %w", rawPath, err))
 		return
 	}
 	defer source.Close()

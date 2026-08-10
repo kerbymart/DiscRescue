@@ -211,9 +211,17 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 }
 
 func (j *linuxRecoveryJob) run(ctx context.Context, input RecoveryInput) {
-	source, err := os.OpenFile(input.DevicePath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	sourceFile, err := os.OpenFile(input.DevicePath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		j.finish(false, fmt.Errorf("open Linux optical source %s read-only: %w", input.DevicePath, err))
+		return
+	}
+	source, err := recovery.NewReopenableReaderAt(sourceFile, sourceFile.Close, func() (io.ReaderAt, error) {
+		return os.OpenFile(input.DevicePath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	})
+	if err != nil {
+		_ = sourceFile.Close()
+		j.finish(false, fmt.Errorf("prepare Linux optical source %s: %w", input.DevicePath, err))
 		return
 	}
 	defer source.Close()
