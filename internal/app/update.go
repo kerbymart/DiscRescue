@@ -100,7 +100,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		previousSelection := m.SelectedDrive
 		discoveredDevices := typed.Devices
 		preserveEjectedDrive := m.PreserveEjectedDrive
+		if preserveEjectedDrive && previousSelection.Path == "" {
+			previousSelection = m.EjectedDrive
+		}
 		m.PreserveEjectedDrive = false
+		m.EjectedDrive = DeviceSummary{}
 		if len(discoveredDevices) == 0 && preserveEjectedDrive && previousSelection.Path != "" {
 			drive := previousSelection
 			drive.Status = "drive available; media ejected"
@@ -376,6 +380,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.PendingEject = device.EjectRequest{}
 		m.PreserveEjectedDrive = true
+		m.EjectedDrive = m.ejectTargetDrive()
 		m.Notice = &NoticeModel{Text: firstNonEmpty(typed.Result.Detail, "Eject request accepted; refreshing drive state."), Severity: SeverityInfo}
 		return m.beginDiscovery()
 	case EffectRequestedMsg:
