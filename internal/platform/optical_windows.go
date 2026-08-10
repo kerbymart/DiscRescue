@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -90,7 +91,7 @@ func identifyWindowsOpticalMedia(path string) (OpticalMedia, error) {
 
 	rawInfo, err := queryWindowsRawOpticalMedia(root)
 	if err != nil {
-		return OpticalMedia{}, fmt.Errorf("inspect media: %w", err)
+		return OpticalMedia{}, windowsMediaProbeError(root, err)
 	}
 
 	label, fsName, totalBytes, err := windowsVolumeInfo(root)
@@ -126,6 +127,23 @@ func identifyWindowsOpticalMedia(path string) (OpticalMedia, error) {
 		Recoverable:         true,
 		RecoverabilityNote:  "",
 	}, nil
+}
+
+func windowsMediaProbeError(path string, err error) error {
+	state := MediaProbeFailure
+	switch {
+	case errors.Is(err, windows.ERROR_NO_MEDIA_IN_DRIVE):
+		state = MediaProbeNoMedia
+	case errors.Is(err, windows.ERROR_NOT_READY):
+		state = MediaProbeNotReady
+	case errors.Is(err, windows.ERROR_ACCESS_DENIED):
+		state = MediaProbePermission
+	case errors.Is(err, windows.ERROR_BUSY), errors.Is(err, windows.ERROR_BUSY_DRIVE):
+		state = MediaProbeBusy
+	case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, windows.ERROR_PATH_NOT_FOUND), errors.Is(err, windows.ERROR_DEVICE_NOT_CONNECTED):
+		state = MediaProbeUnavailable
+	}
+	return &MediaInspectionError{Path: path, Operation: "open or inspect", State: state, Err: err}
 }
 
 func queryWindowsRawOpticalMedia(root string) (rawOpticalMediaInfo, error) {
