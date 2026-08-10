@@ -61,3 +61,27 @@ func TestDarwinDriveStatusKeepsKnownDriveWhenMediaIsAbsent(t *testing.T) {
 		t.Fatalf("unexpected status: %q", status)
 	}
 }
+
+func TestAutomaticDarwinDiscoverySkipsUnverifiedCandidates(t *testing.T) {
+	for _, probeErr := range []error{
+		darwinProbeError("/dev/rdisk0", "open", syscall.EACCES),
+		darwinProbeError("/dev/rdisk1", "DKIOCGETBLOCKSIZE", syscall.EIO),
+	} {
+		if shouldRetainDarwinCandidate(false, probeErr) {
+			t.Fatalf("automatic discovery retained unverified candidate: %v", probeErr)
+		}
+	}
+}
+
+func TestConfiguredDarwinOpticalDeviceRetainsActionableProbeFailure(t *testing.T) {
+	err := darwinProbeError("/dev/rdisk4", "open", syscall.EACCES)
+	if !shouldRetainDarwinCandidate(true, err) {
+		t.Fatal("configured optical device lost its actionable access failure")
+	}
+}
+
+func TestDarwinDiscoveryRetainsSuccessfulNoMediaProbe(t *testing.T) {
+	if !shouldRetainDarwinCandidate(false, nil) {
+		t.Fatal("successful no-media probe was not retained")
+	}
+}
