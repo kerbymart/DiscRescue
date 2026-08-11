@@ -97,12 +97,12 @@ func (j *mountedRecoveryJob) ForceStop() error {
 	cancel := j.cancel
 	source := j.source
 	j.mu.Unlock()
-	if source != nil {
-		if err := source.Close(); err != nil {
+	cancel()
+	if interruptor, ok := source.(recovery.ReadInterruptor); ok {
+		if err := interruptor.Interrupt(); err != nil && !errors.Is(err, io.ErrClosedPipe) {
 			return fmt.Errorf("force stop active device request: %w", err)
 		}
 	}
-	cancel()
 	return nil
 }
 
