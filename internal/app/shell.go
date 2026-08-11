@@ -68,6 +68,9 @@ func shellHeader(theme Theme, width int) string {
 func pageSubtitle(page Page) string {
 	switch page {
 	case PageDiscover, PageNoDrives, PageDiscoveryError, PageChooseDrive:
+		if page == PageNoDrives {
+			return "Connect or insert a readable optical drive, then retry discovery."
+		}
 		return "Select a readable optical drive to begin."
 	case PageInspectingMedia, PagePriorProcessing:
 		return "Identify the contents before choosing a safe action."
@@ -100,7 +103,7 @@ func renderNotice(theme Theme, notice NoticeModel, width int) string {
 	case SeverityError:
 		marker, style = "×", theme.Danger
 	}
-	text := marker + " " + notice.Text
+	text := marker + " " + notice.String()
 	return style.MaxWidth(width).Render(text)
 }
 

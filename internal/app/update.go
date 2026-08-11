@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -88,13 +87,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if typed.Err != nil {
-			m.LastError = typed.Err
 			m.Page = PageDiscoveryError
-			if errors.Is(typed.Err, platform.ErrUnsupportedEnvironment) {
-				m.Notice = &NoticeModel{Text: "Optical drive discovery is not supported in this environment.", Severity: SeverityWarning}
-				return m, nil
-			}
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityError}
+			m.setErrorNotice(contextDiscovery, typed.Err)
 			return m, nil
 		}
 		previousSelection := m.SelectedDrive
@@ -140,9 +134,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if typed.Err != nil {
-			m.LastError = typed.Err
 			m.Page = PageInspectingMedia
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityError}
+			m.setErrorNotice(contextMedia, typed.Err)
 			return m, nil
 		}
 		m.Identity = typed.Identity
@@ -174,8 +167,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if typed.Err != nil {
-			m.LastError = typed.Err
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			m.setErrorNotice(contextHistory, typed.Err)
 			m.Page = PageChooseAction
 			m.Cursor = 0
 			return m, nil
@@ -199,10 +191,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if typed.Err != nil {
-			m.LastError = typed.Err
 			m.HistoryItems = nil
 			m.Page = PageChooseAction
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			m.setErrorNotice(contextHistory, typed.Err)
 			return m, nil
 		}
 		m.HistoryItems = append([]ProcessedMediaViewModel(nil), typed.Items...)
@@ -221,13 +212,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if typed.Err != nil {
-			m.LastError = typed.Err
 			m.Setup.ResumeReady = false
 			m.Setup.ResumeMapPath = ""
 			m.Setup.ResumeDetail = ""
 			m.Setup.FreeSpace = "Unable to check free space for the selected target"
 			m.Page = PageChooseOutput
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			m.setErrorNotice(contextTarget, typed.Err)
 			return m, nil
 		}
 		m.Setup.FreeSpace = describeTargetSpace(typed.Status)
@@ -262,10 +252,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if typed.Err != nil {
-			m.LastError = typed.Err
 			m.ResumeJobs = nil
 			m.Page = PageChooseAction
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			m.setErrorNotice(contextHistory, typed.Err)
 			return m, nil
 		}
 		m.ResumeJobs = append([]ResumableJobViewModel(nil), typed.Jobs...)
@@ -311,10 +300,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Notice = &NoticeModel{Text: "Progress saved. Continue recovery when you are ready.", Severity: SeverityInfo}
 		return m, nil
 	case JobStartFailedMsg:
-		m.LastError = typed.Err
 		m.Page = PageChooseOutput
 		if typed.Err != nil {
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			m.setErrorNotice(contextRecovery, typed.Err)
 		}
 		return m, nil
 	case ProgressMsg:
@@ -340,6 +328,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Notice = nil
 		return m, nil
 	case StatusMsg:
+		if typed.Err != nil {
+			context := typed.Context
+			if context == "" {
+				context = contextRecovery
+			}
+			m.setErrorNotice(context, typed.Err)
+			return m, nil
+		}
 		m.Notice = &NoticeModel{Text: typed.Text, Severity: typed.Severity}
 		return m, nil
 	case JobCheckpointedMsg:
@@ -350,8 +346,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case JobStoppedMsg:
 		if typed.Err != nil {
-			m.LastError = typed.Err
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityError}
+			m.setErrorNotice(contextRecovery, typed.Err)
 		}
 		m.Page = PageSummary
 		m.Summary = typed.Summary
@@ -379,16 +374,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case FatalMsg:
-		m.LastError = typed.Err
 		if typed.Err != nil {
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityError}
+			m.setErrorNotice(contextRecovery, typed.Err)
 		}
 		m.Page = PageSummary
 		return m, nil
 	case EjectCompletedMsg:
 		if typed.Err != nil {
-			m.LastError = typed.Err
-			m.Notice = &NoticeModel{Text: typed.Err.Error(), Severity: SeverityWarning}
+			if typed.Request.Mode == device.EjectNormal {
+				m.setErrorNotice(contextEject, typed.Err)
+			} else {
+				m.setErrorNotice(contextForce, typed.Err)
+			}
 			if typed.Request.Mode == device.EjectNormal {
 				m.PendingEject = device.EjectRequest{Mode: device.EjectForce, ExplicitConfirm: true}
 				m.Page = PageEjectConfirm
@@ -509,7 +506,7 @@ func (m Model) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case matchesKey(key, DefaultKeys().Details):
-		if m.Page == PageRecovering || m.Page == PagePausing || m.Page == PagePaused || m.Page == PageSummary {
+		if m.Page == PageRecovering || m.Page == PagePausing || m.Page == PagePaused || m.Page == PageSummary || m.noticeHasTechnicalDetail() {
 			m.PreviousPage = m.Page
 			m.Page = PageDetails
 			m.syncDetailsViewport()
@@ -1064,6 +1061,11 @@ func (m Model) handleOutputPathInput(msg tea.KeyPressMsg, key string) (tea.Model
 		}
 	}
 	switch {
+	case matchesKey(key, DefaultKeys().Details) && !m.Setup.OutputEditing && m.noticeHasTechnicalDetail():
+		m.PreviousPage = m.Page
+		m.Page = PageDetails
+		m.syncDetailsViewport()
+		return m, nil
 	case matchesKey(key, DefaultKeys().Back):
 		if m.Setup.OutputEditing {
 			m.Setup.OutputEditing = false
