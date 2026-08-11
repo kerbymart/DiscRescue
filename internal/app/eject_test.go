@@ -50,6 +50,18 @@ func TestNormalEjectFailureOffersForceEject(t *testing.T) {
 	}
 }
 
+func TestForceEjectFailureReturnsToDriveChooser(t *testing.T) {
+	model := NewModel()
+	model.Page = PageEjectConfirm
+	model.SelectedDrive = DeviceSummary{ID: "drive-a", Path: "/dev/sr0", DisplayName: "Drive"}
+	model.PendingEject = device.EjectRequest{Mode: device.EjectForce, ExplicitConfirm: true}
+	next, _ := model.Update(EjectCompletedMsg{Request: model.PendingEject, Err: &device.OperationError{Code: device.ErrorDeviceFailure, Op: "eject"}})
+	updated := next.(Model)
+	if updated.Page != PageChooseDrive || updated.PendingEject.Mode != "" {
+		t.Fatalf("page=%v pending=%+v", updated.Page, updated.PendingEject)
+	}
+}
+
 func TestAcceptedEjectRefreshesDevices(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseDrive
