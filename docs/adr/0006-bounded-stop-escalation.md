@@ -21,10 +21,11 @@ relevant safety boundary is the active device request.
 Use a shared five-second `DefaultStopGracePeriod` for native adapters. A stop
 request closes the scheduling gate and allows the current request to finish
 cooperatively. If it remains active after the grace period, the UI presents an
-explicit force-stop action. The action closes the serialized reopenable source
-boundary, joins the active read, and lets the existing durable checkpoint and
-device-release path complete. `x` and `Ctrl+C` share this explicit escalation
-binding.
+explicit force-stop action. The action cancels the read and interrupts the
+underlying source without waiting on the serialized operation lock. The active
+read still must join through `ReadAtContext` before the existing durable
+checkpoint and device-release path can complete. `x` and `Ctrl+C` share this
+explicit escalation binding.
 
 The UI and status messages call this the active device request. They do not
 claim that a separate worker process is being terminated.
@@ -35,7 +36,8 @@ claim that a separate worker process is being terminated.
 - A normal stop completes when the bounded read deadline returns and the
   durable checkpoint succeeds.
 - A blocked request has a deterministic escalation state and a force-stop
-  path that uses the same serialized source cancellation boundary.
+  path that interrupts the same serialized source cancellation boundary
+  without freezing the TUI while waiting for the active read to join.
 - Force stop remains exceptional and is reported as preserving the last valid
   durable image/map state.
 
