@@ -7,14 +7,18 @@ package platform
 // cross-compiling does not require Xcode, a macOS SDK, or cgo.
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -24,6 +28,9 @@ const (
 	dkioGetBlockCount = uintptr(0x40086419)
 	// DKIOCEJECT is the public Darwin ioctl for ejecting removable media.
 	dkioEject = uintptr(0x20006415)
+
+	darwinForceEjectTimeout  = 10 * time.Second
+	darwinEjectDiagnosticMax = 4 << 10
 )
 
 type darwinNativeDrive struct {
@@ -147,20 +154,53 @@ func darwinProbeError(path, operation string, err error) error {
 	return &MediaInspectionError{Path: path, Operation: operation, State: state, Err: err}
 }
 
-func nativeDarwinEject(path string, _ bool) error {
+func nativeDarwinEject(path string, force bool) error {
 	whole, err := normalizeDarwinOpticalDevice(path)
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(whole, os.O_RDONLY, 0)
-	if err != nil {
-		return fmt.Errorf("open optical device: %w", err)
+	if force {
+		return nativeDarwinDiskutilEject(whole, "force")
 	}
-	defer f.Close()
-	if err := darwinIoctl(f, dkioEject, 0); err != nil {
-		return fmt.Errorf("eject optical media: %w", err)
+	return nativeDarwinDiskutilEject(whole, "normal")
+}
+
+// nativeDarwinDiskutilEject is the macOS eject request for a normalized raw
+// optical device. Unlike DKIOCEJECT, Disk Utility coordinates a mounted-volume
+// eject. Force mode reaches this same mechanism only after explicit UI
+// confirmation; it is retained for platforms with a distinct escalation.
+func nativeDarwinDiskutilEject(rawPath, mode string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), darwinForceEjectTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, "/usr/sbin/diskutil", "eject", rawPath)
+	var diagnostics limitedDarwinEjectDiagnostics
+	command.Stderr = &diagnostics
+	if err := command.Run(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("macOS %s eject timed out after %s: %w", mode, darwinForceEjectTimeout, ctx.Err())
+		}
+		if detail := strings.TrimSpace(diagnostics.String()); detail != "" {
+			return fmt.Errorf("macOS %s eject: %w: %s", mode, err, detail)
+		}
+		return fmt.Errorf("macOS %s eject: %w", mode, err)
 	}
 	return nil
+}
+
+// limitedDarwinEjectDiagnostics preserves enough native utility context for
+// the user without allowing an external command to retain unbounded output.
+type limitedDarwinEjectDiagnostics struct{ bytes.Buffer }
+
+func (b *limitedDarwinEjectDiagnostics) Write(value []byte) (int, error) {
+	remaining := darwinEjectDiagnosticMax - b.Len()
+	if remaining > 0 {
+		if len(value) > remaining {
+			_, _ = b.Buffer.Write(value[:remaining])
+		} else {
+			_, _ = b.Buffer.Write(value)
+		}
+	}
+	return len(value), nil
 }
 
 func darwinIoctl(file *os.File, request, argument uintptr) error {
