@@ -1,5 +1,7 @@
 # DiscRescue
 
+![DiscRescue TUI demo](docs/demo.gif)
+
 DiscRescue is a cross-platform, read-only CD/DVD recovery application written in Go 1.26.5+ with a Bubble Tea v2 terminal UI and a single `discrescue` executable.
 
 DiscRescue recovers optical media to an image while maintaining a durable `.drmap` recovery map. Recovery state is tracked independently from image bytes so interrupted or incomplete jobs can be resumed safely and unreadable areas remain explicit instead of being mistaken for recovered data.
