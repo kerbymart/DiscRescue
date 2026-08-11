@@ -94,5 +94,14 @@ func pageHelpForModel(m Model) pageHelpMap {
 		force.SetHelp("x", "force stop")
 		return pageHelpMap{groups: [][]key.Binding{{k.Details, force}}}
 	}
-	return pageHelp(m.Page)
+	result := pageHelp(m.Page)
+	if m.noticeHasTechnicalDetail() && m.Page != PageDetails && m.Page != PageRecovering && m.Page != PagePausing && m.Page != PagePaused && m.Page != PageSummary {
+		k := NewKeyMapV2()
+		if len(result.groups) == 0 {
+			result.groups = [][]key.Binding{{k.Details}}
+		} else {
+			result.groups[0] = append(result.groups[0], k.Details)
+		}
+	}
+	return result
 }

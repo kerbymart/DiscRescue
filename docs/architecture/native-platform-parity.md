@@ -6,7 +6,7 @@ without exposing native handles to the TUI or recovery packages.
 | Platform | Discovery/media | Read-only recovery | Eject |
 | --- | --- | --- | --- |
 | Linux | `/dev/sr*` discovery and device access | Build-tagged raw optical adapter using the shared bounded recovery engine | Optical-drive ioctl |
-| macOS | Pure-Go Darwin disk ioctl discovery | `/dev/rdiskN` read-only adapter | `DKIOCEJECT` ioctl |
+| macOS | Pure-Go Darwin disk ioctl discovery | `/dev/rdiskN` read-only adapter | Bounded `/usr/sbin/diskutil eject` request against the raw device |
 | Windows | Win32 optical discovery and raw geometry | read-only volume adapter | storage eject device-control request |
 
 Unsupported operations are reported at capability level. Native errors remain

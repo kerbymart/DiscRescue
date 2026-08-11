@@ -39,6 +39,25 @@ func TestForceEjectRequiresUserConfirmation(t *testing.T) {
 	}
 }
 
+func TestForceEjectConfirmationMovesBetweenActions(t *testing.T) {
+	model := NewModel()
+	model.Page = PageEjectConfirm
+	model.SelectedDrive = DeviceSummary{ID: "drive-a", Path: "/dev/sr0", DisplayName: "Drive"}
+	model.PendingEject = device.EjectRequest{Mode: device.EjectForce, ExplicitConfirm: true}
+
+	next, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	updated := next.(Model)
+	if updated.Cursor != 1 {
+		t.Fatalf("cursor after down = %d, want cancel action", updated.Cursor)
+	}
+
+	next, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	updated = next.(Model)
+	if updated.Cursor != 0 {
+		t.Fatalf("cursor after up = %d, want force-eject action", updated.Cursor)
+	}
+}
+
 func TestNormalEjectFailureOffersForceEject(t *testing.T) {
 	model := NewModel()
 	model.Page = PageChooseDrive
@@ -46,6 +65,18 @@ func TestNormalEjectFailureOffersForceEject(t *testing.T) {
 	next, _ := model.Update(EjectCompletedMsg{Request: device.EjectRequest{Mode: device.EjectNormal}, Err: &device.OperationError{Code: device.ErrorBusy, Op: "eject"}})
 	updated := next.(Model)
 	if updated.Page != PageEjectConfirm || updated.PendingEject.Mode != device.EjectForce {
+		t.Fatalf("page=%v pending=%+v", updated.Page, updated.PendingEject)
+	}
+}
+
+func TestForceEjectFailureReturnsToDriveChooser(t *testing.T) {
+	model := NewModel()
+	model.Page = PageEjectConfirm
+	model.SelectedDrive = DeviceSummary{ID: "drive-a", Path: "/dev/sr0", DisplayName: "Drive"}
+	model.PendingEject = device.EjectRequest{Mode: device.EjectForce, ExplicitConfirm: true}
+	next, _ := model.Update(EjectCompletedMsg{Request: model.PendingEject, Err: &device.OperationError{Code: device.ErrorDeviceFailure, Op: "eject"}})
+	updated := next.(Model)
+	if updated.Page != PageChooseDrive || updated.PendingEject.Mode != "" {
 		t.Fatalf("page=%v pending=%+v", updated.Page, updated.PendingEject)
 	}
 }

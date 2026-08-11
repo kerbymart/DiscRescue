@@ -3,15 +3,21 @@
 package platform
 
 import (
+	"errors"
 	"fmt"
+	"syscall"
 
 	"discrescue/internal/device"
 )
 
 func ejectHostOpticalDrive(path string, request device.EjectRequest) (device.EjectResult, error) {
 	if err := nativeDarwinEject(path, request.Mode == device.EjectForce); err != nil {
+		code := device.ErrorDeviceFailure
+		if errors.Is(err, syscall.EBUSY) {
+			code = device.ErrorBusy
+		}
 		return device.EjectResult{Requested: request}, &device.OperationError{
-			Code: device.ErrorDeviceFailure, Op: "native macOS optical eject",
+			Code: code, Op: "native macOS optical eject",
 			Device: device.DeviceRef{Path: path}, Detail: err.Error(), Cause: err,
 		}
 	}
@@ -23,5 +29,5 @@ func ejectHostOpticalDrive(path string, request device.EjectRequest) (device.Eje
 }
 
 func ejectHostCapability(path string) device.Capability {
-	return device.Capability{Status: device.SupportSupported, Detail: "Darwin DKIOCEJECT optical eject"}
+	return device.Capability{Status: device.SupportSupported, Detail: "macOS diskutil raw-device eject"}
 }

@@ -76,7 +76,7 @@ func pageTitle(m Model) string {
 	case PageDiscover:
 		return "Finding usable optical drives"
 	case PageNoDrives:
-		return "No optical drives found"
+		return "Drive discovery"
 	case PageDiscoveryError:
 		return "Drive discovery needs attention"
 	case PageChooseDrive:
@@ -191,6 +191,14 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 // terminal has only six to nine body rows. Component-rich layouts resume as
 // soon as there is enough vertical space for their borders and descriptions.
 func renderTightPageBody(m Model, width int, tier layoutTier) ([]string, bool) {
+	if m.Page == PageEjectConfirm && m.Height < 28 {
+		theme := newTheme(m.Monochrome, m.DarkBackground)
+		lines := []string{
+			theme.Warning.Render("△ Force eject may interrupt a drive in use."),
+			"Use only if normal eject did not work.",
+		}
+		return append(lines, choiceMenu(theme, []string{"Force eject", "Cancel"}, m.Cursor, width)...), true
+	}
 	if tier != layoutCompact && m.Height >= 20 {
 		return nil, false
 	}
@@ -199,7 +207,7 @@ func renderTightPageBody(m Model, width int, tier layoutTier) ([]string, bool) {
 	case PageDiscover:
 		return []string{theme.Accent.Render(m.LoadingSpinner.View() + " Looking for optical drives"), "Checking the devices available to this computer."}, true
 	case PageNoDrives:
-		return []string{theme.Warning.Render("△ No readable optical drive is available."), "Insert a CD or DVD, then press Enter to retry."}, true
+		return []string{"No optical drive available.", "Connect or insert a readable CD/DVD.", "Press Enter to retry discovery."}, true
 	case PageDiscoveryError:
 		message := "Drive discovery failed."
 		if m.Notice != nil && m.Notice.Text != "" {
@@ -222,6 +230,11 @@ func renderTightPageBody(m Model, width int, tier layoutTier) ([]string, bool) {
 			fitToWidth(preview, width),
 			theme.Muted.Render("Use up/down to scroll; esc to return."),
 		}, true
+	case PageChooseOutput:
+		if m.noticeHasTechnicalDetail() {
+			return []string{fitToWidth(theme.Danger.Render("× "+m.Notice.String()), width)}, true
+		}
+		return nil, false
 	case PagePriorProcessing:
 		lines := []string{fitToWidth(theme.Accent.Render(firstNonEmpty(m.PriorView.Title, "Matching contents")), width)}
 		if len(m.PriorView.Body) > 0 {
@@ -233,6 +246,9 @@ func renderTightPageBody(m Model, width int, tier layoutTier) ([]string, bool) {
 		}
 		return lines, true
 	case PageChooseAction:
+		if m.noticeHasTechnicalDetail() {
+			return []string{fitToWidth(theme.Danger.Render("× "+m.Notice.String()), width)}, true
+		}
 		return choiceMenu(theme, []string{"Start a new recovery", "Resume an unfinished recovery", "Browse processed media", "Choose another drive"}, m.Cursor, width), true
 	case PageReview:
 		lines := []string{fitToWidth("Drive   "+selectedDriveLabel(m), width), fitToWidth("Output  "+m.Setup.OutputPath, width)}
@@ -346,24 +362,17 @@ func renderDeviceList(m Model, width int) []string {
 
 func renderNoDrivesPage(m Model, width int) []string {
 	theme := newTheme(m.Monochrome, m.DarkBackground)
-	return cardLines(theme, "No drives found", []string{
-		theme.Warning.Render("△ No readable optical drive is available."),
-		"",
-		"Insert a CD or DVD, then retry discovery.",
-		theme.Muted.Render("Press Enter to retry or q to quit."),
+	return cardLines(theme, "Next step", []string{
+		"Connect an optical drive or insert a readable CD/DVD.",
+		theme.Muted.Render("Press Enter to retry discovery."),
 	}, width, false)
 }
 
 func renderDiscoveryErrorPage(m Model, width int) []string {
 	theme := newTheme(m.Monochrome, m.DarkBackground)
-	text := "Drive discovery failed."
-	if m.Notice != nil && m.Notice.Text != "" {
-		text = m.Notice.Text
-	}
 	return cardLines(theme, "Discovery needs attention", []string{
-		theme.Danger.Render("× " + text),
-		"",
-		"Press Enter to retry discovery or q to quit.",
+		"Press Enter to retry discovery.",
+		theme.Muted.Render("Press q to quit."),
 	}, width, false)
 }
 
@@ -1112,16 +1121,46 @@ func renderEjectConfirmPage(m Model, width int) []string {
 	theme := newTheme(m.Monochrome, m.DarkBackground)
 	options := []string{"Force eject", "Cancel"}
 	drive := firstNonEmpty(m.SelectedDrive.DisplayName, m.SelectedDrive.Path, "selected drive")
-	lines := []string{
-		theme.Warning.Render("△ Force eject is an exceptional action."),
-		"",
-		"Normal eject failed or was not available for " + drive + ".",
+	innerWidth := maxInt(16, width-8)
+	guidance := []string{
+		"Use force eject only if normal eject did not work for " + drive + ".",
+		"Close apps using the drive before continuing.",
 		"Recovery must already be stopped; unsaved device work may be abandoned.",
 		"DiscRescue will refresh the drive state after the native request.",
-		"",
 	}
-	lines = append(lines, choiceMenu(theme, options, m.Cursor, width-4)...)
+	lines := append([]string{}, calloutLines(theme, "Risk", "Force eject may interrupt a drive still in use.", innerWidth)...)
+	lines = append(lines, "")
+	if innerWidth >= 72 {
+		guidanceWidth := (innerWidth * 2) / 3
+		actionWidth := innerWidth - guidanceWidth - 1
+		guidancePanel := strings.Join(cardLines(theme, "Before continuing", bulletLines(guidance, guidanceWidth-6), guidanceWidth, false), "\n")
+		actionPanel := strings.Join(cardLines(theme, "Choose action", choiceMenu(theme, options, m.Cursor, actionWidth-4), actionWidth, true), "\n")
+		lines = append(lines, strings.Split(lipgloss.JoinHorizontal(lipgloss.Top, guidancePanel, " ", actionPanel), "\n")...)
+	} else {
+		lines = append(lines, cardLines(theme, "Before continuing", bulletLines(guidance, innerWidth-6), innerWidth, false)...)
+		lines = append(lines, "")
+		lines = append(lines, cardLines(theme, "Choose action", choiceMenu(theme, options, m.Cursor, innerWidth-4), innerWidth, true)...)
+	}
 	return cardLines(theme, "Confirm force eject", lines, width, true)
+}
+
+func calloutLines(theme Theme, title, message string, width int) []string {
+	contentWidth := maxInt(12, width-4)
+	content := []string{theme.Warning.Render(strings.ToUpper(title))}
+	for _, line := range wrapText("△ "+message, maxInt(10, contentWidth-2)) {
+		content = append(content, theme.Warning.Render(line))
+	}
+	return strings.Split(theme.NoticeWarning.Width(contentWidth).Render(strings.Join(content, "\n")), "\n")
+}
+
+func bulletLines(items []string, width int) []string {
+	lines := make([]string, 0, len(items))
+	for _, item := range items {
+		for _, line := range wrapText("• "+item, maxInt(12, width)) {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 func renderAboutPage(m Model, width int) []string {
@@ -1211,7 +1250,7 @@ func showStatusLine(page Page, tier layoutTier) bool {
 	if tier == layoutCompact {
 		return false
 	}
-	return page != PageDiscover
+	return page != PageDiscover && page != PageDetails
 }
 
 func wrapText(text string, width int) []string {

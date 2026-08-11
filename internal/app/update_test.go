@@ -119,7 +119,7 @@ func TestPriorProcessingLookupUnavailableKeepsActionPageReachable(t *testing.T) 
 	if updated.Page != PageChooseAction {
 		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseAction)
 	}
-	if updated.Notice == nil || updated.Notice.Text != "history lookup failed" {
+	if updated.Notice == nil || updated.Notice.Text != "Saved recovery history is unavailable." || updated.Notice.TechnicalDetail != "history lookup failed" {
 		t.Fatalf("unexpected notice: %+v", updated.Notice)
 	}
 }
@@ -276,7 +276,7 @@ func TestJobStartFailedKeepsReviewActionable(t *testing.T) {
 	if updated.Page != PageChooseOutput {
 		t.Fatalf("unexpected page: got %v want %v", updated.Page, PageChooseOutput)
 	}
-	if updated.Notice == nil || updated.Notice.Severity != SeverityWarning {
+	if updated.Notice == nil || updated.Notice.Severity != SeverityError || updated.Notice.TechnicalDetail == "" {
 		t.Fatalf("unexpected notice: %+v", updated.Notice)
 	}
 }

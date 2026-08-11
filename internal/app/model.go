@@ -165,8 +165,12 @@ type DialogModel struct {
 }
 
 type NoticeModel struct {
-	Text     string
-	Severity Severity
+	Code            UserMessageCode
+	Text            string
+	Explanation     string
+	Action          string
+	TechnicalDetail string
+	Severity        Severity
 }
 
 type ProgressSnapshot struct {
