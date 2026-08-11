@@ -162,7 +162,7 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 		m.state.pendingPause = true
 		if job, ok := m.state.activeRecovery.(platform.StoppableRecoveryJob); ok {
 			if err := job.RequestStop(platform.StopIntentPause); err != nil {
-				return StatusMsg{Text: "Could not pause recovery: " + err.Error(), Severity: SeverityWarning}
+				return StatusMsg{Err: err, Context: contextRecovery}
 			}
 			return StatusMsg{Text: "Pause requested; saving durable recovery state.", Severity: SeverityInfo}
 		}
@@ -180,7 +180,7 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 		m.state.pendingPause = false
 		if job, ok := m.state.activeRecovery.(platform.StoppableRecoveryJob); ok {
 			if err := job.RequestStop(platform.StopIntentStop); err != nil {
-				return StatusMsg{Text: "Could not stop recovery: " + err.Error(), Severity: SeverityWarning}
+				return StatusMsg{Err: err, Context: contextRecovery}
 			}
 			return StatusMsg{Text: "Stop requested; saving durable recovery state.", Severity: SeverityWarning}
 		}
@@ -196,7 +196,7 @@ func (m ProgramModel) runEffect(request EffectRequestedMsg) tea.Msg {
 		}
 		m.state.pendingPause = false
 		if err := job.ForceStop(); err != nil {
-			return StatusMsg{Text: "Could not force stop recovery: " + err.Error(), Severity: SeverityWarning}
+			return StatusMsg{Err: err, Context: contextRecovery}
 		}
 		return StatusMsg{Text: "Force-stopping the active device request; durable state is preserved.", Severity: SeverityWarning}
 	default:
