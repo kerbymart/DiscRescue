@@ -24,11 +24,13 @@ renders the original native error string. When technical detail exists, the
 user-facing notice offers `d` to open the details page, where the original
 diagnostic is retained.
 
-The shell status region owns transient notices. Page cards provide only
-context-specific instructions or choices and must not restate the same status
-condition. Errors use the theme's `Danger` role; warnings and informational
-notices retain their distinct semantic roles. Text and markers remain
-understandable in monochrome mode.
+The shell status region owns transient notices. Each visible notice renders in
+one semantic bordered container so its severity, message, and action remain a
+single aligned unit. Page cards provide only context-specific instructions or
+choices and must not restate the same status condition. Errors use the theme's
+`Danger` role; warnings use the cohesive violet warning role rather than a
+terminal-generic yellow/orange color; informational notices use the secondary
+role. Text and markers remain understandable in monochrome mode.
 
 ## Consequences
 
@@ -40,3 +42,6 @@ understandable in monochrome mode.
   depend on implementation terminology.
 - Empty-state pages can keep their action controls while the shell owns the
   single primary condition message.
+- At constrained terminal heights, the shell prioritizes the active page and
+  action over a transient notice; the notice remains structured whenever it is
+  shown.

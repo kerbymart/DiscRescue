@@ -191,6 +191,14 @@ func renderPageBody(m Model, width int, tier layoutTier) []string {
 // terminal has only six to nine body rows. Component-rich layouts resume as
 // soon as there is enough vertical space for their borders and descriptions.
 func renderTightPageBody(m Model, width int, tier layoutTier) ([]string, bool) {
+	if m.Page == PageEjectConfirm && m.Height < 28 {
+		theme := newTheme(m.Monochrome, m.DarkBackground)
+		lines := []string{
+			theme.Warning.Render("△ Force eject may interrupt a drive in use."),
+			"Use only if normal eject did not work.",
+		}
+		return append(lines, choiceMenu(theme, []string{"Force eject", "Cancel"}, m.Cursor, width)...), true
+	}
 	if tier != layoutCompact && m.Height >= 20 {
 		return nil, false
 	}
@@ -1113,17 +1121,46 @@ func renderEjectConfirmPage(m Model, width int) []string {
 	theme := newTheme(m.Monochrome, m.DarkBackground)
 	options := []string{"Force eject", "Cancel"}
 	drive := firstNonEmpty(m.SelectedDrive.DisplayName, m.SelectedDrive.Path, "selected drive")
-	lines := []string{
-		theme.Warning.Render("△ Force eject may interrupt a drive still in use."),
-		"",
+	innerWidth := maxInt(16, width-8)
+	guidance := []string{
 		"Use force eject only if normal eject did not work for " + drive + ".",
 		"Close apps using the drive before continuing.",
 		"Recovery must already be stopped; unsaved device work may be abandoned.",
 		"DiscRescue will refresh the drive state after the native request.",
-		"",
 	}
-	lines = append(lines, choiceMenu(theme, options, m.Cursor, width-4)...)
+	lines := append([]string{}, calloutLines(theme, "Risk", "Force eject may interrupt a drive still in use.", innerWidth)...)
+	lines = append(lines, "")
+	if innerWidth >= 72 {
+		guidanceWidth := (innerWidth * 2) / 3
+		actionWidth := innerWidth - guidanceWidth - 1
+		guidancePanel := strings.Join(cardLines(theme, "Before continuing", bulletLines(guidance, guidanceWidth-6), guidanceWidth, false), "\n")
+		actionPanel := strings.Join(cardLines(theme, "Choose action", choiceMenu(theme, options, m.Cursor, actionWidth-4), actionWidth, true), "\n")
+		lines = append(lines, strings.Split(lipgloss.JoinHorizontal(lipgloss.Top, guidancePanel, " ", actionPanel), "\n")...)
+	} else {
+		lines = append(lines, cardLines(theme, "Before continuing", bulletLines(guidance, innerWidth-6), innerWidth, false)...)
+		lines = append(lines, "")
+		lines = append(lines, cardLines(theme, "Choose action", choiceMenu(theme, options, m.Cursor, innerWidth-4), innerWidth, true)...)
+	}
 	return cardLines(theme, "Confirm force eject", lines, width, true)
+}
+
+func calloutLines(theme Theme, title, message string, width int) []string {
+	contentWidth := maxInt(12, width-4)
+	content := []string{theme.Warning.Render(strings.ToUpper(title))}
+	for _, line := range wrapText("△ "+message, maxInt(10, contentWidth-2)) {
+		content = append(content, theme.Warning.Render(line))
+	}
+	return strings.Split(theme.NoticeWarning.Width(contentWidth).Render(strings.Join(content, "\n")), "\n")
+}
+
+func bulletLines(items []string, width int) []string {
+	lines := make([]string, 0, len(items))
+	for _, item := range items {
+		for _, line := range wrapText("• "+item, maxInt(12, width)) {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 func renderAboutPage(m Model, width int) []string {
@@ -1213,7 +1250,7 @@ func showStatusLine(page Page, tier layoutTier) bool {
 	if tier == layoutCompact {
 		return false
 	}
-	return page != PageDiscover
+	return page != PageDiscover && page != PageDetails
 }
 
 func wrapText(text string, width int) []string {
