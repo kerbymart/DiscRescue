@@ -393,6 +393,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.PendingEject = device.EjectRequest{Mode: device.EjectForce, ExplicitConfirm: true}
 				m.Page = PageEjectConfirm
 				m.Cursor = 0
+			} else {
+				// A confirmation has been consumed. Leaving this page active after
+				// a failed native request invites an identical retry and makes the
+				// TUI appear frozen.
+				m.PendingEject = device.EjectRequest{}
+				m.Page = PageChooseDrive
+				m.Cursor = 0
 			}
 			return m, nil
 		}

@@ -1113,7 +1113,7 @@ func renderEjectConfirmPage(m Model, width int) []string {
 	options := []string{"Force eject", "Cancel"}
 	drive := firstNonEmpty(m.SelectedDrive.DisplayName, m.SelectedDrive.Path, "selected drive")
 	lines := []string{
-		theme.Warning.Render("△ Force eject is an exceptional action."),
+		theme.Warning.Render("△ Force eject requires explicit confirmation."),
 		"",
 		"Normal eject failed or was not available for " + drive + ".",
 		"Recovery must already be stopped; unsaved device work may be abandoned.",
