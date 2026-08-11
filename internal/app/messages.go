@@ -88,6 +88,8 @@ type ProgressMsg struct {
 type StatusMsg struct {
 	Text     string
 	Severity Severity
+	Err      error
+	Context  messageContext
 }
 
 type JobCheckpointedMsg struct {
