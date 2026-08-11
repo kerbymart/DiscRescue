@@ -16,7 +16,7 @@ func TestEveryPageFitsSupportedTerminalSizes(t *testing.T) {
 		PageDiscover, PageNoDrives, PageDiscoveryError, PageChooseDrive,
 		PageInspectingMedia, PagePriorProcessing, PageChooseAction, PageChooseOutput,
 		PageReview, PageRecovering, PagePausing, PagePaused, PageStopConfirm,
-		PageSummary, PageResumeJobs, PageHistory, PageDetails, PageAdvanced, PageAbout,
+		PageEjectConfirm, PageSummary, PageResumeJobs, PageHistory, PageDetails, PageAdvanced, PageAbout,
 	}
 	sizes := []struct{ width, height int }{{120, 36}, {80, 24}, {60, 18}, {40, 12}}
 	for _, size := range sizes {
@@ -595,6 +595,57 @@ func TestViewStoppingShowsCheckpointAndForceStopGuidance(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("stopping view missing %q: %q", want, view)
 		}
+	}
+}
+
+func TestViewEjectConfirmationGroupsRiskGuidanceAndAction(t *testing.T) {
+	model := NewModel()
+	model.Width = 100
+	model.Height = 36
+	model.Page = PageEjectConfirm
+	model.SelectedDrive = DeviceSummary{DisplayName: "disk4", Path: "/dev/rdisk4"}
+	model.Notice = &NoticeModel{
+		Text:        "Normal eject failed.",
+		Explanation: "The disc could not be ejected normally.",
+		Action:      "Close apps using the drive and try again.",
+		Severity:    SeverityError,
+	}
+
+	view := ansi.Strip(model.View().Content)
+	for _, want := range []string{"CONFIRM FORCE EJECT", "RISK", "BEFORE CONTINUING", "CHOOSE ACTION", "> Force eject"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("force-eject confirmation missing %q: %q", want, view)
+		}
+	}
+	if !strings.Contains(view, "╭") || !strings.Contains(view, "╰") {
+		t.Fatalf("expected grouped confirmation and notification containers: %q", view)
+	}
+}
+
+func TestViewEjectConfirmationStacksPanelsAtMediumWidth(t *testing.T) {
+	model := NewModel()
+	model.Width = 70
+	model.Height = 30
+	model.Page = PageEjectConfirm
+	model.SelectedDrive = DeviceSummary{DisplayName: "disk4"}
+
+	view := ansi.Strip(model.View().Content)
+	guidance := strings.Index(view, "BEFORE CONTINUING")
+	action := strings.Index(view, "CHOOSE ACTION")
+	if guidance < 0 || action < 0 || guidance >= action {
+		t.Fatalf("expected stacked guidance before actions: %q", view)
+	}
+}
+
+func TestRenderNoticeUsesSemanticContainer(t *testing.T) {
+	theme := newTheme(false, true)
+	notice := NoticeModel{Text: "Output target cannot be used.", Severity: SeverityWarning}
+	rendered := ansi.Strip(renderNotice(theme, notice, 60))
+	if !strings.Contains(rendered, "╭") || !strings.Contains(rendered, "△ Output target cannot be used.") {
+		t.Fatalf("expected framed warning notice, got %q", rendered)
+	}
+	if lipgloss.Width(rendered) > 60 {
+		t.Fatalf("notice width = %d, want <= 60", lipgloss.Width(rendered))
 	}
 }
 

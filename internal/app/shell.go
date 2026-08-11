@@ -16,12 +16,14 @@ func renderShell(m Model, body []string, tier layoutTier) string {
 	if subtitle := pageSubtitle(m.Page); tier != layoutCompact && m.Height >= 28 && subtitle != "" {
 		lines = append(lines, theme.Muted.Render(subtitle))
 	}
-	lines = append(lines, "")
+	if m.Height > 24 {
+		lines = append(lines, "")
+	}
 	prefix := flattenLines(lines)
 	body = flattenLines(body)
 
 	status := []string(nil)
-	if showStatusLine(m.Page, tier) && m.Notice != nil && strings.TrimSpace(m.Notice.Text) != "" {
+	if m.Height >= 20 && showStatusLine(m.Page, tier) && m.Notice != nil && strings.TrimSpace(m.Notice.Text) != "" {
 		status = flattenLines([]string{renderNotice(theme, *m.Notice, layout.Width)})
 	}
 
@@ -96,15 +98,19 @@ func pageSubtitle(page Page) string {
 }
 
 func renderNotice(theme Theme, notice NoticeModel, width int) string {
-	marker, style := "i", theme.AccentSoft
+	marker, style, frame := "i", theme.AccentSoft, theme.NoticeInfo
 	switch notice.Severity {
 	case SeverityWarning:
-		marker, style = "△", theme.Warning
+		marker, style, frame = "△", theme.Warning, theme.NoticeWarning
 	case SeverityError:
-		marker, style = "×", theme.Danger
+		marker, style, frame = "×", theme.Danger, theme.NoticeDanger
 	}
-	text := marker + " " + notice.String()
-	return style.MaxWidth(width).Render(text)
+	innerWidth := maxInt(12, width-4)
+	lines := wrapText(marker+" "+notice.String(), maxInt(10, innerWidth-2))
+	for i := range lines {
+		lines[i] = style.Render(lines[i])
+	}
+	return frame.Width(innerWidth).Render(strings.Join(lines, "\n"))
 }
 
 func joinEdges(left, right string, width int) string {
