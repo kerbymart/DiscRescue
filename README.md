@@ -25,10 +25,10 @@ DiscRescue does not burn, blank, format, repair, decrypt, or otherwise write to 
 | Platform | Discovery and media access | Read-only recovery | Eject implementation |
 | --- | --- | --- | --- |
 | Linux | Native optical-device discovery using `/dev/sr*` devices | Build-tagged raw optical adapter using the shared bounded recovery engine | Optical-drive ioctl |
-| macOS | Pure-Go Darwin disk ioctl discovery and media geometry | Opens the corresponding `/dev/rdiskN` raw device read-only | `DKIOCEJECT` ioctl |
+| macOS | Pure-Go Darwin disk ioctl discovery and media geometry | Opens the corresponding `/dev/rdiskN` raw device read-only | Bounded `/usr/sbin/diskutil eject` request against the raw device |
 | Windows | Win32 optical discovery and geometry | Read-only optical volume adapter | Storage eject device-control request |
 
-The macOS adapter does not require Xcode, Apple SDK headers, cgo, `diskutil`, or `drutil`. Raw-device access can require additional host permissions; DiscRescue reports those failures instead of silently falling back to another access path. See [macOS development and hardware validation](docs/architecture/macos-development.md).
+The macOS adapter does not require Xcode, Apple SDK headers, or cgo. Eject uses the fixed, bounded `/usr/sbin/diskutil eject` system utility because it coordinates mounted optical volumes; recovery still opens the raw device read-only and never delegates source-media reads to a host command. Raw-device access can require additional host permissions; DiscRescue reports those failures instead of silently falling back to another access path. See [macOS development and hardware validation](docs/architecture/macos-development.md).
 
 Platform compilation and simulator tests do not prove behavior against every physical optical drive or USB/SATA bridge. Hardware-specific claims require validation on representative target hardware.
 
