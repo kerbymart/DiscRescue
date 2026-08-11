@@ -914,6 +914,8 @@ func (m Model) cursorLimit() int {
 		return 0
 	case PageStopConfirm:
 		return 2
+	case PageEjectConfirm:
+		return 2
 	case PageSummary:
 		return len(summaryOptions(m))
 	default:
