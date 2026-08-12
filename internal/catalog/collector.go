@@ -15,36 +15,6 @@ const (
 	FingerprintReadDeadline         = 3 * time.Second
 )
 
-// SampleSlot identifies one deterministic logical-sector sample.
-type SampleSlot struct {
-	Slot uint16
-	LBA  int64
-}
-
-// BuildSamplePlan returns the bounded version-1 sample plan. Duplicate LBAs
-// on very small media are removed while retaining the original slot numbers.
-func BuildSamplePlan(sectorCount uint64) ([]SampleSlot, error) {
-	if sectorCount == 0 {
-		return nil, fmt.Errorf("build fingerprint sample plan: sector count must be greater than zero")
-	}
-	last := sectorCount - 1
-	numerators := [...]uint64{0, 1, 2, 3, 4, 5, 6}
-	plan := make([]SampleSlot, 0, FingerprintSampleCount)
-	seen := make(map[int64]struct{}, FingerprintSampleCount)
-	for slot, numerator := range numerators {
-		lba := int64((last * numerator) / 8)
-		if _, exists := seen[lba]; exists {
-			continue
-		}
-		seen[lba] = struct{}{}
-		plan = append(plan, SampleSlot{Slot: uint16(slot), LBA: lba})
-	}
-	if _, exists := seen[int64(last)]; !exists {
-		plan = append(plan, SampleSlot{Slot: 7, LBA: int64(last)})
-	}
-	return plan, nil
-}
-
 // SectorReader is the bounded device-worker boundary used by identity
 // collection. Implementations must honor ctx cancellation.
 type SectorReader interface {
@@ -167,28 +137,3 @@ func (c FingerprintCollector) Collect(ctx context.Context, base ContentIdentity,
 
 // CollectObservation packages collection output for media-inspection and
 // catalog orchestration without conflating partial evidence with a mismatch.
-func (c FingerprintCollector) CollectObservation(ctx context.Context, base ContentIdentity, reader SectorReader) (IdentityObservation, error) {
-	identity, stats, err := c.Collect(ctx, base, reader)
-	if err != nil {
-		return IdentityObservation{Status: IdentityUnavailable, Detail: err.Error()}, err
-	}
-	status := IdentityInsufficientEvidence
-	detail := "Not enough readable fingerprint samples are available for a reliable match."
-	if identity.QuickID != "" {
-		status = IdentityStrongEvidence
-		detail = "All bounded fingerprint samples were collected."
-	} else if stats.AvailableSamples > 0 {
-		status = IdentityPartialEvidence
-		detail = "Some fingerprint samples were unavailable; automatic matching is restricted."
-	}
-	return IdentityObservation{
-		Identity:           identity,
-		Status:             status,
-		AttemptedSamples:   stats.AttemptedSamples,
-		AvailableSamples:   stats.AvailableSamples,
-		UnavailableSamples: stats.UnavailableSamples,
-		BytesRead:          stats.BytesRead,
-		CollectionDuration: stats.Duration,
-		Detail:             detail,
-	}, nil
-}

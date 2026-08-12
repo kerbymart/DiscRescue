@@ -58,8 +58,14 @@ func TestScopedSourceAuditRejectsForbiddenOperationPaths(t *testing.T) {
 				// a fixed, bounded Disk Utility request against the normalized
 				// raw optical-device node. It has no user-controlled executable
 				// or argument syntax.
-				if fragment == "exec.command" && filepath.Clean(path) == filepath.Clean(filepath.Join("..", "platform", "darwin_native.go")) {
-					continue
+				if fragment == "exec.command" {
+					darwinEjectPaths := map[string]struct{}{
+						filepath.Clean(filepath.Join("..", "platform", "darwin_native.go")): {},
+						filepath.Clean(filepath.Join("..", "platform", "darwin_eject.go")):  {},
+					}
+					if _, ok := darwinEjectPaths[filepath.Clean(path)]; ok {
+						continue
+					}
 				}
 				if strings.Contains(content, fragment) {
 					t.Fatalf("forbidden operation fragment %q found in %s", fragment, path)
