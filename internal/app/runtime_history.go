@@ -69,7 +69,7 @@ func (m ProgramModel) findResumableJobs(basePath string) ([]ResumableJobViewMode
 			continue
 		}
 		outputPath := filepath.Join(basePath, entry.Name())
-		status, err := m.runtime.Recovery.InspectRecoveryTarget(platform.RecoveryInput{
+		status, err := m.services.Recovery.InspectRecoveryTarget(platform.RecoveryInput{
 			DevicePath:        m.SelectedDrive.Path,
 			OutputPath:        outputPath,
 			LogicalSectorSize: m.MediaLogicalSectorSize,
@@ -121,7 +121,7 @@ func (m ProgramModel) findProcessedMedia(basePath string) ([]ProcessedMediaViewM
 			Detail:     "No recovery map was found next to this image.",
 		}
 
-		status, inspectErr := m.runtime.Recovery.InspectRecoveryTarget(platform.RecoveryInput{
+		status, inspectErr := m.services.Recovery.InspectRecoveryTarget(platform.RecoveryInput{
 			DevicePath:        m.SelectedDrive.Path,
 			OutputPath:        outputPath,
 			LogicalSectorSize: m.MediaLogicalSectorSize,

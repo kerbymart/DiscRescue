@@ -8,8 +8,8 @@ import (
 
 type ProgramModel struct {
 	Model
-	runtime platform.Runtime
-	state   *programState
+	services Services
+	state    *programState
 }
 
 type programState struct {
@@ -18,11 +18,11 @@ type programState struct {
 	pendingPause   bool
 }
 
-func NewProgramModel(runtime platform.Runtime) ProgramModel {
+func NewProgramModel(services Services) ProgramModel {
 	return ProgramModel{
-		Model:   NewModel(),
-		runtime: runtime,
-		state:   &programState{},
+		Model:    NewModel(),
+		services: services,
+		state:    &programState{},
 	}
 }
 
@@ -33,7 +33,7 @@ func (m ProgramModel) Init() tea.Cmd {
 func (m ProgramModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.Model.Update(msg)
 	model := next.(Model)
-	nextModel := ProgramModel{Model: model, runtime: m.runtime, state: m.state}
+	nextModel := ProgramModel{Model: model, services: m.services, state: m.state}
 	spinnerCmd := tea.Cmd(nil)
 	if model.RestartLoadingSpinner {
 		nextModel.RestartLoadingSpinner = false

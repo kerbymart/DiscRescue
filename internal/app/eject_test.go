@@ -130,8 +130,7 @@ func TestAcceptedEjectRefreshRestoresDriveWhenSelectionWasCleared(t *testing.T) 
 }
 
 func TestRuntimeEjectUsesPlatformAdapter(t *testing.T) {
-	runtime := platform.Runtime{Optical: ejectingOpticalStub{result: device.EjectResult{Status: device.OperationAccepted}}}
-	program := NewProgramModel(runtime)
+	program := NewProgramModel(Services{Optical: ejectingOpticalStub{result: device.EjectResult{Status: device.OperationAccepted}}})
 	msg := program.runEffect(EffectRequestedMsg{Kind: EffectEject, DevicePath: "/dev/sr0", Eject: device.EjectRequest{Mode: device.EjectNormal}})
 	result, ok := msg.(EjectCompletedMsg)
 	if !ok || result.Err != nil || result.Result.Status != device.OperationAccepted {

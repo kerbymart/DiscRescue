@@ -11,7 +11,7 @@ import (
 
 func (m ProgramModel) startRecoveryJob() tea.Msg {
 	jobID := fmt.Sprintf("job-%d", time.Now().UnixNano())
-	job, err := m.runtime.Recovery.StartImageRecovery(platform.RecoveryInput{
+	job, err := m.services.Recovery.StartImageRecovery(platform.RecoveryInput{
 		DevicePath:        m.SelectedDrive.Path,
 		OutputPath:        m.Setup.OutputPath,
 		LogicalSectorSize: m.MediaLogicalSectorSize,

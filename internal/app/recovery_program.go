@@ -4,8 +4,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-
-	"discrescue/internal/platform"
 )
 
 // RecoveryProgramModel decorates ProgramModel with the pass-level progress
@@ -17,8 +15,8 @@ type RecoveryProgramModel struct {
 	ProgramModel
 }
 
-func NewRecoveryProgramModel(runtime platform.Runtime) RecoveryProgramModel {
-	return RecoveryProgramModel{ProgramModel: NewProgramModel(runtime)}
+func NewRecoveryProgramModel(services Services) RecoveryProgramModel {
+	return RecoveryProgramModel{ProgramModel: NewProgramModel(services)}
 }
 
 func (m RecoveryProgramModel) Init() tea.Cmd {

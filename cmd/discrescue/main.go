@@ -27,15 +27,15 @@ func run(runtime platform.Runtime) error {
 		return err
 	}
 
-	program := newProgram(runtime, runtime.Process.Stdout())
+	program := newProgram(app.Services{Optical: runtime.Optical, Recovery: runtime.Recovery}, runtime.Process.Stdout())
 	_, err := program.Run()
 	return err
 }
 
-func newProgram(runtime platform.Runtime, output io.Writer, opts ...tea.ProgramOption) *tea.Program {
+func newProgram(services app.Services, output io.Writer, opts ...tea.ProgramOption) *tea.Program {
 	base := []tea.ProgramOption{
 		tea.WithOutput(output),
 	}
 	base = append(base, opts...)
-	return tea.NewProgram(app.NewRecoveryProgramModel(runtime), base...)
+	return tea.NewProgram(app.NewRecoveryProgramModel(services), base...)
 }

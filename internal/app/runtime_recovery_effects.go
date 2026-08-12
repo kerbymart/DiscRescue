@@ -11,7 +11,7 @@ import (
 func (m ProgramModel) runRecoveryEffect(request EffectRequestedMsg) tea.Msg {
 	switch request.Kind {
 	case EffectInspectTarget:
-		status, err := m.runtime.Recovery.InspectRecoveryTarget(platform.RecoveryInput{DevicePath: m.SelectedDrive.Path, OutputPath: request.OutputPath, LogicalSectorSize: m.MediaLogicalSectorSize, CapacitySectors: m.MediaCapacitySectors})
+		status, err := m.services.Recovery.InspectRecoveryTarget(platform.RecoveryInput{DevicePath: m.SelectedDrive.Path, OutputPath: request.OutputPath, LogicalSectorSize: m.MediaLogicalSectorSize, CapacitySectors: m.MediaCapacitySectors})
 		return RecoveryTargetInspectedMsg{RequestID: request.RequestID, Status: status, Err: err}
 	case EffectStartJob, EffectResumeJob:
 		if request.Kind == EffectResumeJob && m.state.activeRecovery != nil {

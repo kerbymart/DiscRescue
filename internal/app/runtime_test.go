@@ -66,19 +66,16 @@ func (s stubRecoveryJob) Snapshot() platform.RecoverySnapshot {
 func (stubRecoveryJob) Cancel() {}
 
 func TestProgramModelStartupWorkflowLeavesDiscoveryAndSelectsDrive(t *testing.T) {
-	runtime := platform.Runtime{
-		Clock: stubClock{},
-		Optical: stubOptical{drives: []platform.OpticalDrive{
-			{Path: "D:\\", DisplayName: "Virtual DVD Drive", Status: "available"},
-			{Path: "E:\\", DisplayName: "Physical Blu-ray Drive", Status: "available"},
-		}},
-	}
+	services := Services{Optical: stubOptical{drives: []platform.OpticalDrive{
+		{Path: "D:\\", DisplayName: "Virtual DVD Drive", Status: "available"},
+		{Path: "E:\\", DisplayName: "Physical Blu-ray Drive", Status: "available"},
+	}}}
 
 	inputReader, inputWriter := io.Pipe()
 	var output synchronizedBuffer
 
 	program := tea.NewProgram(
-		NewProgramModel(runtime),
+		NewProgramModel(services),
 		tea.WithInput(inputReader),
 		tea.WithOutput(&output),
 		tea.WithWindowSize(80, 24),
@@ -121,12 +118,9 @@ func TestProgramModelStartupWorkflowLeavesDiscoveryAndSelectsDrive(t *testing.T)
 }
 
 func TestProgramModelDiscoveryCanReachNoDriveState(t *testing.T) {
-	runtime := platform.Runtime{
-		Clock:   stubClock{},
-		Optical: stubOptical{},
-	}
+	services := Services{Optical: stubOptical{}}
 
-	model := NewProgramModel(runtime)
+	model := NewProgramModel(services)
 	msg := model.Init()()
 	next, _ := model.Update(msg)
 	updated := next.(ProgramModel)
@@ -140,7 +134,7 @@ func TestProgramModelDiscoveryCanReachNoDriveState(t *testing.T) {
 }
 
 func TestFollowUpIgnoresStaleRecoveryTickAfterPauseCompletes(t *testing.T) {
-	model := NewProgramModel(platform.Runtime{})
+	model := NewProgramModel(Services{})
 	model.state.activeRecovery = stubRecoveryJob{
 		snapshot: platform.RecoverySnapshot{
 			StartedAt:  time.Now(),
