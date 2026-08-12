@@ -6,6 +6,17 @@ This note records the repository package scaffold and its ownership boundary rel
 
 - `cmd/discrescue`: single executable entrypoint and internal worker-mode switch.
 
+## Development tooling
+
+- `tools/devtool`: repository validation/build command dispatcher; each
+  format, check, release, build, file-discovery, runner, and race-policy owner
+  lives in a focused same-package file.
+- `tools/macos-eject-probe`: opt-in macOS eject diagnostic with its own bounded
+  native request and command-line boundary; production packages do not depend
+  on it.
+- `scripts/demo.sh`: TUI demonstration workflow.
+- `scripts/inspect-log.sh`: bounded diagnostic-log inspection workflow.
+
 ## Internal packages
 
 | Package | Responsibility |
