@@ -1,4 +1,4 @@
-package platform
+package recovery
 
 import (
 	"context"
@@ -7,8 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"time"
-
-	"discrescue/internal/recovery"
 )
 
 func readAtWithDeadline(ctx context.Context, source io.ReaderAt, buffer []byte, offset int64, deadline time.Duration) (int, error) {
@@ -17,7 +15,7 @@ func readAtWithDeadline(ctx context.Context, source io.ReaderAt, buffer []byte, 
 	}
 	readCtx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
-	if reader, ok := source.(recovery.ContextReaderAt); ok {
+	if reader, ok := source.(ContextReaderAt); ok {
 		return reader.ReadAtContext(readCtx, buffer, offset)
 	}
 	// Test and in-memory sources are already bounded by their implementation.
@@ -25,18 +23,21 @@ func readAtWithDeadline(ctx context.Context, source io.ReaderAt, buffer []byte, 
 	// close and safely reopen the physical source instead of leaking a read.
 	return source.ReadAt(buffer, offset)
 }
-func fatalRecoveryReadError(readErr error) error {
+func fatalRecoveryReadError(readErr error, classify ReadErrorClassifier) error {
 	if readErr == nil {
 		return nil
 	}
-	if errors.Is(readErr, recovery.ErrStopRequested) {
+	if errors.Is(readErr, ErrStopRequested) {
 		return context.Canceled
 	}
 	if errors.Is(readErr, io.ErrClosedPipe) || errors.Is(readErr, io.ErrUnexpectedEOF) {
 		return nil
 	}
-	if errors.Is(readErr, fs.ErrPermission) || errors.Is(readErr, fs.ErrNotExist) || platformFatalSourceReadError(readErr) {
+	if errors.Is(readErr, fs.ErrPermission) || errors.Is(readErr, fs.ErrNotExist) {
 		return readErr
+	}
+	if classify != nil {
+		return classify(readErr)
 	}
 	return nil
 }

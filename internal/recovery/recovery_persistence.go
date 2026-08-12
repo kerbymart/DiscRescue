@@ -1,4 +1,4 @@
-package platform
+package recovery
 
 import (
 	"fmt"
@@ -44,7 +44,7 @@ type recoveryPersistence struct {
 	stats                 CheckpointStats
 }
 
-func newRecoveryPersistence(output recoverySyncWriter, store *recoverymap.Store) *recoveryPersistence {
+func NewPersistence(output SyncWriterAt, store *recoverymap.Store) *recoveryPersistence {
 	now := time.Now
 	return &recoveryPersistence{output: output, store: store, now: now, lastCheckpoint: now()}
 }

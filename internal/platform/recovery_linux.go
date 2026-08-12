@@ -28,7 +28,7 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, recovered, deferred, unreadable := summarizeRecoveryExtentStates(state.Extents())
+	_, recovered, deferred, unreadable := recovery.SummarizeRecoveryExtentStates(state.Extents())
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &linuxRecoveryJob{
 		cancel: cancel, state: state, lifecycle: recovery.NewLifecycle(),

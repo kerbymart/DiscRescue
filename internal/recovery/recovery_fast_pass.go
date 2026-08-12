@@ -1,4 +1,4 @@
-package platform
+package recovery
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"discrescue/internal/mapfile"
-	"discrescue/internal/recovery"
 )
 
 func runFastAcquisitionPass(
@@ -17,8 +16,9 @@ func runFastAcquisitionPass(
 	capacitySectors uint64,
 	store recoveryExtentStore,
 	blockSectors uint32,
-	deadlines recovery.ReadDeadlinePolicy,
+	deadlines ReadDeadlinePolicy,
 	report func(recoveryPassProgress),
+	classify ReadErrorClassifier,
 ) error {
 	if blockSectors == 0 {
 		return fmt.Errorf("run fast acquisition pass: invalid policy limits")
@@ -73,7 +73,7 @@ func runFastAcquisitionPass(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := fatalRecoveryReadError(readErr); err != nil {
+		if err := fatalRecoveryReadError(readErr, classify); err != nil {
 			return fmt.Errorf("read fast acquisition range [%d,%d): %w", lba, lba+sectorsToRead, err)
 		}
 		deferred := mapfile.Extent{

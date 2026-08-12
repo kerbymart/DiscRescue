@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"discrescue/internal/mapfile"
+	"discrescue/internal/recovery"
 	"discrescue/internal/recoverymap"
 	"golang.org/x/sys/windows"
 )
@@ -42,7 +43,7 @@ func inspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStatus, error) {
 		if requiredBytes > uint64(outputInfo.Size()) {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: image %s is smaller than the durable recovery map", input.OutputPath)
 		}
-		_, recoveredSectors, deferredSectors, unreadableSectors := summarizeRecoveryExtentStates(extents)
+		_, recoveredSectors, deferredSectors, unreadableSectors := recovery.SummarizeRecoveryExtentStates(extents)
 		return RecoveryTargetStatus{OutputPath: input.OutputPath, MapPath: mapPath, CanResume: true, RecoveredSectors: recoveredSectors, DeferredSectors: deferredSectors, UnreadableSectors: unreadableSectors, RequiredBytes: requiredBytes, AvailableBytes: availableBytes, SpaceKnown: spaceKnown && spaceErr == nil, Detail: fmt.Sprintf("Resume recovery from %s recovered sectors, %s deferred sectors, and %s unreadable sectors.", formatUint(recoveredSectors), formatUint(deferredSectors), formatUint(unreadableSectors))}, nil
 	case outputErr == nil && errors.Is(mapErr, os.ErrNotExist):
 		return RecoveryTargetStatus{OutputPath: input.OutputPath, MapPath: mapPath, RequiredBytes: requiredBytes, AvailableBytes: availableBytes, SpaceKnown: spaceKnown && spaceErr == nil, Detail: fmt.Sprintf("Output image %s already exists without %s. Choose another output path.", input.OutputPath, mapPath)}, nil

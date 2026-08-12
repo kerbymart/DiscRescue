@@ -1,4 +1,4 @@
-package platform
+package recovery
 
 import (
 	"fmt"
@@ -36,7 +36,7 @@ func TestRecoveryPersistenceOrdersImageSyncBeforeDurableMapProgress(t *testing.T
 		t.Fatal(err)
 	}
 	writer := &persistenceTestWriter{data: make([]byte, 4)}
-	persistence := newRecoveryPersistence(writer, store)
+	persistence := NewPersistence(writer, store)
 	extent := mapfile.Extent{StartLBA: 0, Sectors: 1, State: mapfile.SectorStateReadUnverified, Confidence: mapfile.ConfidenceSingleRead}
 	if err := persistence.PersistRecovered([]byte{0xA5}, 0, extent); err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestRecoveryPersistenceIntervalTriggersAfterCompletedOperation(t *testing.T
 		t.Fatal(err)
 	}
 	writer := &persistenceTestWriter{data: make([]byte, 4)}
-	persistence := newRecoveryPersistence(writer, store)
+	persistence := NewPersistence(writer, store)
 	now := time.Unix(100, 0)
 	persistence.now = func() time.Time { return now }
 	persistence.lastCheckpoint = now
@@ -98,7 +98,7 @@ func BenchmarkRecoveryPersistenceHealthy(b *testing.B) {
 			b.Fatal(err)
 		}
 		writer := &persistenceTestWriter{data: make([]byte, sectors*2048)}
-		persistence := newRecoveryPersistence(writer, store)
+		persistence := NewPersistence(writer, store)
 		for lba := uint64(0); lba < sectors; lba++ {
 			if err := persistence.PersistRecovered(data, int64(lba*2048), mapfile.Extent{StartLBA: lba, Sectors: 1, State: mapfile.SectorStateReadUnverified, Confidence: mapfile.ConfidenceSingleRead}); err != nil {
 				b.Fatal(err)

@@ -1,4 +1,4 @@
-package platform
+package recovery
 
 import "discrescue/internal/mapfile"
 
@@ -6,7 +6,7 @@ func reportRecoveryProgress(report func(recoveryPassProgress), pass string, exte
 	if report == nil {
 		return
 	}
-	scanned, recovered, deferred, unreadable := summarizeRecoveryExtentStates(extents)
+	scanned, recovered, deferred, unreadable := SummarizeRecoveryExtentStates(extents)
 	report(recoveryPassProgress{
 		Pass:              pass,
 		ScannedSectors:    scanned,
@@ -16,11 +16,11 @@ func reportRecoveryProgress(report func(recoveryPassProgress), pass string, exte
 		LastIssue:         append([]string(nil), issue...),
 	})
 }
-func summarizeRecoveryExtentStates(extents []mapfile.Extent) (scanned uint64, recovered uint64, deferred uint64, unreadable uint64) {
+func SummarizeRecoveryExtentStates(extents []mapfile.Extent) (scanned uint64, recovered uint64, deferred uint64, unreadable uint64) {
 	for _, extent := range extents {
 		sectors := uint64(extent.Sectors)
 		scanned += sectors
-		if recoveryStateHasData(extent.State) {
+		if RecoveryStateHasData(extent.State) {
 			recovered += sectors
 			continue
 		}
@@ -34,14 +34,14 @@ func summarizeRecoveryExtentStates(extents []mapfile.Extent) (scanned uint64, re
 	return scanned, recovered, deferred, unreadable
 }
 func summarizeRecoveryExtents(extents []mapfile.Extent) (scanned uint64, recovered uint64, unresolved uint64) {
-	scanned, recovered, deferred, unreadable := summarizeRecoveryExtentStates(extents)
+	scanned, recovered, deferred, unreadable := SummarizeRecoveryExtentStates(extents)
 	return scanned, recovered, deferred + unreadable
 }
 func unresolvedSectorCount(extents []mapfile.Extent) uint64 {
 	_, _, unresolved := summarizeRecoveryExtents(extents)
 	return unresolved
 }
-func recoveryStateHasData(state mapfile.SectorState) bool {
+func RecoveryStateHasData(state mapfile.SectorState) bool {
 	switch state {
 	case mapfile.SectorStateReadUnverified,
 		mapfile.SectorStateVerified,

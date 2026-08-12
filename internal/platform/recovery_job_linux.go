@@ -87,7 +87,7 @@ func (j *linuxRecoveryJob) ForceStop() error {
 	return nil
 }
 
-func (j *linuxRecoveryJob) report(progress recoveryPassProgress, sectorSize uint32) {
+func (j *linuxRecoveryJob) report(progress recovery.PassProgress, sectorSize uint32) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.snapshot.CopiedBytes = progress.RecoveredSectors * uint64(sectorSize)

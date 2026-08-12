@@ -1,11 +1,10 @@
-package platform
+package recovery
 
 import (
 	"context"
 	"io"
 
 	"discrescue/internal/mapfile"
-	"discrescue/internal/recovery"
 )
 
 func runTrimPass(
@@ -15,8 +14,9 @@ func runTrimPass(
 	logicalSectorSize uint32,
 	store recoveryExtentStore,
 	attemptLimit uint16,
-	deadlines recovery.ReadDeadlinePolicy,
+	deadlines ReadDeadlinePolicy,
 	report func(recoveryPassProgress),
+	classify ReadErrorClassifier,
 ) error {
 	reportRecoveryProgress(report, "Trimming deferred ranges", progressExtents(store), nil)
 	ranges := retryableExtents(store.Extents())
@@ -33,7 +33,7 @@ func runTrimPass(
 			if !ok || !isRetryableState(current.State) || current.Attempts >= attemptLimit {
 				continue
 			}
-			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, 1, "Trimming deferred ranges", deadlines, report); err != nil {
+			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, 1, "Trimming deferred ranges", deadlines, report, classify); err != nil {
 				return err
 			}
 		}

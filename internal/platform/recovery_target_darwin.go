@@ -38,7 +38,7 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 		if requiredBytes > uint64(outputInfo.Size()) {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: image %s is smaller than the durable recovery map", input.OutputPath)
 		}
-		_, recovered, deferred, unreadable := summarizeRecoveryExtentStates(extents)
+		_, recovered, deferred, unreadable := recovery.SummarizeRecoveryExtentStates(extents)
 		status.CanResume = true
 		status.RecoveredSectors, status.DeferredSectors, status.UnreadableSectors = recovered, deferred, unreadable
 		status.Detail = fmt.Sprintf("Resume recovery from %d recovered sectors, %d deferred sectors, and %d unreadable sectors.", recovered, deferred, unreadable)
@@ -57,7 +57,7 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 func requiredImageBytesDarwin(extents []mapfile.Extent, logicalSectorSize uint32) (uint64, error) {
 	var required uint64
 	for _, extent := range extents {
-		if !recoveryStateHasData(extent.State) {
+		if !recovery.RecoveryStateHasData(extent.State) {
 			continue
 		}
 		endLBA, err := extent.CheckedEndLBA()

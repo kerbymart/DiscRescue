@@ -1,11 +1,10 @@
-package platform
+package recovery
 
 import (
 	"discrescue/internal/mapfile"
-	"discrescue/internal/recovery"
 )
 
-func retryPolicyWithCurrentAttempts(policy recovery.RecoveryPolicy, extents []mapfile.Extent) recovery.RecoveryPolicy {
+func RetryPolicyWithCurrentAttempts(policy RecoveryPolicy, extents []mapfile.Extent) RecoveryPolicy {
 	var offset uint16
 	for _, extent := range extents {
 		if isRetryableState(extent.State) && extent.Attempts > offset {

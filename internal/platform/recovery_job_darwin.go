@@ -93,7 +93,7 @@ func (j *darwinRecoveryJob) ForceStop() error {
 	return nil
 }
 
-func (j *darwinRecoveryJob) setProgress(progress recoveryPassProgress, sectorSize uint32) {
+func (j *darwinRecoveryJob) setProgress(progress recovery.PassProgress, sectorSize uint32) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.snapshot.CopiedBytes = progress.RecoveredSectors * uint64(sectorSize)

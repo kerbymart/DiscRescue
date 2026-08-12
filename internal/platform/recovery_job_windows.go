@@ -95,7 +95,7 @@ func (j *mountedRecoveryJob) ForceStop() error {
 	return nil
 }
 
-func (j *mountedRecoveryJob) setPassProgress(progress recoveryPassProgress, logicalSectorSize uint32) {
+func (j *mountedRecoveryJob) setPassProgress(progress recovery.PassProgress, logicalSectorSize uint32) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 

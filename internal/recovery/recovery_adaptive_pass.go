@@ -1,4 +1,4 @@
-package platform
+package recovery
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"discrescue/internal/mapfile"
-	"discrescue/internal/recovery"
 )
 
 func runAdaptivePass(
@@ -18,8 +17,9 @@ func runAdaptivePass(
 	blockSectors uint64,
 	attemptLimit uint16,
 	passName string,
-	deadlines recovery.ReadDeadlinePolicy,
+	deadlines ReadDeadlinePolicy,
 	report func(recoveryPassProgress),
+	classify ReadErrorClassifier,
 ) error {
 	reportRecoveryProgress(report, passName, progressExtents(store), nil)
 	ranges := retryableExtents(store.Extents())
@@ -42,7 +42,7 @@ func runAdaptivePass(
 			if remaining := current.EndLBA() - lba; remaining < sectorsToRead {
 				sectorsToRead = remaining
 			}
-			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, sectorsToRead, passName, deadlines, report); err != nil {
+			if err := attemptDeferredBlock(ctx, source, output, logicalSectorSize, store, lba, sectorsToRead, passName, deadlines, report, classify); err != nil {
 				return err
 			}
 			lba += sectorsToRead
@@ -59,8 +59,9 @@ func attemptDeferredBlock(
 	lba uint64,
 	sectorsToRead uint64,
 	passName string,
-	deadlines recovery.ReadDeadlinePolicy,
+	deadlines ReadDeadlinePolicy,
 	report func(recoveryPassProgress),
+	classify ReadErrorClassifier,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -111,7 +112,7 @@ func attemptDeferredBlock(
 		return err
 	}
 	deferred := queued
-	if err := fatalRecoveryReadError(readErr); err != nil {
+	if err := fatalRecoveryReadError(readErr, classify); err != nil {
 		return fmt.Errorf("read %s range [%d,%d): %w", passName, lba, lba+sectorsToRead, err)
 	}
 	deferred.State = mapfile.SectorStateIOError

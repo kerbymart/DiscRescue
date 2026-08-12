@@ -37,7 +37,7 @@ func (OSRecovery) StartImageRecovery(input RecoveryInput) (RecoveryJob, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	scannedSectors, recoveredSectors, deferredSectors, unreadableSectors := summarizeRecoveryExtentStates(state.Extents())
+	scannedSectors, recoveredSectors, deferredSectors, unreadableSectors := recovery.SummarizeRecoveryExtentStates(state.Extents())
 	lastIssue := []string{}
 	if resumed {
 		lastIssue = []string{fmt.Sprintf("Resuming durable state: scanned %d, recovered %d, deferred %d, unreadable %d sectors.", scannedSectors, recoveredSectors, deferredSectors, unreadableSectors)}
@@ -84,17 +84,17 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 }
 
 func summarizeExtents(extents []mapfile.Extent, logicalSectorSize uint32) (uint64, uint64) {
-	_, recoveredSectors, _, unreadable := summarizeRecoveryExtentStates(extents)
+	_, recoveredSectors, _, unreadable := recovery.SummarizeRecoveryExtentStates(extents)
 	return recoveredSectors * uint64(logicalSectorSize), unreadable
 }
 
 func summarizeExtentsToSectors(extents []mapfile.Extent) (uint64, uint64) {
-	_, recoveredSectors, _, unreadable := summarizeRecoveryExtentStates(extents)
+	_, recoveredSectors, _, unreadable := recovery.SummarizeRecoveryExtentStates(extents)
 	return recoveredSectors, unreadable
 }
 
 func claimsImageData(state mapfile.SectorState) bool {
-	return recoveryStateHasData(state)
+	return recovery.RecoveryStateHasData(state)
 }
 
 func mustMarshalHeader(header mapfile.Header) []byte {

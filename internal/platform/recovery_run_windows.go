@@ -64,7 +64,7 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 		j.startup.Commit()
 	}
 
-	persistence := newRecoveryPersistence(output, j.state)
+	persistence := recovery.NewPersistence(output, j.state)
 	lifecycleSource := &recovery.LifecycleReaderAt{Source: source, Lifecycle: j.lifecycle}
 	policy, policyErr := recovery.PolicyForMethod(input.Method)
 	if policyErr != nil {
@@ -72,9 +72,9 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 		return
 	}
 	if input.RetryUnresolved {
-		policy = retryPolicyWithCurrentAttempts(policy, j.state.Extents())
+		policy = recovery.RetryPolicyWithCurrentAttempts(policy, j.state.Extents())
 	}
-	err = runPassBasedRecoveryWithPolicy(
+	err = recovery.RunPassBasedRecoveryWithPolicy(
 		ctx,
 		lifecycleSource,
 		output,
@@ -82,9 +82,10 @@ func (j *mountedRecoveryJob) run(ctx context.Context, input RecoveryInput) {
 		input.CapacitySectors,
 		persistence,
 		policy,
-		func(progress recoveryPassProgress) {
+		func(progress recovery.PassProgress) {
 			j.setPassProgress(progress, input.LogicalSectorSize)
 		},
+		classifyRecoveryReadError,
 	)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

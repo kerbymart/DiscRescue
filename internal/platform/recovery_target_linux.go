@@ -26,7 +26,7 @@ func (OSRecovery) InspectRecoveryTarget(input RecoveryInput) (RecoveryTargetStat
 		if err != nil {
 			return RecoveryTargetStatus{}, fmt.Errorf("inspect recovery target: load map %s: %w", mapPath, err)
 		}
-		_, recovered, deferred, unreadable := summarizeRecoveryExtentStates(extents)
+		_, recovered, deferred, unreadable := recovery.SummarizeRecoveryExtentStates(extents)
 		status.CanResume = true
 		status.RecoveredSectors, status.DeferredSectors, status.UnreadableSectors = recovered, deferred, unreadable
 		status.Detail = fmt.Sprintf("Resume Linux recovery from %d recovered sectors, %d deferred sectors, and %d unreadable sectors.", recovered, deferred, unreadable)
