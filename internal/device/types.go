@@ -10,6 +10,16 @@ type MediaInfo struct {
 
 type CommandKind string
 
+type DeadlineProfile string
+
+const (
+	DeadlineProfileMetadata  DeadlineProfile = "metadata"
+	DeadlineProfileRead      DeadlineProfile = "read"
+	DeadlineProfileSetSpeed  DeadlineProfile = "set_speed"
+	DeadlineProfileEject     DeadlineProfile = "eject"
+	DeadlineProfileTestReady DeadlineProfile = "test_ready"
+)
+
 const (
 	CommandInquiry             CommandKind = "inquiry"
 	CommandTestReady           CommandKind = "test_ready"
@@ -30,6 +40,7 @@ type CommandSpec struct {
 	ReadOnly      bool
 	AllowsMediaIO bool
 	Opcode        byte
+	Deadline      DeadlineProfile
 }
 
 var allowedCommandSpecs = map[CommandKind]CommandSpec{
@@ -39,6 +50,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: false,
 		Opcode:        0x12,
+		Deadline:      DeadlineProfileMetadata,
 	},
 	CommandTestReady: {
 		Kind:          CommandTestReady,
@@ -46,6 +58,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: false,
 		Opcode:        0x00,
+		Deadline:      DeadlineProfileTestReady,
 	},
 	CommandGetConfiguration: {
 		Kind:          CommandGetConfiguration,
@@ -53,6 +66,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: false,
 		Opcode:        0x46,
+		Deadline:      DeadlineProfileMetadata,
 	},
 	CommandReadCapacity: {
 		Kind:          CommandReadCapacity,
@@ -60,6 +74,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: false,
 		Opcode:        0x25,
+		Deadline:      DeadlineProfileMetadata,
 	},
 	CommandReadTOC: {
 		Kind:          CommandReadTOC,
@@ -67,6 +82,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: false,
 		Opcode:        0x43,
+		Deadline:      DeadlineProfileMetadata,
 	},
 	CommandReadDiscInformation: {
 		Kind:          CommandReadDiscInformation,
@@ -74,6 +90,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: false,
 		Opcode:        0x51,
+		Deadline:      DeadlineProfileMetadata,
 	},
 	CommandReadDVDStructure: {
 		Kind:          CommandReadDVDStructure,
@@ -81,6 +98,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: false,
 		Opcode:        0xad,
+		Deadline:      DeadlineProfileMetadata,
 	},
 	CommandReadBlocks: {
 		Kind:          CommandReadBlocks,
@@ -88,6 +106,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: true,
 		Opcode:        0x28,
+		Deadline:      DeadlineProfileRead,
 	},
 	CommandReadCD: {
 		Kind:          CommandReadCD,
@@ -95,6 +114,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: true,
 		Opcode:        0xbe,
+		Deadline:      DeadlineProfileRead,
 	},
 	CommandSetSpeed: {
 		Kind:          CommandSetSpeed,
@@ -102,6 +122,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: false,
 		Opcode:        0xbb,
+		Deadline:      DeadlineProfileSetSpeed,
 	},
 	CommandEject: {
 		Kind:          CommandEject,
@@ -109,6 +130,7 @@ var allowedCommandSpecs = map[CommandKind]CommandSpec{
 		ReadOnly:      true,
 		AllowsMediaIO: false,
 		Opcode:        0x1b,
+		Deadline:      DeadlineProfileEject,
 	},
 }
 

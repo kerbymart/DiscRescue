@@ -28,19 +28,23 @@ func (d Deadlines) Validate() error {
 }
 
 func DefaultDeadlines(request CommandRequest) (Deadlines, error) {
-	switch request.Command {
-	case CommandInquiry, CommandGetConfiguration, CommandReadCapacity, CommandReadTOC, CommandReadDiscInformation, CommandReadDVDStructure:
+	spec, ok := AllowedCommandSpec(request.Command)
+	if !ok {
+		return Deadlines{}, fmt.Errorf("default deadlines: unsupported command %q", request.Command)
+	}
+	switch spec.Deadline {
+	case DeadlineProfileMetadata:
 		return Deadlines{Soft: 10 * time.Second, Hard: 30 * time.Second, RetryBudget: 1}, nil
-	case CommandReadBlocks, CommandReadCD:
+	case DeadlineProfileRead:
 		if request.Sectors <= 1 {
 			return Deadlines{Soft: 30 * time.Second, Hard: 120 * time.Second, RetryBudget: 3}, nil
 		}
 		return Deadlines{Soft: 15 * time.Second, Hard: 45 * time.Second, RetryBudget: 3}, nil
-	case CommandSetSpeed:
+	case DeadlineProfileSetSpeed:
 		return Deadlines{Soft: 5 * time.Second, Hard: 15 * time.Second, RetryBudget: 1}, nil
-	case CommandEject:
+	case DeadlineProfileEject:
 		return Deadlines{Soft: 10 * time.Second, Hard: 30 * time.Second, RetryBudget: 1}, nil
-	case CommandTestReady:
+	case DeadlineProfileTestReady:
 		return Deadlines{Soft: 10 * time.Second, Hard: 30 * time.Second, RetryBudget: 2}, nil
 	default:
 		return Deadlines{}, fmt.Errorf("default deadlines: unsupported command %q", request.Command)

@@ -3,6 +3,7 @@ package device
 import (
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestAllowedCommandKindsMatchReadOnlyVocabulary(t *testing.T) {
@@ -27,6 +28,7 @@ func TestAllowedCommandKindsMatchReadOnlyVocabulary(t *testing.T) {
 }
 
 func TestAllowedCommandKindsAreReadOnly(t *testing.T) {
+	opcodes := make(map[byte]CommandKind)
 	for _, command := range AllowedCommandKinds() {
 		spec, ok := AllowedCommandSpec(command)
 		if !ok {
@@ -37,6 +39,32 @@ func TestAllowedCommandKindsAreReadOnly(t *testing.T) {
 		}
 		if !command.IsReadOnly() {
 			t.Fatalf("expected command %q to be classified as read-only", command)
+		}
+		if spec.Deadline == "" {
+			t.Fatalf("expected command %q to have a deadline profile", command)
+		}
+		if previous, exists := opcodes[spec.Opcode]; exists {
+			t.Fatalf("commands %q and %q share opcode %#x", previous, command, spec.Opcode)
+		}
+		opcodes[spec.Opcode] = command
+	}
+}
+
+func TestDefaultDeadlinesCoverAllowedCommands(t *testing.T) {
+	for _, command := range AllowedCommandKinds() {
+		sectors := uint32(0)
+		if spec, _ := AllowedCommandSpec(command); spec.AllowsMediaIO {
+			sectors = 2
+		}
+		deadlines, err := DefaultDeadlines(CommandRequest{Command: command, Sectors: sectors})
+		if err != nil {
+			t.Fatalf("default deadlines for %q: %v", command, err)
+		}
+		if deadlines.Soft <= 0 || deadlines.Hard <= deadlines.Soft || deadlines.RetryBudget == 0 {
+			t.Fatalf("invalid deadlines for %q: %+v", command, deadlines)
+		}
+		if deadlines.Hard > 120*time.Second {
+			t.Fatalf("unexpectedly unbounded deadline for %q: %+v", command, deadlines)
 		}
 	}
 }
