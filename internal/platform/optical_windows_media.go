@@ -150,5 +150,8 @@ func sanitizeOutputName(name string) string {
 func rawVolumePath(root string) string {
 	root = strings.TrimSpace(root)
 	root = strings.TrimSuffix(root, "\\")
+	if strings.HasPrefix(root, `\\.\`) {
+		return root
+	}
 	return `\\.\` + root
 }

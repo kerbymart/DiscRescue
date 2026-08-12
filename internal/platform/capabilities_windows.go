@@ -12,6 +12,6 @@ func hostOpticalCapabilities(path string) device.DriveCapabilities {
 		QueryReadSpeed: device.Capability{Status: device.SupportUnknown, Detail: "drive-specific MMC query"},
 		SetReadSpeed:   device.Capability{Status: device.SupportUnknown, Detail: "drive-specific MMC control"},
 		NormalEject:    device.Capability{Status: device.SupportSupported, Detail: "Windows storage eject"},
-		ForceEject:     device.Capability{Status: device.SupportSupported, Detail: "Windows explicit eject escalation"},
+		ForceEject:     device.Capability{Status: device.SupportUnsupported, Detail: "Windows adapter has no distinct force-eject operation"},
 	}
 }
