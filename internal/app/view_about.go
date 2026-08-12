@@ -19,3 +19,13 @@ func renderAboutPage(m Model, width int) []string {
 	}
 	return cardLines(theme, "About", out, width, false)
 }
+
+func renderCompactAboutPage(m Model, width int) ([]string, bool) {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	return []string{
+		theme.Accent.Render("\u2299 DiscRescue"),
+		"Guided optical-disc recovery.",
+		"Version " + buildinfo.Version,
+		"Commit " + buildinfo.Commit,
+	}, true
+}

@@ -1,5 +1,14 @@
 package app
 
+type layoutTier uint8
+
+const (
+	layoutFull layoutTier = iota
+	layoutMedium
+	layoutCompact
+	layoutTooSmall
+)
+
 func layoutTierFor(width, height int) layoutTier {
 	if width > 0 && height > 0 {
 		if width < 40 || height < 12 {

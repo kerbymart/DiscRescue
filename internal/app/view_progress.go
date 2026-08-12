@@ -2,6 +2,21 @@ package app
 
 import "strings"
 
+const (
+	progressEmptyCell = "\u2591"
+	progressFullCell  = "\u2588"
+)
+
+var progressPartialCells = []string{
+	"\u258F",
+	"\u258E",
+	"\u258D",
+	"\u258C",
+	"\u258B",
+	"\u258A",
+	"\u2589",
+}
+
 func progressBarFor(m Model, tier layoutTier) string {
 	width := 40
 	if tier == layoutMedium {

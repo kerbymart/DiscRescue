@@ -132,3 +132,22 @@ func renderReviewPage(m Model, width int, tier layoutTier) []string {
 	lines = append(lines, cardLines(theme, "Ready", choiceMenu(theme, options, m.Cursor, width-4), width, true)...)
 	return lines
 }
+
+func renderCompactOutputPage(m Model, width int) ([]string, bool) {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	switch m.Page {
+	case PageChooseOutput:
+		if m.noticeHasTechnicalDetail() {
+			return []string{fitToWidth(theme.Danger.Render("\u00d7 "+m.Notice.String()), width)}, true
+		}
+		return nil, false
+	case PageReview:
+		lines := []string{
+			fitToWidth("Drive   "+selectedDriveLabel(m), width),
+			fitToWidth("Output  "+m.Setup.OutputPath, width),
+		}
+		return append(lines, choiceMenu(theme, []string{firstNonEmpty(m.Setup.ActionLabel, "Start a new recovery"), "Edit output path", "Choose another drive"}, m.Cursor, width)...), true
+	default:
+		return nil, false
+	}
+}

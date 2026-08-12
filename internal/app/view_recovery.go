@@ -421,3 +421,23 @@ func bulletLines(items []string, width int) []string {
 	}
 	return lines
 }
+
+func renderCompactRecoveryPage(m Model, width int) ([]string, bool) {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	switch m.Page {
+	case PagePausing:
+		return []string{
+			theme.Warning.Render(m.LoadingSpinner.View() + " Pause requested"),
+			"Finishing the current drive request safely.",
+			"No new drive command will be started.",
+		}, true
+	case PagePaused:
+		lines := []string{theme.Success.Render("\u2713 Paused at a durable checkpoint.")}
+		return append(lines, choiceMenu(theme, []string{"Continue recovery", "Stop after checkpoint"}, m.Cursor, width)...), true
+	case PageStopConfirm:
+		lines := []string{theme.Warning.Render("\u25b3 Save progress before stopping?"), "The recovery can be resumed later."}
+		return append(lines, choiceMenu(theme, []string{"Save progress and stop", "Continue recovery"}, m.Cursor, width)...), true
+	default:
+		return nil, false
+	}
+}

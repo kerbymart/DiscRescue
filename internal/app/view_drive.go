@@ -52,3 +52,40 @@ func discSummary(m Model) string {
 	}
 	return "not identified"
 }
+
+func renderDiscoveryPage(m Model, width int) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	return cardLines(theme, "Drive discovery", []string{
+		theme.Accent.Render(m.LoadingSpinner.View() + " Looking for optical drives"),
+		"",
+		theme.Muted.Render("Checking the devices available to this computer."),
+		theme.Muted.Render("This usually takes only a moment."),
+	}, width, true)
+}
+
+func renderCompactDrivePage(m Model, width int) ([]string, bool) {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	switch m.Page {
+	case PageDiscover:
+		return []string{theme.Accent.Render(m.LoadingSpinner.View() + " Looking for optical drives"), "Checking the devices available to this computer."}, true
+	case PageNoDrives:
+		return []string{"No optical drive available.", "Connect or insert a readable CD/DVD.", "Press Enter to retry discovery."}, true
+	case PageDiscoveryError:
+		message := "Drive discovery failed."
+		if m.Notice != nil && m.Notice.Text != "" {
+			message = m.Notice.Text
+		}
+		return []string{fitToWidth(theme.Danger.Render("\u00d7 "+message), width), "> Retry discovery"}, true
+	default:
+		return nil, false
+	}
+}
+
+func renderCompactEjectConfirmPage(m Model, width int) ([]string, bool) {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	lines := []string{
+		theme.Warning.Render("\u25b3 Force eject may interrupt a drive in use."),
+		"Use only if normal eject did not work.",
+	}
+	return append(lines, choiceMenu(theme, []string{"Force eject", "Cancel"}, m.Cursor, width)...), true
+}

@@ -1,6 +1,9 @@
 package app
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 func renderInspectingMediaPage(m Model, width int) []string {
 	theme := newTheme(m.Monochrome, m.DarkBackground)
@@ -67,4 +70,44 @@ func renderActionList(m Model, width int, tier layoutTier) []string {
 		}
 	}
 	return lines
+}
+
+func renderAdvancedPage(m Model, width int) []string {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	return cardLines(theme, "Advanced recovery", []string{
+		"Advanced settings stay separate from the normal setup flow.",
+		"",
+		theme.Muted.Render("The guided defaults protect resumability and media safety."),
+	}, width, false)
+}
+
+func renderCompactMediaPage(m Model, width int) ([]string, bool) {
+	theme := newTheme(m.Monochrome, m.DarkBackground)
+	switch m.Page {
+	case PageInspectingMedia:
+		return []string{
+			theme.Accent.Render(m.LoadingSpinner.View() + " Reading disc information"),
+			fitToWidth("Drive  "+selectedDriveLabel(m), width),
+			"Checking capacity, layout, and matching work.",
+		}, true
+	case PagePriorProcessing:
+		lines := []string{fitToWidth(theme.Accent.Render(firstNonEmpty(m.PriorView.Title, "Matching contents")), width)}
+		if len(m.PriorView.Body) > 0 {
+			lines = append(lines, fitToWidth(m.PriorView.Body[0], width))
+		}
+		if len(m.PriorView.Options) > 0 {
+			lines = append(lines, choiceMenu(theme, []string{m.PriorView.Options[clampIndex(m.Cursor, len(m.PriorView.Options))]}, 0, width)...)
+			lines = append(lines, fmt.Sprintf("\u2191/\u2193 choose from %d actions", len(m.PriorView.Options)))
+		}
+		return lines, true
+	case PageChooseAction:
+		if m.noticeHasTechnicalDetail() {
+			return []string{fitToWidth(theme.Danger.Render("\u00d7 "+m.Notice.String()), width)}, true
+		}
+		return choiceMenu(theme, []string{"Start a new recovery", "Resume an unfinished recovery", "Browse processed media", "Choose another drive"}, m.Cursor, width), true
+	case PageAdvanced:
+		return []string{"Advanced recovery settings stay separate.", "Guided defaults protect resumability and media safety."}, true
+	default:
+		return nil, false
+	}
 }
