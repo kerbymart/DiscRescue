@@ -21,7 +21,7 @@ This note records the repository package scaffold and its ownership boundary rel
 
 | Package | Responsibility |
 | --- | --- |
-| `internal/app` | Bubble Tea model, messages, update, navigation, presentation, and runtime effect projections; screen, layout, runtime, and workflow responsibilities are kept in same-package focused files |
+| `internal/app` | Bubble Tea model, messages, update, navigation, presentation, and runtime effect projections; `layout.go` owns geometry, while screen, compact-rendering, runtime, and workflow responsibilities stay in focused same-package files |
 | `internal/buildinfo` | Embedded version, commit, and build-date metadata shown by the app |
 | `internal/catalog` | Logical-content identity lookup, local journal, snapshot, and bounded history state |
 | `internal/coordinator` | Authoritative job transitions, checkpointing, cancellation, and shutdown |
