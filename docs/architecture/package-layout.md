@@ -21,7 +21,7 @@ This note records the repository package scaffold and its ownership boundary rel
 
 | Package | Responsibility |
 | --- | --- |
-| `internal/app` | Bubble Tea model, messages, update, navigation, presentation, and runtime effect projections; `layout.go` owns geometry, while screen, compact-rendering, runtime, and workflow responsibilities stay in focused same-package files |
+| `internal/app` | Bubble Tea model, messages, update, navigation, presentation, and runtime effect projections; app-owned optical/recovery service ports keep platform composition details out of the UI model |
 | `internal/buildinfo` | Embedded version, commit, and build-date metadata shown by the app |
 | `internal/catalog` | Logical-content identity lookup, local journal, snapshot, and bounded history state |
 | `internal/coordinator` | Authoritative job transitions, checkpointing, cancellation, and shutdown |
@@ -32,8 +32,8 @@ This note records the repository package scaffold and its ownership boundary rel
 | `internal/logging` | Bounded structured event records and redaction policy |
 | `internal/mapfile` | Pure `.drmap` header, checkpoint, journal, replay, extent model/operations, and geometry rules |
 | `internal/merge` | Conservative multi-capture merge planning, candidate analysis, coalescing, and selected-output provenance |
-| `internal/platform` | Project-owned filesystem, clock, process, terminal, optical, and native recovery adapters; recovery job lifecycle, execution, source, output, target, and map responsibilities remain separated in build-tagged same-package files |
-| `internal/recovery` | Deterministic probe, fast, trim, adaptive, scrape, and completion scheduling |
+| `internal/platform` | Project-owned filesystem, clock, process, terminal, optical, and native recovery adapters; platform files own native source/output/lifecycle effects while delegating policy execution through recovery ports |
+| `internal/recovery` | Platform-neutral recovery policy, pass execution, progress, retry, and durability coordination over source/output/store ports |
 | `internal/recoverymap` | Durable runtime `.drmap` lifecycle, including create/open/inspect, staged append/flush, close, and exact file I/O |
 | `internal/testdevice` | Deterministic simulator scenario definitions/validation, eject behavior, command audit, and release hardening checks |
 
@@ -43,6 +43,7 @@ This note records the repository package scaffold and its ownership boundary rel
 - The Bubble Tea layer depends on coordinator projections, not direct device backends.
 - Persisted formats stay owned by `internal/mapfile`, `internal/catalog`, and the documents under `docs/formats/`.
 - Cross-platform development support stays in `internal/platform` so Windows-local simulator and TUI work do not weaken Linux production boundaries.
+- Recovery policy must not import `internal/platform`; native adapters provide source/output capabilities and classify platform-specific fatal errors at the boundary.
 
 ## Verification
 
