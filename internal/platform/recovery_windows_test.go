@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"discrescue/internal/recovery"
 )
 
 func TestOSRecoveryRejectsExistingOutputPath(t *testing.T) {
@@ -92,10 +94,14 @@ func TestOSRecoveryCopiesMountedDiscData(t *testing.T) {
 			break
 		}
 		if snapshot.CopiedBytes >= uint64(media.LogicalSectorSize)*32 {
-			job.Cancel()
+			if err := job.RequestStop(recovery.StopIntentPause); err != nil {
+				t.Fatalf("pause recovery: %v", err)
+			}
 		}
 		if time.Now().After(deadline) {
-			job.Cancel()
+			if err := job.RequestStop(recovery.StopIntentPause); err != nil {
+				t.Fatalf("pause recovery: %v", err)
+			}
 			t.Fatal("recovery smoke test timed out")
 		}
 		time.Sleep(100 * time.Millisecond)

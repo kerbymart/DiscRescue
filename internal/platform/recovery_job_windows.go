@@ -42,10 +42,6 @@ func (j *mountedRecoveryJob) refreshTelemetryLocked() {
 	j.snapshot.SessionRecoveredBytes = j.snapshot.Telemetry.RecoveredBytes
 }
 
-func (j *mountedRecoveryJob) Cancel() {
-	_ = j.RequestStop(recovery.StopIntentPause)
-}
-
 func (j *mountedRecoveryJob) RequestStop(intent recovery.StopIntent) error {
 	j.mu.Lock()
 	if j.lifecycle == nil {

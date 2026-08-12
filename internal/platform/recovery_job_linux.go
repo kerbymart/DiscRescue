@@ -36,8 +36,6 @@ func (j *linuxRecoveryJob) Snapshot() RecoverySnapshot {
 	return j.snapshot
 }
 
-func (j *linuxRecoveryJob) Cancel() { _ = j.RequestStop(recovery.StopIntentPause) }
-
 func (j *linuxRecoveryJob) RequestStop(intent recovery.StopIntent) error {
 	j.mu.Lock()
 	if j.lifecycle == nil {

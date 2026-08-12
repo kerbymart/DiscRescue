@@ -92,14 +92,6 @@ type RecoverySnapshot struct {
 
 type RecoveryJob interface {
 	Snapshot() RecoverySnapshot
-	Cancel()
-}
-
-// StoppableRecoveryJob exposes bounded stop intent and escalation when the
-// platform implementation supports it. RecoveryJob remains source-compatible
-// with adapters that have not migrated to the lifecycle controller yet.
-type StoppableRecoveryJob interface {
-	RecoveryJob
 	RequestStop(recovery.StopIntent) error
 	ForceStop() error
 }

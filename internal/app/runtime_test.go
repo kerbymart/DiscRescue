@@ -63,7 +63,9 @@ func (s stubRecoveryJob) Snapshot() platform.RecoverySnapshot {
 	return s.snapshot
 }
 
-func (stubRecoveryJob) Cancel() {}
+func (stubRecoveryJob) RequestStop(platform.StopIntent) error { return nil }
+
+func (stubRecoveryJob) ForceStop() error { return nil }
 
 func TestProgramModelStartupWorkflowLeavesDiscoveryAndSelectsDrive(t *testing.T) {
 	services := Services{Optical: stubOptical{drives: []platform.OpticalDrive{

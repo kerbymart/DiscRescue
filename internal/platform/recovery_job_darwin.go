@@ -41,8 +41,6 @@ func (j *darwinRecoveryJob) refreshTelemetryLocked() {
 	j.snapshot.SessionRecoveredBytes = j.snapshot.Telemetry.RecoveredBytes
 }
 
-func (j *darwinRecoveryJob) Cancel() { _ = j.RequestStop(recovery.StopIntentPause) }
-
 func (j *darwinRecoveryJob) RequestStop(intent recovery.StopIntent) error {
 	j.mu.Lock()
 	if j.lifecycle == nil {
