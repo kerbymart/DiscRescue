@@ -72,3 +72,27 @@ func renderSummaryPage(m Model, width int, tier layoutTier) []string {
 	lines = append(lines, cardLines(theme, "Next action", choiceMenu(theme, summaryOptions(m), m.Cursor, width-4), width, true)...)
 	return lines
 }
+
+func summaryOptions(m Model) []string {
+	options := make([]string, 0, 3)
+	if retry := summaryRetryActionLabel(m); retry != "" {
+		options = append(options, retry)
+	}
+	return append(options,
+		"Exit",
+		"Choose another drive",
+	)
+}
+
+func summaryRetryActionLabel(m Model) string {
+	if m.Recovery.DeferredSectors > 0 && m.Recovery.UnreadableSectors > 0 {
+		return "Retry unresolved sectors"
+	}
+	if m.Recovery.DeferredSectors > 0 {
+		return "Retry deferred sectors"
+	}
+	if m.Recovery.UnreadableSectors > 0 {
+		return "Retry unreadable sectors"
+	}
+	return ""
+}

@@ -1,5 +1,25 @@
 package app
 
+func renderFooter(m Model, width int, tier layoutTier) string {
+	if m.Page == PageRecovering {
+		theme := newTheme(m.Monochrome, m.DarkBackground)
+		footer := theme.Key.Render("space") + " " + theme.Muted.Render("pause") + "  \u2022  " +
+			theme.Key.Render("d") + " " + theme.Muted.Render("details") + "  \u2022  " +
+			theme.Key.Render("q") + " " + theme.Muted.Render("stop")
+		return fitToWidth(footer, width)
+	}
+	helpView := FooterHelp(tier == layoutFull)
+	helpView.SetWidth(width)
+	return fitToWidth(helpView.View(pageHelpForModel(m)), width)
+}
+
+func showStatusLine(page Page, tier layoutTier) bool {
+	if tier == layoutCompact {
+		return false
+	}
+	return page != PageDiscover && page != PageDetails
+}
+
 func usesAltScreen(_ Page) bool {
 	// DiscRescue owns one interactive terminal session. Keep every page in the
 	// alternate screen so discovery and setup do not leak into shell history.

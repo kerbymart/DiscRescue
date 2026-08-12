@@ -7,6 +7,45 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 )
 
+func recoveryOutputName(m Model) string {
+	path := firstNonEmpty(m.Recovery.OutputPath, m.Setup.OutputPath)
+	if path == "" || path == "Not chosen yet" {
+		return ""
+	}
+	path = strings.ReplaceAll(path, "\\", "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 {
+		return path
+	}
+	return parts[len(parts)-1]
+}
+
+func recoveryTimeSummary(m Model, tier layoutTier) string {
+	remaining := strings.TrimSpace(m.Recovery.Remaining)
+	eta := strings.TrimSpace(m.Recovery.ETA)
+
+	if tier == layoutCompact {
+		return remaining
+	}
+
+	if remaining == "" && eta == "" {
+		if tier == layoutFull {
+			return "Estimating time remaining..."
+		}
+		return ""
+	}
+	if remaining == "" {
+		return eta
+	}
+	if eta == "" {
+		if tier == layoutFull {
+			return remaining + "  ETA estimating..."
+		}
+		return remaining
+	}
+	return remaining + "  ETA " + eta
+}
+
 func renderRecoveryPage(m Model, width int, tier layoutTier) []string {
 	return renderRecoveryDashboard(m, width, tier)
 }

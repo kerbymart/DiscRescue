@@ -17,6 +17,7 @@ func clampIndex(index, length int) int {
 	}
 	return index
 }
+
 func cardLines(theme Theme, title string, content []string, width int, focused bool) []string {
 	inner := maxInt(12, width-4)
 	style := theme.Card
@@ -29,6 +30,7 @@ func cardLines(theme Theme, title string, content []string, width int, focused b
 	}
 	return strings.Split(style.Width(inner).Render(body), "\n")
 }
+
 func choiceMenu(theme Theme, options []string, selected, width int) []string {
 	lines := make([]string, 0, len(options))
 	for i, option := range options {
@@ -42,6 +44,7 @@ func choiceMenu(theme Theme, options []string, selected, width int) []string {
 	}
 	return lines
 }
+
 func metricStrip(theme Theme, metrics [][2]string, width int) []string {
 	if len(metrics) == 0 {
 		return nil
@@ -61,6 +64,7 @@ func metricStrip(theme Theme, metrics [][2]string, width int) []string {
 	}
 	return strings.Split(lipgloss.JoinHorizontal(lipgloss.Top, intersperse(cards, " ")...), "\n")
 }
+
 func intersperse(values []string, separator string) []string {
 	if len(values) < 2 {
 		return values
@@ -74,6 +78,7 @@ func intersperse(values []string, separator string) []string {
 	}
 	return out
 }
+
 func wrapText(text string, width int) []string {
 	if width <= 0 {
 		return []string{text}
@@ -83,6 +88,7 @@ func wrapText(text string, width int) []string {
 	}
 	return strings.Split(lipgloss.Wrap(text, width, ""), "\n")
 }
+
 func labeledLines(label, value string, width int) []string {
 	prefix := label
 	if len(prefix) < 11 {
@@ -90,6 +96,7 @@ func labeledLines(label, value string, width int) []string {
 	}
 	return wrapTextWithPrefix(prefix, value, width)
 }
+
 func wrapTextWithPrefix(prefix, value string, width int) []string {
 	if width <= len(prefix)+1 {
 		return append([]string{prefix}, wrapText(value, width)...)
@@ -109,6 +116,7 @@ func wrapTextWithPrefix(prefix, value string, width int) []string {
 	}
 	return lines
 }
+
 func fitToWidth(text string, width int) string {
 	if width <= 0 {
 		return text
@@ -116,36 +124,9 @@ func fitToWidth(text string, width int) string {
 	if lipgloss.Width(text) <= width {
 		return text
 	}
-	return ansi.Truncate(text, width, "…")
+	return ansi.Truncate(text, width, "\u2026")
 }
-func summaryOptions(m Model) []string {
-	options := make([]string, 0, 3)
-	if retry := summaryRetryActionLabel(m); retry != "" {
-		options = append(options, retry)
-	}
-	return append(options,
-		"Exit",
-		"Choose another drive",
-	)
-}
-func summaryRetryActionLabel(m Model) string {
-	if m.Recovery.DeferredSectors > 0 && m.Recovery.UnreadableSectors > 0 {
-		return "Retry unresolved sectors"
-	}
-	if m.Recovery.DeferredSectors > 0 {
-		return "Retry deferred sectors"
-	}
-	if m.Recovery.UnreadableSectors > 0 {
-		return "Retry unreadable sectors"
-	}
-	return ""
-}
-func replaceExtension(path, extension string) string {
-	if strings.HasSuffix(path, ".iso") {
-		return strings.TrimSuffix(path, ".iso") + extension
-	}
-	return path + extension
-}
+
 func formatCount(value uint64) string {
 	plain := fmt.Sprintf("%d", value)
 	if len(plain) <= 3 {
@@ -159,6 +140,7 @@ func formatCount(value uint64) string {
 	groups = append([]string{plain}, groups...)
 	return strings.Join(groups, ",")
 }
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {
@@ -166,41 +148,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-func recoveryOutputName(m Model) string {
-	path := firstNonEmpty(m.Recovery.OutputPath, m.Setup.OutputPath)
-	if path == "" || path == "Not chosen yet" {
-		return ""
-	}
-	path = strings.ReplaceAll(path, "\\", "/")
-	parts := strings.Split(path, "/")
-	if len(parts) == 0 {
-		return path
-	}
-	return parts[len(parts)-1]
-}
-func recoveryTimeSummary(m Model, tier layoutTier) string {
-	remaining := strings.TrimSpace(m.Recovery.Remaining)
-	eta := strings.TrimSpace(m.Recovery.ETA)
-
-	if tier == layoutCompact {
-		return remaining
-	}
-
-	if remaining == "" && eta == "" {
-		if tier == layoutFull {
-			return "Estimating time remaining..."
-		}
-		return ""
-	}
-	if remaining == "" {
-		return eta
-	}
-	if eta == "" {
-		if tier == layoutFull {
-			return remaining + "  ETA estimating..."
-		}
-		return remaining
-	}
-	return remaining + "  ETA " + eta
 }
