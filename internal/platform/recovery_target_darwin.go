@@ -4,6 +4,7 @@ package platform
 
 import (
 	"discrescue/internal/mapfile"
+	"discrescue/internal/recovery"
 	"discrescue/internal/recoverymap"
 	"errors"
 	"fmt"
