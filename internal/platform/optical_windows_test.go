@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	"discrescue/internal/device"
 	"golang.org/x/sys/windows"
 )
 
@@ -29,5 +30,15 @@ func TestWindowsMediaProbeErrorClassifiesNativeFailures(t *testing.T) {
 				t.Fatalf("got %#v; want state %q", err, test.state)
 			}
 		})
+	}
+}
+
+func TestWindowsCapabilitiesDoNotAdvertiseForceEject(t *testing.T) {
+	capabilities := hostOpticalCapabilities(`D:\`)
+	if capabilities.NormalEject.Status != device.SupportSupported {
+		t.Fatalf("normal eject capability = %+v, want supported", capabilities.NormalEject)
+	}
+	if capabilities.ForceEject.Status != device.SupportUnsupported {
+		t.Fatalf("force eject capability = %+v, want unsupported", capabilities.ForceEject)
 	}
 }
