@@ -58,7 +58,7 @@ func resolveSegment(start, end uint64, captures []Capture) (MergedExtent, error)
 	}
 
 	return MergedExtent{
-		Extent: mapfile.Extent{StartLBA: start, Sectors: uint32(end - start), State: mapfile.SectorStateMissing, Confidence: mapfile.ConfidenceNone},
+		Extent:        mapfile.Extent{StartLBA: start, Sectors: uint32(end - start), State: mapfile.SectorStateMissing, Confidence: mapfile.ConfidenceNone},
 		SelectionRule: RuleMissing,
 	}, nil
 }
