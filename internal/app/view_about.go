@@ -23,7 +23,7 @@ func renderAboutPage(m Model, width int) []string {
 func renderCompactAboutPage(m Model, width int) ([]string, bool) {
 	theme := newTheme(m.Monochrome, m.DarkBackground)
 	return []string{
-		theme.Accent.Render("\u2299 DiscRescue"),
+		theme.Accent.Render("\u25c9 DiscRescue"),
 		"Guided optical-disc recovery.",
 		"Version " + buildinfo.Version,
 		"Commit " + buildinfo.Commit,
